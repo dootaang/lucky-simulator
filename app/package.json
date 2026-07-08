@@ -1,0 +1,16 @@
+{
+  "name": "simbot-card-playground",
+  "version": "0.0.1",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "npx esbuild src/main.js --bundle --format=iife --platform=browser --servedir=. --serve=8135"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}
