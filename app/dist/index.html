@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>시뮬봇 카드 플레이그라운드</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B4%3C/text%3E%3C/svg%3E">
   <style>
 :root {
   color-scheme: light;
@@ -4554,7 +4555,7 @@ details.source-preview pre,
     const h2 = document.createElement("h2");
     h2.textContent = "\uD65C\uC131\uD654 \uC2DC\uBBAC\uB808\uC774\uD130";
     const meta = document.createElement("p");
-    meta.textContent = lore ? "\uAC00\uC0C1\uC758 \uCD5C\uADFC \uB300\uD654\uC5D0 \uB300\uD574 \uC5B4\uB5A4 \uB85C\uC5B4\uBD81\uC774 \uBC1C\uB3D9\uD558\uB294\uC9C0 \uACC4\uC0B0\uD569\uB2C8\uB2E4." : "\uB85C\uC5B4\uBD81 \uC5C6\uC74C";
+    meta.textContent = lore ? '\uAC00\uC0C1\uC758 \uCD5C\uADFC \uB300\uD654\uC5D0 \uB300\uD574 \uC5B4\uB5A4 \uB85C\uC5B4\uBD81\uC774 \uBC1C\uB3D9\uD558\uB294\uC9C0 \uACC4\uC0B0\uD569\uB2C8\uB2E4. \uC785\uB825\uC774 \uBE44\uC5B4 \uC788\uC5B4\uB3C4 "\uC0C1\uC2DC\uD65C\uC131" \uD56D\uBAA9\uC740 \uB9E4 \uD134 \uBB34\uC870\uAC74 \uD504\uB86C\uD504\uD2B8\uC5D0 \uC2E4\uB9BD\uB2C8\uB2E4 \u2014 \uADF8 \uD1A0\uD070 \uD569\uACC4\uAC00 \uC2DC\uBBAC\uBD07\uC774 \uBB34\uAC70\uC6B4 \uC774\uC720\uC785\uB2C8\uB2E4. \uB300\uD654\uB97C \uC785\uB825\uD558\uBA74 \uC5B4\uB5A4 \uD56D\uBAA9\uC774 \uC5B4\uB5A4 \uD0A4 \uB54C\uBB38\uC5D0 \uCD94\uAC00\uB85C \uBC1C\uB3D9\uD558\uB294\uC9C0 \uBC1C\uB3D9 \uC0AC\uC720\uC640 \uD568\uAED8 \uD45C\uC2DC\uB429\uB2C8\uB2E4.' : "\uB85C\uC5B4\uBD81 \uC5C6\uC74C";
     header.append(h2, meta);
     const layout = document.createElement("div");
     layout.className = "activate-layout";
@@ -4902,6 +4903,7 @@ ${Array.from(extras).join(" ")}` : text;
         if (state.activeTab === tab.id) return;
         clearTabResources();
         state.activeTab = tab.id;
+        renderTabs();
         render();
       });
       nav.append(button);

@@ -116,6 +116,7 @@ function renderTabs() {
       if (state.activeTab === tab.id) return;
       clearTabResources();
       state.activeTab = tab.id;
+      renderTabs();
       render();
     });
     nav.append(button);

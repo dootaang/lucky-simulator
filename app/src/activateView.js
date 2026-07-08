@@ -8,7 +8,9 @@ export function renderActivateView(container, ctx) {
   const h2 = document.createElement('h2');
   h2.textContent = '활성화 시뮬레이터';
   const meta = document.createElement('p');
-  meta.textContent = lore ? '가상의 최근 대화에 대해 어떤 로어북이 발동하는지 계산합니다.' : '로어북 없음';
+  meta.textContent = lore
+    ? '가상의 최근 대화에 대해 어떤 로어북이 발동하는지 계산합니다. 입력이 비어 있어도 "상시활성" 항목은 매 턴 무조건 프롬프트에 실립니다 — 그 토큰 합계가 시뮬봇이 무거운 이유입니다. 대화를 입력하면 어떤 항목이 어떤 키 때문에 추가로 발동하는지 발동 사유와 함께 표시됩니다.'
+    : '로어북 없음';
   header.append(h2, meta);
 
   const layout = document.createElement('div');
