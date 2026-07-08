@@ -6,6 +6,7 @@ import { renderLorebookView } from './lorebookView.js';
 import { renderActivateView } from './activateView.js';
 import { renderAssetsView } from './assetsView.js';
 import { renderEngineView } from './engineView.js';
+import { renderPlayView } from './playView.js';
 
 const tabs = [
   { id: 'overview', label: '개요' },
@@ -14,7 +15,15 @@ const tabs = [
   { id: 'activate', label: '활성화 시뮬' },
   { id: 'assets', label: '에셋' },
   { id: 'engine', label: '엔진(실험)' },
+  { id: 'play', label: '플레이(실험)' },
 ];
+
+const KNOWN_ORIGINS = [
+  'https://generativelanguage.googleapis.com/',
+  'https://api.openai.com/',
+  'https://api.anthropic.com/',
+];
+let allowedCustomOrigin = '';
 
 const state = {
   parsed: null,
@@ -37,7 +46,17 @@ detectAvifSupport().then((ok) => {
 });
 
 function disableNetworkApis() {
-  window.fetch = () => Promise.reject(new Error('Network requests are disabled in this local app.'));
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (isAllowedFetchUrl(url)) return originalFetch(input, init);
+    return Promise.reject(new Error('Network requests are disabled except for the selected BYOK provider.'));
+  };
+  window.SIMBOT_NETWORK_POLICY = {
+    setAllowedCustomOrigin(origin) {
+      allowedCustomOrigin = origin || '';
+    },
+  };
   const OriginalXHR = window.XMLHttpRequest;
   window.XMLHttpRequest = function XMLHttpRequestDisabled() {
     const xhr = new OriginalXHR();
@@ -113,7 +132,7 @@ function renderTabs() {
     button.className = 'tab';
     button.textContent = tab.label;
     button.setAttribute('aria-selected', String(state.activeTab === tab.id));
-    button.disabled = !state.parsed && tab.id !== 'overview' && tab.id !== 'engine';
+    button.disabled = !state.parsed && tab.id !== 'overview' && tab.id !== 'engine' && tab.id !== 'play';
     button.addEventListener('click', () => {
       if (state.activeTab === tab.id) return;
       clearTabResources();
@@ -171,6 +190,10 @@ function render() {
     state.cleanup = renderEngineView(panel, ctx);
     return;
   }
+  if (state.activeTab === 'play') {
+    state.cleanup = renderPlayView(panel, ctx);
+    return;
+  }
 
   if (!state.parsed) {
     panel.append(renderEmptyOverview());
@@ -182,6 +205,17 @@ function render() {
   if (state.activeTab === 'lorebook') state.cleanup = renderLorebookView(panel, ctx);
   if (state.activeTab === 'activate') state.cleanup = renderActivateView(panel, ctx);
   if (state.activeTab === 'assets') state.cleanup = renderAssetsView(panel, ctx);
+}
+
+function isAllowedFetchUrl(url) {
+  try {
+    const parsed = new URL(url, window.location.href);
+    const href = parsed.href;
+    if (KNOWN_ORIGINS.some((origin) => href.startsWith(origin))) return true;
+    return !!allowedCustomOrigin && parsed.protocol === 'https:' && parsed.origin === allowedCustomOrigin;
+  } catch (_) {
+    return false;
+  }
 }
 
 function createContext() {

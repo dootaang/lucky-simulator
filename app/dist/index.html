@@ -785,6 +785,163 @@ details.source-preview pre,
   color: var(--muted);
 }
 
+.play-view {
+  display: grid;
+  gap: 14px;
+}
+
+.play-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 14px;
+}
+
+.play-chat-panel,
+.play-side-panel,
+.play-side-section,
+.play-settings {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.play-chat-panel,
+.play-side-panel {
+  align-self: start;
+  display: grid;
+  gap: 14px;
+}
+
+.play-chat-header {
+  margin-bottom: 0;
+}
+
+.play-message-list {
+  display: grid;
+  gap: 10px;
+  min-height: 420px;
+  max-height: 62vh;
+  overflow: auto;
+  padding: 4px;
+}
+
+.play-empty {
+  align-self: center;
+  justify-self: center;
+  color: var(--muted);
+}
+
+.play-message {
+  max-width: min(760px, 92%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.play-message.user {
+  justify-self: end;
+  background: #e8f2f0;
+}
+
+.play-message.assistant {
+  justify-self: start;
+  background: #f8fbfa;
+}
+
+.play-message-text {
+  white-space: pre-wrap;
+}
+
+.play-chip-row,
+.play-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.play-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.play-input {
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.play-side-panel {
+  position: sticky;
+  top: 12px;
+}
+
+.play-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.play-settings summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.play-settings select,
+.play-settings input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 10px 12px;
+}
+
+.play-hidden {
+  display: none;
+}
+
+.play-notice {
+  margin: 0;
+}
+
+.play-side-section {
+  display: grid;
+  gap: 10px;
+}
+
+.play-side-section h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.play-context-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f3f6f5;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.play-token-meter {
+  border: 1px solid #9bc9c3;
+  background: #e8f5f2;
+  color: var(--accent-strong);
+  border-radius: 8px;
+  padding: 10px;
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .topbar,
   .view-header,
@@ -799,8 +956,13 @@ details.source-preview pre,
   }
 
   .activate-layout,
-  .engine-layout {
+  .engine-layout,
+  .play-layout {
     grid-template-columns: 1fr;
+  }
+
+  .play-side-panel {
+    position: static;
   }
 
   .engine-header-controls {
@@ -825,9 +987,15 @@ details.source-preview pre,
   }
 
   .lore-entry summary,
-  .activation-head {
+  .activation-head,
+  .play-input-row {
     align-items: start;
     flex-direction: column;
+  }
+
+  .play-input-row {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -4289,7 +4457,7 @@ details.source-preview pre,
   var require_tokens = __commonJS({
     "core/lorebook/tokens.js"(exports, module) {
       "use strict";
-      function estimateTokens(text) {
+      function estimateTokens2(text) {
         const s = String(text == null ? "" : text).trim();
         if (!s) return 0;
         const cjk = (s.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g) || []).length;
@@ -4299,7 +4467,7 @@ details.source-preview pre,
       }
       function estimateEntryTokens(entry) {
         if (!entry || entry.isFolder) return 0;
-        return estimateTokens(entry.content);
+        return estimateTokens2(entry.content);
       }
       function estimateLorebookTokens2(entries) {
         const real = (entries || []).filter((e) => e && !e.isFolder);
@@ -4335,7 +4503,7 @@ details.source-preview pre,
         }
         return { budget: limit, used, kept, dropped };
       }
-      module.exports = { estimateTokens, estimateEntryTokens, estimateLorebookTokens: estimateLorebookTokens2, applyTokenBudget };
+      module.exports = { estimateTokens: estimateTokens2, estimateEntryTokens, estimateLorebookTokens: estimateLorebookTokens2, applyTokenBudget };
     }
   });
 
@@ -4816,30 +4984,30 @@ details.source-preview pre,
       function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
       }
-      function entityList(schema2, type) {
-        const block = (schema2.entities || []).find((entry) => entry.type === type);
+      function entityList(schema4, type) {
+        const block = (schema4.entities || []).find((entry) => entry.type === type);
         return block && Array.isArray(block.instances) ? block.instances : [];
       }
-      function findEntity(schema2, type, predicate) {
-        return entityList(schema2, type).find(predicate) || null;
+      function findEntity(schema4, type, predicate) {
+        return entityList(schema4, type).find(predicate) || null;
       }
-      function findById(schema2, type, id) {
-        return findEntity(schema2, type, (entry) => String(entry.id) === String(id));
+      function findById(schema4, type, id) {
+        return findEntity(schema4, type, (entry) => String(entry.id) === String(id));
       }
-      function findRoom(schema2, roomNo) {
-        return findEntity(schema2, "room", (entry) => String(entry.no) === String(roomNo));
+      function findRoom(schema4, roomNo) {
+        return findEntity(schema4, "room", (entry) => String(entry.no) === String(roomNo));
       }
-      function findMenu(schema2, menuName) {
-        return findEntity(schema2, "menuItem", (entry) => entry.name === menuName);
+      function findMenu(schema4, menuName) {
+        return findEntity(schema4, "menuItem", (entry) => entry.name === menuName);
       }
-      function scaleById(schema2, id) {
-        return (schema2.scales || []).find((scale) => scale.id === id) || null;
+      function scaleById(schema4, id) {
+        return (schema4.scales || []).find((scale) => scale.id === id) || null;
       }
-      function ladderById(schema2, id) {
-        return (schema2.ladders || []).find((ladder) => ladder.id === id) || null;
+      function ladderById(schema4, id) {
+        return (schema4.ladders || []).find((ladder) => ladder.id === id) || null;
       }
-      function formulaById(schema2, id) {
-        return (schema2.formulas || []).find((formula) => formula.id === id) || null;
+      function formulaById(schema4, id) {
+        return (schema4.formulas || []).find((formula) => formula.id === id) || null;
       }
       function rankIndex(ladder, rank) {
         return (ladder.ranks || []).findIndex((item) => item.id === rank);
@@ -4870,8 +5038,8 @@ details.source-preview pre,
     "../engine/core/createState.js"(exports, module) {
       "use strict";
       var { clone, entityList, ladderById, scaleById } = require_utils();
-      function createState2(schema2, seed) {
-        const initial = clone(schema2.initialState || {});
+      function createState2(schema4, seed) {
+        const initial = clone(schema4.initialState || {});
         const state2 = {
           day: Number(initial.day || 1),
           gold: Number(initial.gold || 0),
@@ -4880,16 +5048,16 @@ details.source-preview pre,
           staff: Array.isArray(initial.staff) ? clone(initial.staff) : [],
           rooms: clone(initial.rooms || {}),
           player: clone(initial.player || { level: 1, exp: 0 }),
-          reputation: normalizeReputation(schema2, initial.reputation || {}),
-          npcs: normalizeNpcs(schema2, initial.npcs || {}),
+          reputation: normalizeReputation(schema4, initial.reputation || {}),
+          npcs: normalizeNpcs(schema4, initial.npcs || {}),
           pendingCheckouts: [],
           unpaidWages: Number(initial.unpaidWages || 0)
         };
         if (seed != null) state2.seed = seed;
         return state2;
       }
-      function normalizeReputation(schema2, initial) {
-        const ladder = ladderById(schema2, "reputation");
+      function normalizeReputation(schema4, initial) {
+        const ladder = ladderById(schema4, "reputation");
         const out = {};
         for (const axis of ladder && ladder.axes || []) {
           const value = initial[axis];
@@ -4901,11 +5069,11 @@ details.source-preview pre,
         }
         return out;
       }
-      function normalizeNpcs(schema2, initial) {
-        const affinity = scaleById(schema2, "affinity");
+      function normalizeNpcs(schema4, initial) {
+        const affinity = scaleById(schema4, "affinity");
         const defaultAffinity = affinity ? Number(affinity.default || 0) : 0;
         const out = {};
-        for (const npc of entityList(schema2, "npc")) {
+        for (const npc of entityList(schema4, "npc")) {
           const current = initial[npc.id] || {};
           out[npc.id] = {
             affinity: Number(current.affinity == null ? defaultAffinity : current.affinity),
@@ -4923,20 +5091,20 @@ details.source-preview pre,
     "../engine/core/selectors.js"(exports, module) {
       "use strict";
       var { entityList, findRoom, scaleById, ladderById, rankIndex } = require_utils();
-      function staffMax2(schema2, state2) {
+      function staffMax2(schema4, state2) {
         const level = String(state2.facilities && state2.facilities.quarters || 1);
-        const table = schema2.gates && schema2.gates.staffMaxByQuartersLevel;
+        const table = schema4.gates && schema4.gates.staffMaxByQuartersLevel;
         return Number(table && table[level] || 0);
       }
-      function availableMenu2(schema2, state2, category) {
+      function availableMenu2(schema4, state2, category) {
         const kitchen = Number(state2.facilities && state2.facilities.kitchen || 1);
-        return entityList(schema2, "menuItem").filter((item) => {
+        return entityList(schema4, "menuItem").filter((item) => {
           if (category && item.category !== category) return false;
           return Number(item.requiresKitchenLevel || 1) <= kitchen;
         });
       }
-      function roomStatus2(schema2, state2) {
-        return entityList(schema2, "room").map((room) => {
+      function roomStatus2(schema4, state2) {
+        return entityList(schema4, "room").map((room) => {
           const occupants = state2.rooms && state2.rooms[String(room.no)] || [];
           const capacity = room.capacity == null ? null : Number(room.capacity);
           return {
@@ -4951,25 +5119,25 @@ details.source-preview pre,
           };
         });
       }
-      function tierOf(schema2, scaleId, value) {
-        const scale = scaleById(schema2, scaleId);
+      function tierOf(schema4, scaleId, value) {
+        const scale = scaleById(schema4, scaleId);
         if (!scale) return null;
         const n = Number(value);
         return (scale.tiers || []).find((tier) => n >= tier.range[0] && n <= tier.range[1]) || null;
       }
-      function summarize2(schema2, state2) {
-        const labels = reputationLabels(schema2);
+      function summarize3(schema4, state2) {
+        const labels = reputationLabels(schema4);
         const facilities = state2.facilities || {};
         const resources = state2.resources || {};
         const lines = [];
         lines.push(`[\uC5EC\uAD00] ${state2.day}\uC77C\uCC28 \xB7 \uACE8\uB4DC ${formatNumber(state2.gold)}\uC6D0 \xB7 \uC2DD\uC790\uC7AC ${resources.food || 0}\uC778\uBD84 \xB7 \uC8FC\uB958 ${resources.drink || 0}\uC794 \xB7 \uC2DC\uC124 \uC8FC\uC810${facilities.tavern || 0}/\uC8FC\uBC29${facilities.kitchen || 0}/\uAC1D\uC2E4${facilities.room || 0}/\uC219\uC18C${facilities.quarters || 0}`);
         const staff = (state2.staff || []).map((item) => {
-          const npc = entityList(schema2, "npc").find((entry) => entry.id === item.npcId);
+          const npc = entityList(schema4, "npc").find((entry) => entry.id === item.npcId);
           return `${npc && npc.nameKo || item.npcId}(\uC77C\uAE09 ${formatNumber(item.dailyWage)})`;
         });
         lines.push(`[\uC9C1\uC6D0] ${staff.length ? staff.join(", ") : "\uC5C6\uC74C"}`);
         const occupied = [];
-        for (const status of roomStatus2(schema2, state2)) {
+        for (const status of roomStatus2(schema4, state2)) {
           for (const guest of status.occupants) occupied.push(`${status.no}\uD638 ${guest.guestName}(${guest.nightsLeft}\uBC15 \uB0A8\uC74C)`);
         }
         lines.push(`[\uAC1D\uC2E4] ${occupied.length ? occupied.join(" \xB7 ") + " \xB7 \uB098\uBA38\uC9C0 \uACF5\uC2E4" : "\uC804 \uAC1D\uC2E4 \uACF5\uC2E4"}`);
@@ -4977,21 +5145,21 @@ details.source-preview pre,
         lines.push(`[\uD3C9\uD310] ${repParts.join(" \xB7 ")}`);
         return lines.slice(0, 4).join("\n");
       }
-      function npcSummary2(schema2, state2, npcId) {
-        const npc = entityList(schema2, "npc").find((entry) => entry.id === npcId);
+      function npcSummary2(schema4, state2, npcId) {
+        const npc = entityList(schema4, "npc").find((entry) => entry.id === npcId);
         const data = state2.npcs && state2.npcs[npcId];
         if (!npc || !data) return "";
-        const tier = tierOf(schema2, "affinity", data.affinity);
+        const tier = tierOf(schema4, "affinity", data.affinity);
         const range = tier ? `${tier.range[0]}~${tier.range[1]}` : "?";
         const forbidden = tier && tier.forbidden && tier.forbidden.length ? `, \uAE08\uC9C0: ${tier.forbidden.join("/")}` : "";
         return `${npc.nameKo || npc.id}: \uD638\uAC10 ${data.affinity} \u2014 ${tier && tier.label || "\uBBF8\uBD84\uB958"}(${range})${forbidden}`;
       }
-      function reputationLabels(schema2) {
-        const ladder = ladderById(schema2, "reputation");
+      function reputationLabels(schema4) {
+        const ladder = ladderById(schema4, "reputation");
         return ladder && ladder.axisLabels || {};
       }
-      function rankWeight(schema2, state2, axis) {
-        const ladder = ladderById(schema2, "reputation");
+      function rankWeight(schema4, state2, axis) {
+        const ladder = ladderById(schema4, "reputation");
         if (!ladder || !state2.reputation || !state2.reputation[axis]) return 0;
         const idx = rankIndex(ladder, state2.reputation[axis].rank);
         const max = Math.max(1, (ladder.ranks || []).length - 1);
@@ -5000,7 +5168,7 @@ details.source-preview pre,
       function formatNumber(n) {
         return Number(n || 0).toLocaleString("ko-KR");
       }
-      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, roomStatus: roomStatus2, tierOf, summarize: summarize2, npcSummary: npcSummary2, rankWeight };
+      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, roomStatus: roomStatus2, tierOf, summarize: summarize3, npcSummary: npcSummary2, rankWeight };
     }
   });
 
@@ -5010,7 +5178,7 @@ details.source-preview pre,
       "use strict";
       var { clone, formulaById, findMenu, entityList } = require_utils();
       var { availableMenu: availableMenu2, rankWeight } = require_selectors();
-      function runDayEnd(schema2, state2, rng2) {
+      function runDayEnd(schema4, state2, rng2) {
         const next = clone(state2);
         const report = {
           day: state2.day,
@@ -5025,25 +5193,25 @@ details.source-preview pre,
           unpaidWagesAdded: 0,
           checkouts: []
         };
-        settleRevenue(schema2, next, rng2, report);
+        settleRevenue(schema4, next, rng2, report);
         deductWages(next, report);
         checkoutDue(next, report);
         advanceDay(next);
         return { state: next, report };
       }
-      function settleRevenue(schema2, state2, rng2, report) {
-        const daily = formulaById(schema2, "daily_revenue");
+      function settleRevenue(schema4, state2, rng2, report) {
+        const daily = formulaById(schema4, "daily_revenue");
         const level = String(state2.facilities && state2.facilities.tavern || 1);
         const baseline = daily && daily.baseline && daily.baseline[level];
         if (!baseline) return;
         const range = baseline.customers || [0, 0];
         const baseCustomers = rng2.int(range[0], range[1]);
         const staffBonus = Math.min(0.25, (state2.staff || []).length * 0.05);
-        const repBonus = (rankWeight(schema2, state2, "village") + rankWeight(schema2, state2, "advent")) * 0.2;
+        const repBonus = (rankWeight(schema4, state2, "village") + rankWeight(schema4, state2, "advent")) * 0.2;
         const customers = Math.min(Number(baseline.cap || baseCustomers), Math.max(0, Math.round(baseCustomers * (1 + staffBonus + repBonus))));
         report.customers = customers;
-        const foodMenus = availableMenu2(schema2, state2, "\uC694\uB9AC");
-        const drinkMenus = availableMenu2(schema2, state2, "\uC8FC\uB958");
+        const foodMenus = availableMenu2(schema4, state2, "\uC694\uB9AC");
+        const drinkMenus = availableMenu2(schema4, state2, "\uC8FC\uB958");
         for (let i = 0; i < customers; i++) {
           const foodSold = sellRandomMenu(state2, rng2, foodMenus, "food", report);
           const drinkSold = sellRandomMenu(state2, rng2, drinkMenus, "drink", report);
@@ -5065,7 +5233,7 @@ details.source-preview pre,
         return true;
       }
       function addSale(sales, menuName, qty, price) {
-        const existing = sales.find((row) => row.menuName === menuName);
+        const existing = sales.find((row2) => row2.menuName === menuName);
         if (existing) {
           existing.qty += qty;
           existing.price += price;
@@ -5123,11 +5291,11 @@ details.source-preview pre,
         rankIndex,
         normalizeInt
       } = require_utils();
-      function applyEvent2(schema2, state2, event, rng2) {
+      function applyEvent2(schema4, state2, event, rng2) {
         const type = event && event.id;
         const params = event && event.params || event || {};
         if (type === "day_end") {
-          const result = runDayEnd(schema2, state2, rng2);
+          const result = runDayEnd(schema4, state2, rng2);
           return { state: result.state, log: [{ ok: true, event: type, report: result.report }] };
         }
         const next = clone(state2);
@@ -5143,21 +5311,21 @@ details.source-preview pre,
           case "resource_delta":
             return resourceDelta(next, params, ok, fail);
           case "scale_delta":
-            return scaleDelta(schema2, next, params, ok, fail);
+            return scaleDelta(schema4, next, params, ok, fail);
           case "rep_event":
-            return repEvent(schema2, next, params, rng2, ok, fail);
+            return repEvent(schema4, next, params, rng2, ok, fail);
           case "exp_gain":
-            return expGain(schema2, next, params, rng2, ok, fail);
+            return expGain(schema4, next, params, rng2, ok, fail);
           case "checkin":
-            return checkin(schema2, next, params, ok, fail);
+            return checkin(schema4, next, params, ok, fail);
           case "checkout":
             return checkout(next, params, ok, fail);
           case "sale":
-            return sale(schema2, next, params, ok, fail);
+            return sale(schema4, next, params, ok, fail);
           case "purchase":
-            return purchase(schema2, next, params, ok, fail);
+            return purchase(schema4, next, params, ok, fail);
           case "hire":
-            return hire(schema2, next, params, ok, fail);
+            return hire(schema4, next, params, ok, fail);
           case "fire":
             return fire(next, params, ok, fail);
           default:
@@ -5178,10 +5346,10 @@ details.source-preview pre,
         state2.resources[resource] = Math.max(0, before + amount);
         return ok({ resource, amount, before, after: state2.resources[resource], reason: params.reason || "" });
       }
-      function scaleDelta(schema2, state2, params, ok, fail) {
+      function scaleDelta(schema4, state2, params, ok, fail) {
         const scaleId = params.scale || "affinity";
         const target = params.target || params.npcId;
-        const scale = scaleById(schema2, scaleId);
+        const scale = scaleById(schema4, scaleId);
         if (!scale) return fail("unknown_scale", scaleId);
         if (!target || !state2.npcs || !state2.npcs[target]) return fail("unknown_target", target);
         const counterKey = `${scaleId}DeltaToday`;
@@ -5201,8 +5369,8 @@ details.source-preview pre,
         const rawDelta = base + charBonus;
         const range = scale.range || [0, 200];
         const after = clamp(before + rawDelta, Number(range[0]), Number(range[1]));
-        const fromTier = tierOf(schema2, scaleId, before);
-        const toTier = tierOf(schema2, scaleId, after);
+        const fromTier = tierOf(schema4, scaleId, before);
+        const toTier = tierOf(schema4, scaleId, after);
         state2.npcs[target][scaleId] = after;
         state2.npcs[target][counterKey] = used + 1;
         const entry = { scale: scaleId, target, before, after, delta: after - before, size, direction, charBonus, reason: params.reason || "" };
@@ -5211,8 +5379,8 @@ details.source-preview pre,
         }
         return ok(entry);
       }
-      function repEvent(schema2, state2, params, rng2, ok, fail) {
-        const ladder = ladderById(schema2, "reputation");
+      function repEvent(schema4, state2, params, rng2, ok, fail) {
+        const ladder = ladderById(schema4, "reputation");
         const axis = params.axis;
         const category = params.category;
         if (!ladder || !ladder.axes.includes(axis)) return fail("unknown_reputation_axis", axis);
@@ -5254,8 +5422,8 @@ details.source-preview pre,
         state2.reputation[axis] = { rank, exp };
         return ok({ axis, category, delta, before, after: state2.reputation[axis], rankChanged: changed, reason: params.reason || "" });
       }
-      function expGain(schema2, state2, params, rng2, ok, fail) {
-        const ladder = ladderById(schema2, "player_level");
+      function expGain(schema4, state2, params, rng2, ok, fail) {
+        const ladder = ladderById(schema4, "player_level");
         if (!ladder) return fail("missing_player_level_ladder");
         const source = ladder.sources && ladder.sources[params.category];
         if (!source) return fail("unknown_exp_category", params.category);
@@ -5272,9 +5440,9 @@ details.source-preview pre,
         }
         return ok({ category: params.category, amount, before, after: clone(state2.player), levelUps, reason: params.reason || "" });
       }
-      function checkin(schema2, state2, params, ok, fail) {
+      function checkin(schema4, state2, params, ok, fail) {
         const roomNo = String(params.roomNo);
-        const room = findRoom(schema2, roomNo);
+        const room = findRoom(schema4, roomNo);
         const stayDays = normalizeInt(params.stayDays, 1);
         const guestName = params.guestName;
         if (!room) return fail("unknown_room", roomNo);
@@ -5299,8 +5467,8 @@ details.source-preview pre,
         else delete state2.rooms[roomNo];
         return ok({ roomNo, guestName });
       }
-      function sale(schema2, state2, params, ok, fail) {
-        const menu = findMenu(schema2, params.menuName);
+      function sale(schema4, state2, params, ok, fail) {
+        const menu = findMenu(schema4, params.menuName);
         const qty = normalizeInt(params.qty, 1);
         if (!menu) return fail("unknown_menu", params.menuName);
         if (qty <= 0) return fail("invalid_qty", qty);
@@ -5317,10 +5485,10 @@ details.source-preview pre,
         state2.gold += goldDelta2;
         return ok({ menuName: menu.name, qty, goldDelta: goldDelta2 });
       }
-      function purchase(schema2, state2, params, ok, fail) {
+      function purchase(schema4, state2, params, ok, fail) {
         const resource = params.resource || params.resourceId;
         const qty = normalizeInt(params.qty, 1);
-        const def = (schema2.resources || []).find((entry) => entry.id === resource);
+        const def = (schema4.resources || []).find((entry) => entry.id === resource);
         if (!def || resource === "gold") return fail("unknown_resource", resource);
         if (qty <= 0) return fail("invalid_qty", qty);
         const cost = Number(def.basePrice || 0) * qty;
@@ -5329,12 +5497,12 @@ details.source-preview pre,
         state2.resources[resource] = Number(state2.resources[resource] || 0) + qty;
         return ok({ resource, qty, goldDelta: -cost });
       }
-      function hire(schema2, state2, params, ok, fail) {
+      function hire(schema4, state2, params, ok, fail) {
         const npcId = params.npcId;
         const wage = normalizeInt(params.dailyWage);
-        if (!findById(schema2, "npc", npcId)) return fail("unknown_npc", npcId);
+        if (!findById(schema4, "npc", npcId)) return fail("unknown_npc", npcId);
         if ((state2.staff || []).some((staff) => staff.npcId === npcId)) return fail("already_hired", npcId);
-        if ((state2.staff || []).length >= staffMax2(schema2, state2)) return fail("staff_full", npcId);
+        if ((state2.staff || []).length >= staffMax2(schema4, state2)) return fail("staff_full", npcId);
         state2.staff = (state2.staff || []).concat([{ npcId, dailyWage: wage }]);
         return ok({ npcId, dailyWage: wage });
       }
@@ -5381,6 +5549,295 @@ details.source-preview pre,
         };
       }
       module.exports = { createRng: createRng2 };
+    }
+  });
+
+  // src/llm/prompt.js
+  var require_prompt = __commonJS({
+    "src/llm/prompt.js"(exports, module) {
+      var { simulateActivation: simulateActivation2 } = require_activate();
+      var { estimateTokens: estimateTokens2 } = require_tokens();
+      var { summarize: summarize3, npcSummary: npcSummary2 } = require_selectors();
+      var SYSTEM_PROMPT = `\uB2F9\uC2E0\uC740 \uD310\uD0C0\uC9C0 \uC5EC\uAD00 \uACBD\uC601 RP "\uC6A9\uC0AC\uC5EC\uAD00"\uC758 \uB0B4\uB808\uC774\uD130\uB2E4. \uD50C\uB808\uC774\uC5B4({{user}})\uB294 \uC5EC\uAD00 \uC8FC\uC778\uC774\uB2E4.
+
+[\uC808\uB300 \uADDC\uCE59]
+1. \uAC8C\uC784 \uC218\uCE58(\uACE8\uB4DC\xB7\uC7AC\uACE0\xB7\uD638\uAC10\uB3C4\xB7\uD3C9\uD310\xB7\uACBD\uD5D8\uCE58)\uB294 \uC678\uBD80 \uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD55C\uB2E4. \uB108\uB294 \uC218\uCE58\uB97C \uCC3D\uC791\uD558\uAC70\uB098 \uACC4\uC0B0\uD558\uC9C0 \uB9C8\uB77C. \uC0C1\uD0DC \uC815\uBCF4\uC5D0 \uC801\uD78C \uAC12\uB9CC \uC0AC\uC2E4\uB85C \uCDE8\uAE09\uD558\uB77C.
+2. \uC11C\uC0AC\uB294 \uD55C\uAD6D\uC5B4\uB85C, \uC7A5\uBA74 \uC911\uC2EC\uC73C\uB85C \uC9E7\uAC8C(300\uC790 \uB0B4\uC678). NPC \uB300\uC0AC\uC640 \uD589\uB3D9 \uC704\uC8FC. \uD50C\uB808\uC774\uC5B4\uC758 \uD589\uB3D9\uC744 \uB300\uC2E0 \uACB0\uC815\uD558\uC9C0 \uB9C8\uB77C.
+3. NPC \uD589\uB3D9\uC740 [NPC \uC0C1\uD0DC]\uC5D0 \uC801\uD78C \uD2F0\uC5B4 \uADDC\uBC94\uC744 \uB530\uB978\uB2E4. \uAE08\uC9C0 \uD589\uB3D9\uC740 \uC808\uB300 \uC4F0\uC9C0 \uB9C8\uB77C.
+4. \uC751\uB2F5\uC758 \uB9E8 \uB05D\uC5D0, \uC774\uBC88 \uC7A5\uBA74\uC5D0\uC11C \uC2E4\uC81C\uB85C \uC77C\uC5B4\uB09C \uAC8C\uC784 \uC0AC\uAC74\uC744 \uC544\uB798 \uD615\uC2DD\uC758 JSON \uCF54\uB4DC\uBE14\uB85D\uC73C\uB85C \uC81C\uC548\uD558\uB77C. \uC0AC\uAC74\uC774 \uC5C6\uC73C\uBA74 \uBE48 \uBC30\uC5F4.
+
+\`\`\`json
+{"events":[{"id":"sale","params":{"menuName":"\uACE0\uAE30 \uC2A4\uD29C","qty":2}}]}
+\`\`\`
+
+[\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uC0AC\uAC74 (id / params)]
+- sale {menuName, qty} \u2014 \uBA54\uB274 \uD310\uB9E4\uAC00 \uC644\uACB0\uB410\uC744 \uB54C\uB9CC
+- purchase {resource:"food"|"drink", qty} \u2014 \uC7AC\uB8CC \uAD6C\uB9E4
+- checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName}
+- hire {npcId, dailyWage} \u2014 \uC784\uAE08 \uD569\uC758\uAC00 \uB300\uD654\uB85C \uC644\uB8CC\uB41C \uACBD\uC6B0\uB9CC / fire {npcId}
+- scale_delta {scale:"affinity", target:npcId, direction:"+"|"-", size:"S"|"M"|"L"|"XL", reason} \u2014 S=\uC0AC\uC18C\uD55C \uBC30\uB824, M=\uAC70\uB9AC \uC881\uD798, L=\uAE4A\uC740 \uC720\uB300, XL=\uAD00\uACC4 \uC804\uD658\uC810. \uD55C NPC\uB2F9 \uD558\uB8E8 1\uD68C\uB9CC \uC758\uBBF8 \uC788\uC74C.
+- rep_event {axis, category, reason} \u2014 \uD3C9\uD310 \uBCC0\uB3D9. axis\uC640 category\uB294 [\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC \uC120\uD0DD.
+- exp_gain {category, reason} \u2014 \uC758\uBBF8 \uC788\uB294 \uD589\uB3D9\uC5D0\uB9CC, \uB9E4 \uD134 \uAE08\uC9C0.
+- gold_delta {amount, reason} / resource_delta {resource, amount, reason} \u2014 \uC704 \uC0AC\uAC74\uC73C\uB85C \uD45C\uD604 \uBD88\uAC00\uB2A5\uD55C \uACE8\uB4DC\xB7\uC7AC\uACE0 \uBCC0\uB3D9\uB9CC
+- day_end {} \u2014 \uD50C\uB808\uC774\uC5B4\uAC00 \uD558\uB8E8\uB97C \uB9C8\uBB34\uB9AC\uD560 \uB54C ("\uC624\uB298\uC740 \uC5EC\uAE30\uAE4C\uC9C0", "\uC7A0\uC790\uB9AC\uC5D0 \uB4E0\uB2E4" \uB4F1)
+
+[\uC0AC\uAC74 \uADDC\uCE59]
+- \uC2E4\uC81C\uB85C \uC644\uACB0\uB41C \uC77C\uB9CC. \uC9C4\uD589 \uC911\xB7\uACC4\uD68D\uC740 \uC0AC\uAC74\uC774 \uC544\uB2C8\uB2E4.
+- npcId\uB294 [NPC \uBAA9\uB85D]\uC758 \uC601\uBB38 id\uB9CC \uC0AC\uC6A9.
+- \uD655\uC2E0\uC774 \uC5C6\uC73C\uBA74 \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C. \uBE48 \uBC30\uC5F4\uC774 \uC548\uC804\uD558\uB2E4.`;
+      function buildPrompt2({ schema: schema4, state: state2, lore, recentMessages, userInput }) {
+        const stateText = summarize3(schema4, state2);
+        const npcText = relatedNpcText(schema4, state2, recentMessages, userInput);
+        const repCats = reputationCategories(schema4);
+        const npcList = npcListText(schema4);
+        const loreText = loreContext(lore, recentMessages, userInput);
+        const context = [
+          "[\uC0C1\uD0DC]",
+          stateText,
+          "",
+          npcText ? "[NPC \uC0C1\uD0DC]\n" + npcText + "\n" : "",
+          "[\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC]",
+          repCats,
+          "",
+          "[NPC \uBAA9\uB85D]",
+          npcList,
+          "",
+          "[\uC138\uACC4 \uC815\uBCF4]",
+          loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
+          "",
+          "---",
+          String(userInput || "")
+        ].filter((part) => part !== "").join("\n");
+        const messages2 = (recentMessages || []).slice(-8).map((message) => ({
+          role: message.role === "assistant" ? "assistant" : "user",
+          content: String(message.content || "")
+        }));
+        messages2.push({ role: "user", content: context });
+        const injectedParts = {
+          state: estimateTokens2(stateText),
+          npc: estimateTokens2(npcText),
+          repCats: estimateTokens2(repCats),
+          npcList: estimateTokens2(npcList),
+          lore: estimateTokens2(loreText || "")
+        };
+        const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
+        return {
+          system: SYSTEM_PROMPT,
+          messages: messages2,
+          injectedTokens,
+          injectedParts,
+          injectedText: { state: stateText, npc: npcText, repCats, npcList, lore: loreText }
+        };
+      }
+      function parseAssistantResponse2(text) {
+        const source = String(text || "");
+        const blocks = Array.from(source.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
+        let events = [];
+        let jsonBlock = null;
+        if (blocks.length) {
+          jsonBlock = blocks[blocks.length - 1][1].trim();
+          try {
+            const parsed = JSON.parse(jsonBlock);
+            events = Array.isArray(parsed.events) ? parsed.events : [];
+          } catch (_) {
+            events = [];
+          }
+        }
+        const narrative = jsonBlock ? source.replace(blocks[blocks.length - 1][0], "").trim() : source.trim();
+        return { narrative, events };
+      }
+      function relatedNpcText(schema4, state2, recentMessages, userInput) {
+        const haystack = [...(recentMessages || []).map((m) => m.content || ""), userInput || ""].join("\n").toLowerCase();
+        const staff = new Set((state2.staff || []).map((item) => item.npcId));
+        const npcs2 = npcEntities(schema4);
+        const related = npcs2.filter((npc) => {
+          if (staff.has(npc.id)) return true;
+          const names = [npc.id, npc.nameKo, npc.nameEn].filter(Boolean).map((x) => String(x).toLowerCase());
+          return names.some((name) => name && haystack.includes(name));
+        });
+        return related.map((npc) => npcSummary2(schema4, state2, npc.id)).filter(Boolean).join("\n");
+      }
+      function reputationCategories(schema4) {
+        const ladder = schema4.ladders.find((entry) => entry.id === "reputation");
+        return ladder.axes.map((axis) => `${axis}(${ladder.axisLabels[axis] || axis}): ${Object.keys(ladder.categories[axis]).join(", ")}`).join("\n");
+      }
+      function npcListText(schema4) {
+        return npcEntities(schema4).map((npc) => `${npc.id}: ${npc.nameKo}${npc.class ? ` (${npc.class})` : ""}`).join("\n");
+      }
+      function loreContext(lore, recentMessages, userInput) {
+        if (!lore) return "";
+        const text = [...(recentMessages || []).map((m) => m.content || ""), userInput || ""].join("\n");
+        const result = simulateActivation2(lore, text, { scanDepth: 8, tokenBudget: 0 });
+        let used = 0;
+        const query = text.toLowerCase();
+        return result.active.filter((row2) => !row2.entry.constant).sort((a, b) => relevance(a.entry, query) - relevance(b.entry, query) || (a.order || 0) - (b.order || 0)).filter((row2) => {
+          const tokens = Number(row2.tokens || 0);
+          if (used + tokens > 2500) return false;
+          used += tokens;
+          return true;
+        }).map((row2) => `${row2.entry.name || row2.name || "(\uC774\uB984 \uC5C6\uC74C)"}:
+${row2.entry.content}`).join("\n\n");
+      }
+      function relevance(entry, query) {
+        const name = String(entry.name || "").toLowerCase();
+        if (name && query.includes(name)) return 0;
+        const keys = Array.isArray(entry.keys) ? entry.keys.map((key) => String(key).toLowerCase()) : [];
+        if (keys.some((key) => key && query.includes(key))) return 1;
+        return 2;
+      }
+      function npcEntities(schema4) {
+        const block = schema4.entities.find((entry) => entry.type === "npc");
+        return block && Array.isArray(block.instances) ? block.instances : [];
+      }
+      module.exports = { SYSTEM_PROMPT, buildPrompt: buildPrompt2, parseAssistantResponse: parseAssistantResponse2 };
+    }
+  });
+
+  // src/llm/providers.js
+  var require_providers = __commonJS({
+    "src/llm/providers.js"(exports, module) {
+      "use strict";
+      var PROVIDERS2 = {
+        mock: { kind: "mock", base: "", keyRequired: false, defModel: "" },
+        gemini: { kind: "openai", base: "https://generativelanguage.googleapis.com/v1beta/openai", keyRequired: true, defModel: "gemini-2.5-flash" },
+        openai: { kind: "openai", base: "https://api.openai.com/v1", keyRequired: true, defModel: "gpt-4o-mini" },
+        anthropic: { kind: "anthropic", base: "https://api.anthropic.com", keyRequired: true, defModel: "claude-sonnet-5" },
+        custom: { kind: "openai", base: "", keyRequired: true, defModel: "" }
+      };
+      var providerDef2 = (provider) => PROVIDERS2[provider] || PROVIDERS2.mock;
+      async function callProvider2(cfg, prompt) {
+        const def = providerDef2(cfg.provider);
+        if (def.kind === "mock") return mockResponse(prompt);
+        if (def.keyRequired && !cfg.apiKey) throw new Error("API \uD0A4\uAC00 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4");
+        const req = buildRequest(def, cfg, prompt);
+        const bodyText = await requestWithRetry(req, async (request) => {
+          const response = await fetch(request.url, {
+            method: request.method,
+            headers: request.headers,
+            body: request.body
+          });
+          return {
+            status: response.status,
+            bodyText: await response.text(),
+            retryAfterMs: retryAfterMs(response.headers.get("retry-after"))
+          };
+        }, { retryNetwork: false });
+        return parseResponse(req.kind, JSON.parse(bodyText));
+      }
+      function buildRequest(def, cfg, prompt) {
+        const base = String(cfg.baseUrl || def.base || "").replace(/\/+$/, "");
+        if (!base) throw new Error("\uC11C\uBC84 \uC8FC\uC18C(endpoint)\uB97C \uC124\uC815\uD558\uC138\uC694");
+        const model = cfg.model || def.defModel;
+        if (!model) throw new Error("\uBAA8\uB378\uBA85\uC744 \uC785\uB825\uD558\uC138\uC694");
+        if (def.kind === "anthropic") {
+          return {
+            url: base + "/v1/messages",
+            method: "POST",
+            kind: "anthropic",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": cfg.apiKey || "",
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerous-direct-browser-access": "true"
+            },
+            body: JSON.stringify({
+              model,
+              max_tokens: 1200,
+              temperature: 0.7,
+              system: prompt.system,
+              messages: prompt.messages
+            })
+          };
+        }
+        const body = {
+          model,
+          messages: [{ role: "system", content: prompt.system }].concat(prompt.messages),
+          temperature: 0.7
+        };
+        if (cfg.provider === "openai") body.max_completion_tokens = 1200;
+        else body.max_tokens = 1200;
+        return {
+          url: base + "/chat/completions",
+          method: "POST",
+          kind: "openai",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + (cfg.apiKey || "") },
+          body: JSON.stringify(body)
+        };
+      }
+      function parseResponse(kind, json) {
+        if (kind === "anthropic") {
+          if (json && json.stop_reason === "max_tokens") throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
+          const out2 = json && json.content && json.content[0] && json.content[0].text;
+          if (typeof out2 !== "string" || !out2.trim()) throw new Error("\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
+          return out2;
+        }
+        const choice = json && json.choices && json.choices[0];
+        const finish = choice && choice.finish_reason;
+        if (finish === "length") throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
+        if (finish === "content_filter") throw new Error("\uC548\uC804 \uD544\uD130\uAC00 \uC751\uB2F5\uC744 \uCC28\uB2E8\uD588\uC5B4\uC694");
+        const out = choice && choice.message && choice.message.content;
+        if (typeof out !== "string" || !out.trim()) throw new Error("\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
+        return out;
+      }
+      async function requestWithRetry(req, doFetch, opts = {}) {
+        const retries = opts.retries == null ? 2 : opts.retries;
+        const retries429 = opts.retries429 == null ? 4 : opts.retries429;
+        let transient = 0;
+        let limited = 0;
+        for (; ; ) {
+          let result;
+          try {
+            result = await doFetch(req);
+          } catch (err) {
+            throw new Error("\uB124\uD2B8\uC6CC\uD06C \uC694\uCCAD\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. CORS \uB610\uB294 \uC81C\uACF5\uC790 \uC124\uC815\uC744 \uD655\uC778\uD558\uC138\uC694.");
+          }
+          if (result.status >= 200 && result.status < 300) return result.bodyText;
+          if (result.status === 429 && limited < retries429) {
+            await sleep(Math.min(6e4, result.retryAfterMs || [2e3, 5e3, 12e3, 3e4][Math.min(limited, 3)]));
+            limited += 1;
+            continue;
+          }
+          if (isTransientStatus(result.status) && result.status !== 429 && transient < retries) {
+            await sleep(600 * Math.pow(2, transient));
+            transient += 1;
+            continue;
+          }
+          throw new Error(errorText(result.status, result.bodyText));
+        }
+      }
+      function errorText(status, bodyText) {
+        let msg = "";
+        try {
+          const json = JSON.parse(bodyText);
+          const value = json && json.error && (json.error.message || json.error);
+          if (typeof value === "string") msg = value;
+        } catch (_) {
+        }
+        if (!msg) msg = String(bodyText || "").replace(/\s+/g, " ").trim();
+        msg = msg.slice(0, 240);
+        const hint = status === 401 || status === 403 ? "API \uD0A4\xB7\uAD8C\uD55C\uC744 \uD655\uC778\uD558\uC138\uC694" : status === 404 ? "\uBAA8\uB378\uBA85 \uB610\uB294 \uC11C\uBC84 \uC8FC\uC18C\uB97C \uD655\uC778\uD558\uC138\uC694" : status === 402 ? "\uC694\uAE08\uC81C\xB7\uD06C\uB808\uB527\uC744 \uD655\uC778\uD558\uC138\uC694" : status === 429 ? "\uC694\uCCAD \uD55C\uB3C4 \uCD08\uACFC\uC785\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694" : status >= 500 ? "\uC81C\uACF5\uC790 \uC11C\uBC84 \uC624\uB958\uC785\uB2C8\uB2E4" : status === 400 || status === 422 ? "\uC694\uCCAD\uC774 \uAC70\uBD80\uB410\uC2B5\uB2C8\uB2E4. \uBAA8\uB378\xB7\uC124\uC815\uC744 \uD655\uC778\uD558\uC138\uC694" : "\uC694\uCCAD \uC2E4\uD328";
+        return `${hint} (${status})${msg ? ": " + msg : ""}`;
+      }
+      function isTransientStatus(status) {
+        return status === 408 || status === 429 || status >= 500 && status <= 599;
+      }
+      function retryAfterMs(value) {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 ? n * 1e3 : 0;
+      }
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+      async function mockResponse(prompt) {
+        await sleep(200);
+        const last = prompt.messages[prompt.messages.length - 1];
+        const text = String(last && last.content || "");
+        if (text.includes("\uB9C8\uAC10") || text.includes("\uC7A0\uC790\uB9AC\uC5D0") || text.includes("\uC624\uB298\uC740 \uC5EC\uAE30\uAE4C\uC9C0")) {
+          return '\uC190\uB2D8\uB4E4\uC758 \uB9C8\uC9C0\uB9C9 \uC8FC\uBB38\uC774 \uC7A6\uC544\uB4E4\uACE0, \uC5EC\uAD00 \uD640\uC5D0\uB294 \uB4F1\uBD88\uB9CC \uB0AE\uAC8C \uD754\uB4E4\uB9BD\uB2C8\uB2E4. \uB2F9\uC2E0\uC740 \uC7A5\uBD80\uB97C \uB36E\uACE0 \uC624\uB298 \uC601\uC5C5\uC744 \uB9C8\uBB34\uB9AC\uD569\uB2C8\uB2E4.\n\n```json\n{"events":[{"id":"day_end","params":{}}]}\n```';
+        }
+        return '\uC2E4\uBE44\uC544\uAC00 \uACE0\uAE30 \uC2A4\uD29C \uD55C \uADF8\uB987\uC744 \uC190\uB2D8 \uC55E\uC5D0 \uB0B4\uB824\uB193\uC2B5\uB2C8\uB2E4. \uC190\uB2D8\uC740 \uB728\uAC70\uC6B4 \uAE40\uC774 \uC624\uB974\uB294 \uADF8\uB987\uC744 \uBC1B\uC544 \uB4E4\uACE0 \uB9CC\uC871\uC2A4\uB7FD\uAC8C \uACE0\uAC1C\uB97C \uB044\uB355\uC785\uB2C8\uB2E4.\n\n```json\n{"events":[{"id":"sale","params":{"menuName":"\uACE0\uAE30 \uC2A4\uD29C","qty":1}}]}\n```';
+      }
+      module.exports = { PROVIDERS: PROVIDERS2, providerDef: providerDef2, callProvider: callProvider2, buildRequest, parseResponse, requestWithRetry, errorText };
     }
   });
 
@@ -5462,18 +5919,18 @@ details.source-preview pre,
     const chips = document.createElement("div");
     chips.className = "chip-row";
     for (const emotion of orderedEmotions(group)) {
-      const button2 = document.createElement("button");
-      button2.type = "button";
-      button2.className = "chip";
-      button2.textContent = emotion;
-      button2.addEventListener("click", () => {
+      const button3 = document.createElement("button");
+      button3.type = "button";
+      button3.className = "chip";
+      button3.textContent = emotion;
+      button3.addEventListener("click", () => {
         const pick = selectAsset(group, emotion);
         if (!pick) return;
         img.removeAttribute("src");
         img._asset = pick.asset;
         loadImage(img, ctx);
       });
-      chips.append(button2);
+      chips.append(button3);
     }
     body.append(h3, linked, chips);
     if (group.profile) {
@@ -5762,9 +6219,9 @@ details.source-preview pre,
       });
       renderResult(output, lore, result);
     };
-    for (const el2 of [textarea, scanDepth, tokenBudget, caseSensitive.input, wholeWord.input]) {
-      el2.addEventListener("input", run);
-      el2.addEventListener("change", run);
+    for (const el3 of [textarea, scanDepth, tokenBudget, caseSensitive.input, wholeWord.input]) {
+      el3.addEventListener("input", run);
+      el3.addEventListener("change", run);
     }
     run();
     return () => {
@@ -5818,22 +6275,22 @@ ${Array.from(extras).join(" ")}` : text;
       section.append(empty);
       return section;
     }
-    for (const row of rows) section.append(resultRow(row, active));
+    for (const row2 of rows) section.append(resultRow(row2, active));
     return section;
   }
-  function resultRow(row, active) {
+  function resultRow(row2, active) {
     const details = document.createElement(active ? "article" : "details");
     details.className = active ? "activation-row active" : "activation-row";
     const head = active ? document.createElement("div") : document.createElement("summary");
     head.className = "activation-head";
     const name = document.createElement("strong");
-    name.textContent = row.name || "(\uC774\uB984 \uC5C6\uC74C)";
+    name.textContent = row2.name || "(\uC774\uB984 \uC5C6\uC74C)";
     const meta = document.createElement("span");
-    meta.textContent = `${row.tokens || 0} tokens \xB7 ${row.reason}${row.key ? ` \xB7 ${row.key}` : ""}${row.secondaryKey ? ` + ${row.secondaryKey}` : ""}`;
+    meta.textContent = `${row2.tokens || 0} tokens \xB7 ${row2.reason}${row2.key ? ` \xB7 ${row2.key}` : ""}${row2.secondaryKey ? ` + ${row2.secondaryKey}` : ""}`;
     head.append(name, meta);
     const detail = document.createElement("p");
     detail.className = "muted-line";
-    detail.textContent = row.detail || "";
+    detail.textContent = row2.detail || "";
     details.append(head, detail);
     return details;
   }
@@ -5958,18 +6415,16 @@ ${Array.from(extras).join(" ")}` : text;
     return mime.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "svg"].includes(ext);
   }
 
-  // src/engineView.js
+  // src/engineSession.js
   var schema = require_yongsa_inn_v0();
   var { createState } = require_createState();
   var { applyEvent } = require_applyEvent();
   var { createRng } = require_rng();
-  var { summarize, npcSummary, roomStatus, availableMenu, staffMax } = require_selectors();
   var seedValue = 42;
   var engineState = createState(schema, seedValue);
   var rng = createRng(seedValue);
   var logs = [];
   var eventCount = 0;
-  var selectedEvent = "checkin";
   var eventTypes = [
     "checkin",
     "checkout",
@@ -5984,6 +6439,50 @@ ${Array.from(extras).join(" ")}` : text;
     "resource_delta",
     "day_end"
   ];
+  function getSchema() {
+    return schema;
+  }
+  function getEngineState() {
+    return engineState;
+  }
+  function getSeed() {
+    return seedValue;
+  }
+  function getLogs() {
+    return logs;
+  }
+  function getEventCount() {
+    return eventCount;
+  }
+  function resetSession(seed) {
+    seedValue = Number.isFinite(Number(seed)) ? Number(seed) : 42;
+    engineState = createState(schema, seedValue);
+    rng = createRng(seedValue);
+    logs = [];
+    eventCount = 0;
+    return engineState;
+  }
+  function runEvent(event) {
+    const result = applyEvent(schema, engineState, event, rng);
+    if (result.log.some((entry) => entry.ok)) engineState = result.state;
+    eventCount += 1;
+    const item = { event, entries: result.log, index: logs.length + 1 };
+    logs.unshift(item);
+    return item;
+  }
+  function summarizeEvent(type, entry, formatMoney3) {
+    if (!entry.ok) return `${type} \uC2E4\uD328`;
+    if (type === "scale_delta") return entry.capped ? `${entry.target} capped \xB7 ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
+    if (type === "rep_event") return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
+    if (type === "day_end") return `\uD558\uB8E8 \uB9C8\uAC10 \xB7 ${entry.report.day}\uC77C\uCC28 \uC815\uC0B0`;
+    if (entry.goldDelta != null) return `${type} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}`;
+    return `${type} \uC2E4\uD589`;
+  }
+
+  // src/engineView.js
+  var { summarize, npcSummary, roomStatus, availableMenu, staffMax } = require_selectors();
+  var selectedEvent = "checkin";
+  var schema2 = getSchema();
   function renderEngineView(container, ctx) {
     const root = el("div", "engine-view");
     container.append(root);
@@ -5995,13 +6494,6 @@ ${Array.from(extras).join(" ")}` : text;
     return () => {
     };
   }
-  function resetSession(seed) {
-    seedValue = Number.isFinite(Number(seed)) ? Number(seed) : 42;
-    engineState = createState(schema, seedValue);
-    rng = createRng(seedValue);
-    logs = [];
-    eventCount = 0;
-  }
   function renderHeader(render2) {
     const header = el("div", "view-header engine-header");
     const title = el("div");
@@ -6011,7 +6503,7 @@ ${Array.from(extras).join(" ")}` : text;
     p.textContent = "\uAC8C\uC784 \uC0C1\uD0DC\uB97C \uC5D4\uC9C4(\uCF54\uB4DC)\uC774 \uACC4\uC0B0\uD569\uB2C8\uB2E4 - LLM \uC5C6\uC74C";
     title.append(h2, p);
     const controls = el("div", "engine-header-controls");
-    const seed = input("number", String(seedValue));
+    const seed = input("number", String(getSeed()));
     seed.setAttribute("aria-label", "\uC2DC\uB4DC");
     seed.addEventListener("change", () => {
       resetSession(seed.value);
@@ -6028,7 +6520,7 @@ ${Array.from(extras).join(" ")}` : text;
       render2();
     });
     const meta = el("div", "status-pill engine-status");
-    meta.textContent = `${engineState.day}\uC77C\uCC28 \xB7 \uC774\uBCA4\uD2B8 ${eventCount}`;
+    meta.textContent = `${getEngineState().day}\uC77C\uCC28 \xB7 \uC774\uBCA4\uD2B8 ${getEventCount()}`;
     controls.append(labelInline("Seed", seed), reset, endDay, meta);
     header.append(title, controls);
     return header;
@@ -6039,23 +6531,25 @@ ${Array.from(extras).join(" ")}` : text;
     return layout;
   }
   function renderStatePanel(ctx) {
+    const engineState2 = getEngineState();
     const panel = el("section", "engine-state-panel");
     const summary = el("pre", "engine-summary");
-    summary.textContent = summarize(schema, engineState);
+    summary.textContent = summarize(schema2, engineState2);
     const statGrid = el("div", "engine-stat-grid");
     statGrid.append(
-      stat("Gold", formatMoney(engineState.gold)),
-      stat("Food", `${engineState.resources.food || 0} \uC778\uBD84`),
-      stat("Drink", `${engineState.resources.drink || 0} \uC794`),
-      stat("Facilities", facilityText(engineState.facilities))
+      stat("Gold", formatMoney(engineState2.gold)),
+      stat("Food", `${engineState2.resources.food || 0} \uC778\uBD84`),
+      stat("Drink", `${engineState2.resources.drink || 0} \uC794`),
+      stat("Facilities", facilityText(engineState2.facilities))
     );
     panel.append(summary, statGrid, renderRooms(), renderStaff(), renderReputation(), renderChangedNpcs());
     return panel;
   }
   function renderRooms() {
+    const engineState2 = getEngineState();
     const section = titledSection("\uAC1D\uC2E4");
     const grid = el("div", "engine-room-grid");
-    for (const room of roomStatus(schema, engineState)) {
+    for (const room of roomStatus(schema2, engineState2)) {
       const card = el("article", `engine-room${room.locked ? " locked" : ""}`);
       const title = el("strong");
       title.textContent = `${room.no}\uD638 \xB7 ${room.kind}`;
@@ -6068,47 +6562,50 @@ ${Array.from(extras).join(" ")}` : text;
     return section;
   }
   function renderStaff() {
+    const engineState2 = getEngineState();
     const section = titledSection("\uC9C1\uC6D0");
-    const max = staffMax(schema, engineState);
-    const wage = engineState.staff.reduce((sum, staff) => sum + Number(staff.dailyWage || 0), 0);
+    const max = staffMax(schema2, engineState2);
+    const wage = engineState2.staff.reduce((sum, staff) => sum + Number(staff.dailyWage || 0), 0);
     const line = el("p", "muted-line");
-    line.textContent = `\uACE0\uC6A9 ${engineState.staff.length}/${max} \xB7 \uC77C\uAE09 \uD569\uACC4 ${formatMoney(wage)}`;
+    line.textContent = `\uACE0\uC6A9 ${engineState2.staff.length}/${max} \xB7 \uC77C\uAE09 \uD569\uACC4 ${formatMoney(wage)}`;
     section.append(line);
-    if (engineState.unpaidWages > 0) {
+    if (engineState2.unpaidWages > 0) {
       const warning = el("p", "engine-warning");
-      warning.textContent = `\uBBF8\uC9C0\uAE09 \uC784\uAE08 ${formatMoney(engineState.unpaidWages)}`;
+      warning.textContent = `\uBBF8\uC9C0\uAE09 \uC784\uAE08 ${formatMoney(engineState2.unpaidWages)}`;
       section.append(warning);
     }
     const list = el("div", "engine-list");
-    if (!engineState.staff.length) {
+    if (!engineState2.staff.length) {
       const empty = el("div", "muted-line");
       empty.textContent = "\uC5C6\uC74C";
       list.append(empty);
     } else {
-      for (const staff of engineState.staff) {
-        const row = el("div", "engine-list-row");
-        row.textContent = `${npcName(staff.npcId)} \xB7 ${formatMoney(staff.dailyWage)}`;
-        list.append(row);
+      for (const staff of engineState2.staff) {
+        const row2 = el("div", "engine-list-row");
+        row2.textContent = `${npcName(staff.npcId)} \xB7 ${formatMoney(staff.dailyWage)}`;
+        list.append(row2);
       }
     }
     section.append(list);
     return section;
   }
   function renderReputation() {
+    const engineState2 = getEngineState();
     const section = titledSection("\uD3C9\uD310");
     const labels = reputationLadder().axisLabels || {};
     const list = el("div", "engine-list");
-    for (const [axis, value] of Object.entries(engineState.reputation)) {
-      const row = el("div", "engine-list-row");
-      row.textContent = `${labels[axis] || axis}: ${value.rank}(${value.exp})`;
-      list.append(row);
+    for (const [axis, value] of Object.entries(engineState2.reputation)) {
+      const row2 = el("div", "engine-list-row");
+      row2.textContent = `${labels[axis] || axis}: ${value.rank}(${value.exp})`;
+      list.append(row2);
     }
     section.append(list);
     return section;
   }
   function renderChangedNpcs() {
+    const engineState2 = getEngineState();
     const section = titledSection("NPC \uD638\uAC10\uB3C4");
-    const changed = Object.entries(engineState.npcs).filter(([, data]) => data.affinity !== 50);
+    const changed = Object.entries(engineState2.npcs).filter(([, data]) => data.affinity !== 50);
     if (!changed.length) {
       const empty = el("p", "muted-line");
       empty.textContent = "\uBCC0\uB3D9 \uC5C6\uC74C";
@@ -6117,9 +6614,9 @@ ${Array.from(extras).join(" ")}` : text;
     }
     const list = el("div", "engine-list");
     for (const [npcId] of changed) {
-      const row = el("div", "engine-list-row");
-      row.textContent = npcSummary(schema, engineState, npcId);
-      list.append(row);
+      const row2 = el("div", "engine-list-row");
+      row2.textContent = npcSummary(schema2, engineState2, npcId);
+      list.append(row2);
     }
     section.append(list);
     return section;
@@ -6142,8 +6639,9 @@ ${Array.from(extras).join(" ")}` : text;
     });
     form.append(run);
     const logList = el("div", "engine-log-list");
-    for (const entry of logs) logList.append(renderLog(entry));
-    if (!logs.length) {
+    const logs2 = getLogs();
+    for (const entry of logs2) logList.append(renderLog(entry));
+    if (!logs2.length) {
       const empty = el("p", "muted-line");
       empty.textContent = "\uC544\uC9C1 \uC2E4\uD589\uD55C \uC774\uBCA4\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
       logList.append(empty);
@@ -6208,14 +6706,6 @@ ${Array.from(extras).join(" ")}` : text;
     if (type === "resource_delta") Object.assign(params, { resource: value("resource"), amount: number("amount"), reason: value("reason") });
     return { id: type, params };
   }
-  function runEvent(event) {
-    const result = applyEvent(schema, engineState, event, rng);
-    if (result.log.some((entry) => entry.ok)) {
-      engineState = result.state;
-    }
-    eventCount += 1;
-    logs.unshift({ event, entries: result.log, index: logs.length + 1 });
-  }
   function renderLog(item) {
     const details = el("details", "engine-log-entry");
     details.open = true;
@@ -6224,7 +6714,7 @@ ${Array.from(extras).join(" ")}` : text;
     const badge = el("span", first.ok ? "badge engine-ok" : "badge engine-fail");
     badge.textContent = first.ok ? "ok" : "fail";
     const text = el("span");
-    text.textContent = summarizeLog(item.event.id, first);
+    text.textContent = summarizeEvent(item.event.id, first, formatMoney);
     summary.append(badge, text);
     details.append(summary);
     if (first.tierChanged) {
@@ -6254,13 +6744,13 @@ ${Array.from(extras).join(" ")}` : text;
     }
     table.append(head);
     for (const sale of report.sales) {
-      const row = el("tr");
+      const row2 = el("tr");
       for (const value of [sale.menuName, sale.qty, formatMoney(sale.price)]) {
         const td = el("td");
         td.textContent = String(value);
-        row.append(td);
+        row2.append(td);
       }
-      table.append(row);
+      table.append(row2);
     }
     wrap.append(table);
     if (report.checkouts.length) {
@@ -6270,17 +6760,10 @@ ${Array.from(extras).join(" ")}` : text;
     }
     return wrap;
   }
-  function summarizeLog(type, entry) {
-    if (!entry.ok) return `${type} \uC2E4\uD328`;
-    if (type === "scale_delta") return entry.capped ? `${entry.target} capped \xB7 ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
-    if (type === "rep_event") return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
-    if (type === "day_end") return `\uD558\uB8E8 \uB9C8\uAC10 \xB7 ${entry.report.day}\uC77C\uCC28 \uC815\uC0B0`;
-    if (entry.goldDelta != null) return `${type} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney(entry.goldDelta)}`;
-    return `${type} \uC2E4\uD589`;
-  }
   function roomSelect() {
+    const engineState2 = getEngineState();
     const select = namedSelect("roomNo");
-    for (const room of roomStatus(schema, engineState)) {
+    for (const room of roomStatus(schema2, engineState2)) {
       const disabled = room.locked;
       const label = disabled ? `${room.no}\uD638 - \uAC1D\uC2E4\uB3D9 Lv.${room.requiresRoomLevel} \uD544\uC694` : `${room.no}\uD638 \xB7 ${room.kind}`;
       appendOption(select, room.no, label, disabled);
@@ -6289,9 +6772,10 @@ ${Array.from(extras).join(" ")}` : text;
     return select;
   }
   function occupantSelect() {
+    const engineState2 = getEngineState();
     const select = namedSelect("occupant");
     const occupants = [];
-    for (const [roomNo, guests] of Object.entries(engineState.rooms)) {
+    for (const [roomNo, guests] of Object.entries(engineState2.rooms)) {
       for (const guest of guests) occupants.push({ roomNo, guestName: guest.guestName });
     }
     if (!occupants.length) appendOption(select, "", "\uD604\uC7AC \uD22C\uC219\uAC1D \uC5C6\uC74C", true);
@@ -6299,8 +6783,9 @@ ${Array.from(extras).join(" ")}` : text;
     return select;
   }
   function menuSelect() {
+    const engineState2 = getEngineState();
     const select = namedSelect("menuName");
-    for (const menu of availableMenu(schema, engineState)) {
+    for (const menu of availableMenu(schema2, engineState2)) {
       appendOption(select, menu.name, `${menu.category} \xB7 ${menu.name} \xB7 ${formatMoney(menu.price)}`, false);
     }
     select.value = select.querySelector('option[value="\uACE0\uAE30 \uC2A4\uD29C"]') ? "\uACE0\uAE30 \uC2A4\uD29C" : select.value;
@@ -6313,8 +6798,9 @@ ${Array.from(extras).join(" ")}` : text;
     return select;
   }
   function npcSelect(includeHired) {
+    const engineState2 = getEngineState();
     const select = namedSelect("npcId");
-    const hired = new Set(engineState.staff.map((staff) => staff.npcId));
+    const hired = new Set(engineState2.staff.map((staff) => staff.npcId));
     for (const npc of npcs()) {
       if (!includeHired && hired.has(npc.id)) continue;
       appendOption(select, npc.id, `${npc.nameKo} \xB7 ${npc.class || npc.group || ""}`, false);
@@ -6323,9 +6809,10 @@ ${Array.from(extras).join(" ")}` : text;
     return select;
   }
   function staffSelect() {
+    const engineState2 = getEngineState();
     const select = namedSelect("npcId");
-    if (!engineState.staff.length) appendOption(select, "", "\uC7AC\uC9C1 \uC9C1\uC6D0 \uC5C6\uC74C", true);
-    for (const staff of engineState.staff) appendOption(select, staff.npcId, npcName(staff.npcId), false);
+    if (!engineState2.staff.length) appendOption(select, "", "\uC7AC\uC9C1 \uC9C1\uC6D0 \uC5C6\uC74C", true);
+    for (const staff of engineState2.staff) appendOption(select, staff.npcId, npcName(staff.npcId), false);
     return select;
   }
   function directionSelect() {
@@ -6364,7 +6851,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function expCategorySelect() {
     const select = namedSelect("category");
-    const ladder = schema.ladders.find((entry) => entry.id === "player_level");
+    const ladder = schema2.ladders.find((entry) => entry.id === "player_level");
     for (const category of Object.keys(ladder.sources)) appendOption(select, category, category, false);
     return select;
   }
@@ -6378,10 +6865,10 @@ ${Array.from(extras).join(" ")}` : text;
     return { roomNo: Number(roomNo), guestName };
   }
   function reputationLadder() {
-    return schema.ladders.find((entry) => entry.id === "reputation");
+    return schema2.ladders.find((entry) => entry.id === "reputation");
   }
   function npcs() {
-    return schema.entities.find((entry) => entry.type === "npc").instances;
+    return schema2.entities.find((entry) => entry.type === "npc").instances;
   }
   function npcName(npcId) {
     const npc = npcs().find((entry) => entry.id === npcId);
@@ -6458,6 +6945,326 @@ ${Array.from(extras).join(" ")}` : text;
     return `${Number(value || 0).toLocaleString("ko-KR")}\uC6D0`;
   }
 
+  // src/playView.js
+  var schema3 = require_yongsa_inn_v0();
+  var { summarize: summarize2 } = require_selectors();
+  var { estimateTokens } = require_tokens();
+  var { buildPrompt, parseAssistantResponse } = require_prompt();
+  var { PROVIDERS, callProvider, providerDef } = require_providers();
+  var messages = [];
+  var busy = false;
+  var settings = loadSettings();
+  var lastPrompt = null;
+  function renderPlayView(container, ctx) {
+    registerCustomOrigin();
+    const root = el2("div", "play-view");
+    container.append(root);
+    const render2 = () => {
+      root.replaceChildren();
+      root.append(renderLayout(ctx, render2));
+    };
+    render2();
+    return () => {
+    };
+  }
+  function renderLayout(ctx, render2) {
+    const layout = el2("div", "play-layout");
+    layout.append(renderChat(ctx, render2), renderSide(ctx, render2));
+    return layout;
+  }
+  function renderChat(ctx, render2) {
+    const panel = el2("section", "play-chat-panel");
+    const header = el2("div", "view-header play-chat-header");
+    const title = el2("div");
+    const h2 = el2("h2");
+    h2.textContent = "\uD50C\uB808\uC774(\uC2E4\uD5D8)";
+    const p = el2("p");
+    p.textContent = "LLM\uC740 \uC11C\uC0AC\uC640 \uC0AC\uAC74 \uD6C4\uBCF4\uB9CC \uC81C\uC548\uD558\uACE0, \uC0C1\uD0DC\uB294 \uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD569\uB2C8\uB2E4.";
+    title.append(h2, p);
+    const clear = button2("\uB300\uD654 \uCD08\uAE30\uD654", "secondary-btn");
+    clear.addEventListener("click", () => {
+      messages = [];
+      lastPrompt = null;
+      render2();
+    });
+    header.append(title, clear);
+    const list = el2("div", "play-message-list");
+    if (!messages.length) {
+      const empty = el2("div", "play-empty");
+      empty.textContent = "mock \uC81C\uACF5\uC790\uB85C \uD0A4 \uC5C6\uC774 \uBC14\uB85C \uD14C\uC2A4\uD2B8\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+      list.append(empty);
+    } else {
+      for (const message of messages) list.append(renderMessage(message));
+    }
+    if (busy) {
+      const thinking = el2("div", "play-message assistant");
+      thinking.textContent = "\uC0DD\uAC01 \uC911...";
+      list.append(thinking);
+    }
+    const form = el2("form", "play-input-row");
+    const input2 = el2("textarea", "play-input");
+    input2.name = "message";
+    input2.placeholder = "\uC608: \uACE0\uAE30 \uC2A4\uD29C \uD558\uB098 \uD314\uC790";
+    input2.disabled = busy;
+    const send = button2("\uC804\uC1A1", "primary-btn");
+    send.disabled = busy;
+    form.append(input2, send);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const text = input2.value.trim();
+      if (!text || busy) return;
+      await submitTurn(text, ctx, render2);
+    });
+    panel.append(header, list, form);
+    return panel;
+  }
+  function renderMessage(message) {
+    const wrap = el2("article", `play-message ${message.role}`);
+    const text = el2("div", "play-message-text");
+    text.textContent = message.content;
+    wrap.append(text);
+    if (message.chips && message.chips.length) {
+      const chips = el2("div", "play-chip-row");
+      for (const chip of message.chips) {
+        const item = el2("span", chip.ok ? "badge engine-ok" : "badge engine-fail");
+        item.textContent = chip.text;
+        chips.append(item);
+      }
+      wrap.append(chips);
+    }
+    return wrap;
+  }
+  function renderSide(ctx, render2) {
+    const side = el2("aside", "play-side-panel");
+    side.append(renderSettings(render2), renderStateBox(), renderTokenBox(ctx));
+    return side;
+  }
+  function renderSettings(render2) {
+    const details = el2("details", "play-settings");
+    const hasKey = settings.provider === "mock" || !!readKey(settings.provider);
+    details.open = !hasKey;
+    const summary = el2("summary");
+    summary.textContent = "\uC124\uC815";
+    details.append(summary);
+    const provider = namedSelect2("provider");
+    for (const key2 of Object.keys(PROVIDERS)) appendOption2(provider, key2, key2, false);
+    provider.value = settings.provider;
+    provider.addEventListener("change", () => {
+      settings.provider = provider.value;
+      settings.model = defaultModel(settings.provider);
+      saveSettings();
+      registerCustomOrigin();
+      render2();
+    });
+    const base = namedInput2("baseUrl", settings.baseUrl || "", "url");
+    base.placeholder = "https://openrouter.ai/api/v1";
+    base.addEventListener("change", () => {
+      settings.baseUrl = base.value.trim();
+      saveSettings();
+      registerCustomOrigin();
+      render2();
+    });
+    const model = namedInput2("model", settings.model || defaultModel(settings.provider));
+    model.disabled = settings.provider === "mock";
+    model.addEventListener("change", () => {
+      settings.model = model.value.trim();
+      saveSettings();
+      render2();
+    });
+    const key = namedInput2("apiKey", "", "password");
+    key.placeholder = readKey(settings.provider) ? maskedKey(settings.provider) : "API \uD0A4";
+    key.disabled = settings.provider === "mock";
+    const save = button2("\uC800\uC7A5", "secondary-btn");
+    save.disabled = settings.provider === "mock";
+    save.addEventListener("click", () => {
+      const value = key.value.trim();
+      if (value) localStorage.setItem(keyName(settings.provider), value);
+      key.value = "";
+      render2();
+    });
+    const del = button2("\uC0AD\uC81C", "secondary-btn");
+    del.disabled = settings.provider === "mock";
+    del.addEventListener("click", () => {
+      localStorage.removeItem(keyName(settings.provider));
+      render2();
+    });
+    details.append(
+      field2("\uC81C\uACF5\uC790", provider),
+      settings.provider === "custom" ? field2("Base URL", base) : hiddenBase(base),
+      field2("\uBAA8\uB378", model),
+      field2("API \uD0A4", key),
+      row(save, del),
+      notice("\uD0A4\uB294 \uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 localStorage\uC5D0\uB9CC \uC800\uC7A5\uB429\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C\uB294 \uC0AC\uC6A9 \uD6C4 \uBC18\uB4DC\uC2DC \uC0AD\uC81C\uD558\uC138\uC694."),
+      notice("\uD50C\uB808\uC774 \uC2DC \uB300\uD654 \uB0B4\uC6A9\xB7\uBC1C\uB3D9\uD55C \uB85C\uC5B4\uBD81\xB7\uC0C1\uD0DC \uC694\uC57D\uC774 \uC120\uD0DD\uD55C LLM \uC81C\uACF5\uC790\uC5D0\uAC8C \uC804\uC1A1\uB429\uB2C8\uB2E4.")
+    );
+    return details;
+  }
+  function renderStateBox() {
+    const section = titled("LLM\uC774 \uBCF4\uB294 \uC0C1\uD0DC");
+    const pre = el2("pre", "play-context-pre");
+    pre.textContent = lastPrompt ? lastPrompt.injectedText.state : summarize2(schema3, getEngineState());
+    section.append(pre);
+    if (lastPrompt && lastPrompt.injectedText.npc) {
+      const npc = el2("pre", "play-context-pre");
+      npc.textContent = lastPrompt.injectedText.npc;
+      section.append(npc);
+    }
+    return section;
+  }
+  function renderTokenBox(ctx) {
+    const section = titled("\uD1A0\uD070 \uBBF8\uD130");
+    const current = lastPrompt ? lastPrompt.injectedTokens : estimateTokens(summarize2(schema3, getEngineState()));
+    const meter = el2("div", "play-token-meter");
+    meter.textContent = `\uC774\uBC88 \uD134 \uC8FC\uC785: ${current.toLocaleString("ko-KR")} \uD1A0\uD070 (\uC6D0\uBCF8 \uC0C1\uC2DC \uB85C\uC5B4\uBD81: 16,124)`;
+    section.append(meter);
+    if (lastPrompt) {
+      const list = el2("div", "engine-list");
+      for (const [key, value] of Object.entries(lastPrompt.injectedParts)) {
+        const item = el2("div", "engine-list-row");
+        item.textContent = `${key}: ${value.toLocaleString("ko-KR")}`;
+        list.append(item);
+      }
+      section.append(list);
+    }
+    if (!ctx.lore) {
+      const note = el2("p", "muted-line");
+      note.textContent = "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4.";
+      section.append(note);
+    }
+    return section;
+  }
+  async function submitTurn(text, ctx, render2) {
+    busy = true;
+    messages.push({ role: "user", content: text });
+    render2();
+    try {
+      const prompt = buildPrompt({ schema: schema3, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text });
+      lastPrompt = prompt;
+      const raw = await callProvider(providerConfig(), prompt);
+      const parsed = parseAssistantResponse(raw);
+      const chips = [];
+      for (const event of parsed.events) {
+        const result = runEvent(event);
+        const first = result.entries[0] || { ok: false, reason: "empty_log" };
+        chips.push({ ok: !!first.ok, text: summarizeEvent(event.id, first, formatMoney2) });
+      }
+      messages.push({ role: "assistant", content: parsed.narrative || raw, chips });
+    } catch (err) {
+      messages.push({ role: "assistant", content: safeError(err), chips: [{ ok: false, text: "API \uC624\uB958" }] });
+    } finally {
+      busy = false;
+      render2();
+    }
+  }
+  function providerConfig() {
+    return {
+      provider: settings.provider,
+      model: settings.model || defaultModel(settings.provider),
+      baseUrl: settings.provider === "custom" ? settings.baseUrl : "",
+      apiKey: settings.provider === "mock" ? "" : readKey(settings.provider)
+    };
+  }
+  function loadSettings() {
+    return {
+      provider: localStorage.getItem("simbot.byok.provider") || "mock",
+      model: localStorage.getItem("simbot.byok.model") || "gemini-2.5-flash",
+      baseUrl: localStorage.getItem("simbot.byok.customBase") || ""
+    };
+  }
+  function saveSettings() {
+    localStorage.setItem("simbot.byok.provider", settings.provider);
+    localStorage.setItem("simbot.byok.model", settings.model || "");
+    localStorage.setItem("simbot.byok.customBase", settings.baseUrl || "");
+  }
+  function registerCustomOrigin() {
+    if (settings.provider !== "custom" || !settings.baseUrl || !window.SIMBOT_NETWORK_POLICY) return;
+    try {
+      const url = new URL(settings.baseUrl);
+      if (url.protocol === "https:") window.SIMBOT_NETWORK_POLICY.setAllowedCustomOrigin(url.origin);
+    } catch (_) {
+    }
+  }
+  function readKey(provider) {
+    return localStorage.getItem(keyName(provider)) || "";
+  }
+  function keyName(provider) {
+    return `simbot.byok.${provider}`;
+  }
+  function maskedKey(provider) {
+    const key = readKey(provider);
+    if (!key) return "";
+    return `\uC800\uC7A5\uB428: ****${key.slice(-4)}`;
+  }
+  function defaultModel(provider) {
+    return providerDef(provider).defModel || "";
+  }
+  function safeError(err) {
+    const message = err && err.message ? err.message : String(err || "\uC624\uB958");
+    return `\uC694\uCCAD \uC2E4\uD328: ${message.replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/https?:\/\/\S+/g, "[url]").slice(0, 360)}`;
+  }
+  function hiddenBase(node) {
+    const wrap = el2("div", "play-hidden");
+    wrap.append(node);
+    return wrap;
+  }
+  function titled(title) {
+    const section = el2("section", "play-side-section");
+    const h3 = el2("h3");
+    h3.textContent = title;
+    section.append(h3);
+    return section;
+  }
+  function field2(label, child) {
+    const wrap = el2("label", "field");
+    const span = el2("span");
+    span.textContent = label;
+    wrap.append(span, child);
+    return wrap;
+  }
+  function row(...children) {
+    const wrap = el2("div", "play-button-row");
+    wrap.append(...children);
+    return wrap;
+  }
+  function notice(text) {
+    const p = el2("p", "muted-line play-notice");
+    p.textContent = text;
+    return p;
+  }
+  function namedInput2(name, value, type = "text") {
+    const node = el2("input");
+    node.name = name;
+    node.type = type;
+    node.value = value;
+    return node;
+  }
+  function namedSelect2(name) {
+    const node = el2("select");
+    node.name = name;
+    return node;
+  }
+  function appendOption2(select, value, label, disabled) {
+    const option = el2("option");
+    option.value = String(value);
+    option.textContent = label;
+    option.disabled = !!disabled;
+    select.append(option);
+  }
+  function button2(text, className) {
+    const node = el2("button", className);
+    node.type = "button";
+    node.textContent = text;
+    return node;
+  }
+  function el2(tag, className = "") {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    return node;
+  }
+  function formatMoney2(value) {
+    return `${Number(value || 0).toLocaleString("ko-KR")}\uC6D0`;
+  }
+
   // src/main.js
   var tabs = [
     { id: "overview", label: "\uAC1C\uC694" },
@@ -6465,8 +7272,15 @@ ${Array.from(extras).join(" ")}` : text;
     { id: "lorebook", label: "\uB85C\uC5B4\uBD81" },
     { id: "activate", label: "\uD65C\uC131\uD654 \uC2DC\uBBAC" },
     { id: "assets", label: "\uC5D0\uC14B" },
-    { id: "engine", label: "\uC5D4\uC9C4(\uC2E4\uD5D8)" }
+    { id: "engine", label: "\uC5D4\uC9C4(\uC2E4\uD5D8)" },
+    { id: "play", label: "\uD50C\uB808\uC774(\uC2E4\uD5D8)" }
   ];
+  var KNOWN_ORIGINS = [
+    "https://generativelanguage.googleapis.com/",
+    "https://api.openai.com/",
+    "https://api.anthropic.com/"
+  ];
+  var allowedCustomOrigin = "";
   var state = {
     parsed: null,
     lore: null,
@@ -6485,7 +7299,17 @@ ${Array.from(extras).join(" ")}` : text;
     render();
   });
   function disableNetworkApis() {
-    window.fetch = () => Promise.reject(new Error("Network requests are disabled in this local app."));
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input2, init) => {
+      const url = typeof input2 === "string" ? input2 : input2 && input2.url || "";
+      if (isAllowedFetchUrl(url)) return originalFetch(input2, init);
+      return Promise.reject(new Error("Network requests are disabled except for the selected BYOK provider."));
+    };
+    window.SIMBOT_NETWORK_POLICY = {
+      setAllowedCustomOrigin(origin) {
+        allowedCustomOrigin = origin || "";
+      }
+    };
     const OriginalXHR = window.XMLHttpRequest;
     window.XMLHttpRequest = function XMLHttpRequestDisabled() {
       const xhr = new OriginalXHR();
@@ -6551,20 +7375,20 @@ ${Array.from(extras).join(" ")}` : text;
     const nav = document.getElementById("tabs");
     nav.replaceChildren();
     for (const tab of tabs) {
-      const button2 = document.createElement("button");
-      button2.type = "button";
-      button2.className = "tab";
-      button2.textContent = tab.label;
-      button2.setAttribute("aria-selected", String(state.activeTab === tab.id));
-      button2.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine";
-      button2.addEventListener("click", () => {
+      const button3 = document.createElement("button");
+      button3.type = "button";
+      button3.className = "tab";
+      button3.textContent = tab.label;
+      button3.setAttribute("aria-selected", String(state.activeTab === tab.id));
+      button3.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine" && tab.id !== "play";
+      button3.addEventListener("click", () => {
         if (state.activeTab === tab.id) return;
         clearTabResources();
         state.activeTab = tab.id;
         renderTabs();
         render();
       });
-      nav.append(button2);
+      nav.append(button3);
     }
   }
   async function loadFile(file) {
@@ -6610,6 +7434,10 @@ ${Array.from(extras).join(" ")}` : text;
       state.cleanup = renderEngineView(panel, ctx);
       return;
     }
+    if (state.activeTab === "play") {
+      state.cleanup = renderPlayView(panel, ctx);
+      return;
+    }
     if (!state.parsed) {
       panel.append(renderEmptyOverview());
       return;
@@ -6619,6 +7447,16 @@ ${Array.from(extras).join(" ")}` : text;
     if (state.activeTab === "lorebook") state.cleanup = renderLorebookView(panel, ctx);
     if (state.activeTab === "activate") state.cleanup = renderActivateView(panel, ctx);
     if (state.activeTab === "assets") state.cleanup = renderAssetsView(panel, ctx);
+  }
+  function isAllowedFetchUrl(url) {
+    try {
+      const parsed = new URL(url, window.location.href);
+      const href = parsed.href;
+      if (KNOWN_ORIGINS.some((origin) => href.startsWith(origin))) return true;
+      return !!allowedCustomOrigin && parsed.protocol === "https:" && parsed.origin === allowedCustomOrigin;
+    } catch (_) {
+      return false;
+    }
   }
   function createContext() {
     return {
@@ -6685,16 +7523,16 @@ ${Array.from(extras).join(" ")}` : text;
     return wrap;
   }
   function statCard(label, value) {
-    const el2 = document.createElement("section");
-    el2.className = "stat-card";
+    const el3 = document.createElement("section");
+    el3.className = "stat-card";
     const k = document.createElement("div");
     k.className = "stat-label";
     k.textContent = label;
     const v = document.createElement("div");
     v.className = "stat-value";
     v.textContent = value;
-    el2.append(k, v);
-    return el2;
+    el3.append(k, v);
+    return el3;
   }
   function sectionTitle(text) {
     const h = document.createElement("h2");
@@ -6732,8 +7570,8 @@ ${Array.from(extras).join(" ")}` : text;
     state.viewUrls.clear();
   }
   function setMessage(text) {
-    const el2 = document.getElementById("message");
-    if (el2) el2.textContent = text;
+    const el3 = document.getElementById("message");
+    if (el3) el3.textContent = text;
   }
   function formatBytes(value) {
     const n = Number(value || 0);

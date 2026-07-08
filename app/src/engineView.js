@@ -1,30 +1,8 @@
-const schema = require('../../schema/yongsa-inn.v0.json');
-const { createState } = require('../../engine/core/createState.js');
-const { applyEvent } = require('../../engine/core/applyEvent.js');
-const { createRng } = require('../../engine/core/rng.js');
 const { summarize, npcSummary, roomStatus, availableMenu, staffMax } = require('../../engine/core/selectors.js');
+import { eventTypes, getEngineState, getEventCount, getLogs, getSchema, getSeed, resetSession, runEvent, summarizeEvent } from './engineSession.js';
 
-let seedValue = 42;
-let engineState = createState(schema, seedValue);
-let rng = createRng(seedValue);
-let logs = [];
-let eventCount = 0;
 let selectedEvent = 'checkin';
-
-const eventTypes = [
-  'checkin',
-  'checkout',
-  'sale',
-  'purchase',
-  'hire',
-  'fire',
-  'scale_delta',
-  'rep_event',
-  'exp_gain',
-  'gold_delta',
-  'resource_delta',
-  'day_end',
-];
+const schema = getSchema();
 
 export function renderEngineView(container, ctx) {
   const root = el('div', 'engine-view');
@@ -38,14 +16,6 @@ export function renderEngineView(container, ctx) {
   return () => {};
 }
 
-function resetSession(seed) {
-  seedValue = Number.isFinite(Number(seed)) ? Number(seed) : 42;
-  engineState = createState(schema, seedValue);
-  rng = createRng(seedValue);
-  logs = [];
-  eventCount = 0;
-}
-
 function renderHeader(render) {
   const header = el('div', 'view-header engine-header');
   const title = el('div');
@@ -56,7 +26,7 @@ function renderHeader(render) {
   title.append(h2, p);
 
   const controls = el('div', 'engine-header-controls');
-  const seed = input('number', String(seedValue));
+  const seed = input('number', String(getSeed()));
   seed.setAttribute('aria-label', '시드');
   seed.addEventListener('change', () => {
     resetSession(seed.value);
@@ -76,7 +46,7 @@ function renderHeader(render) {
   });
 
   const meta = el('div', 'status-pill engine-status');
-  meta.textContent = `${engineState.day}일차 · 이벤트 ${eventCount}`;
+  meta.textContent = `${getEngineState().day}일차 · 이벤트 ${getEventCount()}`;
   controls.append(labelInline('Seed', seed), reset, endDay, meta);
   header.append(title, controls);
   return header;
@@ -89,6 +59,7 @@ function renderBody(render, ctx) {
 }
 
 function renderStatePanel(ctx) {
+  const engineState = getEngineState();
   const panel = el('section', 'engine-state-panel');
   const summary = el('pre', 'engine-summary');
   summary.textContent = summarize(schema, engineState);
@@ -106,6 +77,7 @@ function renderStatePanel(ctx) {
 }
 
 function renderRooms() {
+  const engineState = getEngineState();
   const section = titledSection('객실');
   const grid = el('div', 'engine-room-grid');
   for (const room of roomStatus(schema, engineState)) {
@@ -126,6 +98,7 @@ function renderRooms() {
 }
 
 function renderStaff() {
+  const engineState = getEngineState();
   const section = titledSection('직원');
   const max = staffMax(schema, engineState);
   const wage = engineState.staff.reduce((sum, staff) => sum + Number(staff.dailyWage || 0), 0);
@@ -154,6 +127,7 @@ function renderStaff() {
 }
 
 function renderReputation() {
+  const engineState = getEngineState();
   const section = titledSection('평판');
   const labels = reputationLadder().axisLabels || {};
   const list = el('div', 'engine-list');
@@ -167,6 +141,7 @@ function renderReputation() {
 }
 
 function renderChangedNpcs() {
+  const engineState = getEngineState();
   const section = titledSection('NPC 호감도');
   const changed = Object.entries(engineState.npcs).filter(([, data]) => data.affinity !== 50);
   if (!changed.length) {
@@ -205,6 +180,7 @@ function renderConsole(render) {
   form.append(run);
 
   const logList = el('div', 'engine-log-list');
+  const logs = getLogs();
   for (const entry of logs) logList.append(renderLog(entry));
   if (!logs.length) {
     const empty = el('p', 'muted-line');
@@ -276,15 +252,6 @@ function collectEvent(type, form) {
   return { id: type, params };
 }
 
-function runEvent(event) {
-  const result = applyEvent(schema, engineState, event, rng);
-  if (result.log.some((entry) => entry.ok)) {
-    engineState = result.state;
-  }
-  eventCount += 1;
-  logs.unshift({ event, entries: result.log, index: logs.length + 1 });
-}
-
 function renderLog(item) {
   const details = el('details', 'engine-log-entry');
   details.open = true;
@@ -293,7 +260,7 @@ function renderLog(item) {
   const badge = el('span', first.ok ? 'badge engine-ok' : 'badge engine-fail');
   badge.textContent = first.ok ? 'ok' : 'fail';
   const text = el('span');
-  text.textContent = summarizeLog(item.event.id, first);
+  text.textContent = summarizeEvent(item.event.id, first, formatMoney);
   summary.append(badge, text);
   details.append(summary);
 
@@ -342,16 +309,8 @@ function renderReport(report) {
   return wrap;
 }
 
-function summarizeLog(type, entry) {
-  if (!entry.ok) return `${type} 실패`;
-  if (type === 'scale_delta') return entry.capped ? `${entry.target} capped · ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
-  if (type === 'rep_event') return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
-  if (type === 'day_end') return `하루 마감 · ${entry.report.day}일차 정산`;
-  if (entry.goldDelta != null) return `${type} · gold ${entry.goldDelta >= 0 ? '+' : ''}${formatMoney(entry.goldDelta)}`;
-  return `${type} 실행`;
-}
-
 function roomSelect() {
+  const engineState = getEngineState();
   const select = namedSelect('roomNo');
   for (const room of roomStatus(schema, engineState)) {
     const disabled = room.locked;
@@ -363,6 +322,7 @@ function roomSelect() {
 }
 
 function occupantSelect() {
+  const engineState = getEngineState();
   const select = namedSelect('occupant');
   const occupants = [];
   for (const [roomNo, guests] of Object.entries(engineState.rooms)) {
@@ -374,6 +334,7 @@ function occupantSelect() {
 }
 
 function menuSelect() {
+  const engineState = getEngineState();
   const select = namedSelect('menuName');
   for (const menu of availableMenu(schema, engineState)) {
     appendOption(select, menu.name, `${menu.category} · ${menu.name} · ${formatMoney(menu.price)}`, false);
@@ -390,6 +351,7 @@ function resourceSelect(name) {
 }
 
 function npcSelect(includeHired) {
+  const engineState = getEngineState();
   const select = namedSelect('npcId');
   const hired = new Set(engineState.staff.map((staff) => staff.npcId));
   for (const npc of npcs()) {
@@ -401,6 +363,7 @@ function npcSelect(includeHired) {
 }
 
 function staffSelect() {
+  const engineState = getEngineState();
   const select = namedSelect('npcId');
   if (!engineState.staff.length) appendOption(select, '', '재직 직원 없음', true);
   for (const staff of engineState.staff) appendOption(select, staff.npcId, npcName(staff.npcId), false);
