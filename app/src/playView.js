@@ -65,8 +65,15 @@ function renderChat(ctx, render) {
   input.placeholder = '예: 고기 스튜 하나 팔자';
   input.disabled = busy;
   const send = button('전송', 'primary-btn');
+  send.type = 'submit';
   send.disabled = busy;
   form.append(input, send);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const text = input.value.trim();
