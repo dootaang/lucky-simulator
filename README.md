@@ -18,7 +18,7 @@ npm run build    # → app/dist/index.html (자기완결 단일 HTML)
 npm run deploy   # 빌드 + Firebase Hosting 배포 (firebase CLI 로그인 필요)
 ```
 
-호스팅: https://sim-simulator-d1330.web.app
+호스팅: https://simbot-simulator.web.app
 
 ## 구조
 
