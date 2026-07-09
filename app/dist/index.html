@@ -4581,7 +4581,9 @@ select:focus { border-color: var(--amber-line); }
             "initialState.gold=500000, food=20, drink=20 (\uC6D0\uBCF8 \uC2DC\uC791\uAC12 \uBBF8\uD655\uC778)",
             "\uAC1D\uC2E4 \uC7A0\uAE08: 110\uD638=lv_room 2, 111\uD638=lv_room 3 \uD544\uC694 (\uC6D0\uBCF8 \uB9E4\uD551 \uBBF8\uD655\uC778)",
             "player_level.thresholds\uB294 \uD3C9\uD310 \uBB38\uD131 \uC900\uC6A9 (\uC6D0\uBCF8 Lua \uB808\uBCA8 \uACE1\uC120 \uBBF8\uD655\uC778)",
-            "\uC815\uC0B0 \uB9E4\uCD9C \uBC94\uC704: Lv1 10~25\uB9CC / Lv2 25~60\uB9CC / Lv3 60~150\uB9CC / Lv4 150~400\uB9CC (\uC6D0\uBCF8 \uBA85\uC2DC\uAC12)"
+            "\uC815\uC0B0 \uB9E4\uCD9C \uBC94\uC704: Lv1 10~25\uB9CC / Lv2 25~60\uB9CC / Lv3 60~150\uB9CC / Lv4 150~400\uB9CC (\uC6D0\uBCF8 \uBA85\uC2DC\uAC12)",
+            "facility.upgradeCosts\uB294 SPEC-M3d \uAE30\uC900\uAC12\uC744 \uC801\uC6A9: 2\uB808\uBCA8 750,000, 3\uB808\uBCA8 3,000,000, 4\uB808\uBCA8 12,000,000. \uC2DC\uC124\uBCC4 \uC6D0\uBCF8 \uCC28\uB4F1\uD45C\uAC00 \uC5C6\uC5B4 \uBAA8\uB4E0 \uC2DC\uC124\uC5D0 \uB3D9\uC77C \uC801\uC6A9.",
+            "gather \uC218\uB7C9\uD45C\uB294 SPEC-M3d \uAE30\uBCF8\uAC12 \uC801\uC6A9: small 1~3, large 5~10, bulk 10~20. \uC0AC\uB0E5/\uCC44\uC9D1/\uBAAC\uC2A4\uD130 \uBD80\uC0B0\uBB3C \uC790\uAE09 \uADDC\uBAA8\uB97C LLM\uC774 \uC218\uCE58\uB85C \uC4F0\uC9C0 \uC54A\uB3C4\uB85D \uC5D4\uC9C4 \uD45C\uB85C \uB460."
           ]
         },
         initialState: {
@@ -4603,6 +4605,12 @@ select:focus { border-color: var(--amber-line); }
             S: [3e6, 8e6]
           },
           note: "Default quest/manual/request completion gold table. Values scale from several Lv1 menu sales through major facility-upgrade funding; exact canon values are not present in the rulebook, so this is recorded as an engine assumption."
+        },
+        gather: {
+          small: [1, 3],
+          large: [5, 10],
+          bulk: [10, 20],
+          note: "Self-supply yield table for hunting, gathering, and monster byproducts. Engine-owned so event params never carry quantities."
         },
         resources: [
           { id: "gold", unit: "\uC6D0", min: 0 },
@@ -4846,12 +4854,12 @@ select:focus { border-color: var(--amber-line); }
           },
           {
             type: "facility",
-            fields: ["id", "label", "maxLevel"],
+            fields: ["id", "label", "maxLevel", "upgradeCosts"],
             instances: [
-              { id: "tavern", label: "\uC8FC\uC810\uD640", maxLevel: 4 },
-              { id: "kitchen", label: "\uC8FC\uBC29", maxLevel: 4 },
-              { id: "room", label: "\uAC1D\uC2E4\uB3D9", maxLevel: 4 },
-              { id: "quarters", label: "\uC6A9\uBCD1 \uC219\uC18C", maxLevel: 4 }
+              { id: "tavern", label: "\uC8FC\uC810\uD640", maxLevel: 4, upgradeCosts: { "2": 75e4, "3": 3e6, "4": 12e6 } },
+              { id: "kitchen", label: "\uC8FC\uBC29", maxLevel: 4, upgradeCosts: { "2": 75e4, "3": 3e6, "4": 12e6 } },
+              { id: "room", label: "\uAC1D\uC2E4\uB3D9", maxLevel: 4, upgradeCosts: { "2": 75e4, "3": 3e6, "4": 12e6 } },
+              { id: "quarters", label: "\uC6A9\uBCD1 \uC219\uC18C", maxLevel: 4, upgradeCosts: { "2": 75e4, "3": 3e6, "4": 12e6 } }
             ]
           }
         ],
@@ -4924,11 +4932,13 @@ select:focus { border-color: var(--amber-line); }
         ],
         events: [
           { id: "gold_delta", params: { amount: "\xB1\uC815\uC218", reason: "string" }, note: "\uC758\uB8B0 \uBCF4\uC218 \uB4F1 \uC561\uC158 \uC678 \uACE8\uB4DC \uBCC0\uB3D9" },
-          { id: "resource_delta", params: { resource: "food|drink", amount: "\xB1\uC815\uC218", reason: "string" }, note: "\uC0AC\uB0E5\xB7\uCC44\uC9D1 \uB4F1 \uC790\uAE09" },
+          { id: "resource_delta", params: { resource: "food|drink", amount: "\xB1\uC815\uC218", reason: "string" }, note: "engine/internal stock adjustment; not exposed in play prompt" },
+          { id: "upgrade", params: { facility: "tavern|kitchen|room|quarters" }, note: "Engine deducts facility.upgradeCosts[nextLevel] and increments level. Params must not include cost or level." },
+          { id: "gain_resource", params: { resource: "food|drink", scale: "small|large|bulk", reason: "string" }, note: "Engine chooses qty from gather[scale] with seeded RNG. Params must not include qty or amount." },
           { id: "scale_delta", params: { scale: "affinity", target: "npcId", size: "S|M|L|XL", direction: "+|-", charBonus: "-1|0|1", reason: "string" }, note: "LLM\uC740 \uD06C\uAE30\uB9CC \uBD84\uB958. \uC5D4\uC9C4\uC774 steps\uB85C \uC218\uCE58\uD654, dailyCap \uC801\uC6A9" },
           { id: "rep_event", params: { axis: "village|advent|mage|noble|under|merchant", category: "categories \uD0A4", reason: "string" }, note: "\uC5D4\uC9C4\uC774 \uC2DC\uB4DC RNG\uB85C \uBC94\uC704 \uB0B4 \uAC12 \uACB0\uC815, \uC2B9\uAE09/\uAC15\uB4F1 \uCC98\uB9AC" },
           { id: "exp_gain", params: { category: "sources \uD0A4", reason: "string" }, note: "\uC5D4\uC9C4\uC774 \uAC12/\uBC94\uC704 RNG \uC801\uC6A9, \uB808\uBCA8\uC5C5 \uD310\uC815" },
-          { id: "reward", params: { tier: "E|D|C|B|A|S", reason: "string" }, note: "Engine chooses gold from rewards.gold[tier] with seeded RNG; event params must not include amount." },
+          { id: "reward", params: { questId: "string", tier: "E|D|C|B|A|S", reason: "string" }, note: "Engine chooses gold from rewards.gold[tier] with seeded RNG; questId is required and idempotent via state.claimedRewards; event params must not include amount." },
           { id: "checkin", params: { roomNo: "int", guestName: "string", stayDays: "int" } },
           { id: "checkout", params: { roomNo: "int", guestName: "string" } },
           { id: "sale", params: { menuName: "string", qty: "int" } },
@@ -5021,7 +5031,8 @@ select:focus { border-color: var(--amber-line); }
           reputation: normalizeReputation(schema2, initial.reputation || {}),
           npcs: normalizeNpcs(schema2, initial.npcs || {}),
           pendingCheckouts: [],
-          unpaidWages: Number(initial.unpaidWages || 0)
+          unpaidWages: Number(initial.unpaidWages || 0),
+          claimedRewards: Array.isArray(initial.claimedRewards) ? clone(initial.claimedRewards) : []
         };
         if (seed != null) state2.seed = seed;
         return state2;
@@ -5291,8 +5302,12 @@ select:focus { border-color: var(--amber-line); }
         switch (type) {
           case "gold_delta":
             return goldDelta(next, params, ok);
+          case "upgrade":
+            return upgrade(schema2, next, params, ok, fail);
           case "reward":
             return reward(schema2, next, params, rng2, ok, fail);
+          case "gain_resource":
+            return gainResource(schema2, next, params, rng2, ok, fail);
           case "resource_delta":
             return resourceDelta(next, params, ok, fail);
           case "scale_delta":
@@ -5324,20 +5339,52 @@ select:focus { border-color: var(--amber-line); }
         return ok({ amount, before, after: state2.gold, reason: params.reason || "" });
       }
       function reward(schema2, state2, params, rng2, ok, fail) {
-        if ("amount" in params || "goldDelta" in params) return fail("reward_amount_not_allowed");
+        const questId = params.questId;
+        if (questId == null || String(questId).trim() === "") return fail("missing_questId");
+        const normalizedQuestId = String(questId);
+        if ((state2.claimedRewards || []).includes(normalizedQuestId)) return fail("already_claimed", normalizedQuestId);
         const tier = params.tier;
         const range = schema2 && schema2.rewards && schema2.rewards.gold && schema2.rewards.gold[tier];
         if (!isRewardRange(range)) return fail("unknown_reward_tier", tier);
+        if ("amount" in params || "goldDelta" in params) return fail("reward_amount_not_allowed");
         const amount = rng2.int(range[0], range[1]);
         const before = state2.gold;
         state2.gold = Number(state2.gold || 0) + amount;
-        return ok({ tier, goldDelta: amount, before, after: state2.gold, reason: params.reason || "" });
+        state2.claimedRewards = (state2.claimedRewards || []).concat([normalizedQuestId]);
+        return ok({ questId: normalizedQuestId, tier, goldDelta: amount, before, after: state2.gold, reason: params.reason || "" });
       }
       function isRewardRange(range) {
         if (!Array.isArray(range) || range.length !== 2) return false;
         const min = Number(range[0]);
         const max = Number(range[1]);
         return Number.isFinite(min) && Number.isFinite(max) && max >= min;
+      }
+      function upgrade(schema2, state2, params, ok, fail) {
+        const facility = params.facility || params.facilityId;
+        const def = findById(schema2, "facility", facility);
+        if (!def) return fail("unknown_facility", facility);
+        const current = Number(state2.facilities && state2.facilities[facility] || 0);
+        if (current >= Number(def.maxLevel || 0)) return fail("max_level", facility);
+        const level = current + 1;
+        const cost = def.upgradeCosts && def.upgradeCosts[String(level)];
+        if (!Number.isFinite(Number(cost))) return fail("no_upgrade_cost", facility);
+        if (Number(state2.gold || 0) < Number(cost)) return fail("insufficient_gold", facility);
+        state2.gold = Number(state2.gold || 0) - Number(cost);
+        state2.facilities[facility] = level;
+        return ok({ facility, level, goldDelta: -Number(cost) });
+      }
+      function gainResource(schema2, state2, params, rng2, ok, fail) {
+        const resource = params.resource || params.resourceId;
+        if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
+        const table = schema2 && schema2.gather || {};
+        const requestedScale = params.scale || "small";
+        const scale = table[requestedScale] ? requestedScale : "small";
+        const range = table[scale];
+        if (!isRewardRange(range)) return fail("unknown_gather_scale", scale);
+        const qty = rng2.int(range[0], range[1]);
+        const before = Number(state2.resources[resource] || 0);
+        state2.resources[resource] = before + qty;
+        return ok({ resource, qty, scale, before, after: state2.resources[resource], reason: params.reason || "" });
       }
       function resourceDelta(state2, params, ok, fail) {
         const resource = params.resource || params.resourceId;
@@ -5588,6 +5635,8 @@ select:focus { border-color: var(--amber-line); }
 [\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uC0AC\uAC74 = \uD589\uB3D9(\uC758\uB3C4)\uB9CC. \uC22B\uC790 \uACB0\uACFC\uB294 \uC5D4\uC9C4\uC774 \uACC4\uC0B0]
 - sale {menuName, qty} \u2014 \uBA54\uB274 \uD310\uB9E4 \uC644\uACB0 \uC2DC. (\uC5D4\uC9C4: \uB9E4\uCD9C \uAC00\uC0B0 + \uC2DD\uC790\uC7AC \uCC28\uAC10)
 - purchase {resource:"food"|"drink", qty} \u2014 \uC7AC\uB8CC \uAD6C\uB9E4. (\uC5D4\uC9C4: \uC6D0\uAC00 \uCC28\uAC10 + \uC7AC\uACE0 \uAC00\uC0B0. \uC720\uC800\uAC00 \uC0B0 \uADF8 \uD55C \uAC74\uB9CC, gold \uBCC0\uB3D9\uC744 \uB530\uB85C \uB123\uC9C0 \uB9C8\uB77C)
+- upgrade {facility} \u2014 \uC2DC\uC124 \uD655\uC7A5. facility\uB294 \uC0C1\uD0DC\uC758 \uC2DC\uC124 id(tavern/kitchen/room/quarters). (\uC5D4\uC9C4: \uBE44\uC6A9 \uCC28\uAC10 + \uB808\uBCA8 \uC0C1\uC2B9. \uBE44\uC6A9\xB7\uACE8\uB4DC\xB7\uB808\uBCA8\uC740 \uC4F0\uC9C0 \uB9C8\uB77C)
+- gain_resource {resource:"food"|"drink", scale:"small"|"large"|"bulk", reason} \u2014 \uC0AC\uB0E5\xB7\uCC44\uC9D1\xB7\uBD80\uC0B0\uBB3C\uB85C \uC7AC\uB8CC\uB97C \uC5BB\uC744 \uB54C. (\uC5D4\uC9C4: \uADDC\uBAA8 \uD45C\uC5D0\uC11C \uC218\uB7C9 \uACB0\uC815. qty\xB7amount\xB7gold\uB294 \uC4F0\uC9C0 \uB9C8\uB77C)
 - checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName} \u2014 roomNo\uB294 [\uAC1D\uC2E4 \uBAA9\uB85D]\uC758 \uC2E4\uC81C \uD638\uC218(\uC608: 101). (\uC5D4\uC9C4: \uC219\uBC15\uBE44 \uC120\uBD88 \uAC00\uC0B0)
 - hire {npcId, dailyWage} \u2014 \uC784\uAE08 \uD569\uC758\uAC00 \uB300\uD654\uB85C \uC644\uB8CC\uB41C \uACBD\uC6B0\uB9CC. dailyWage\uB294 \uB300\uD654\uC5D0\uC11C \uD569\uC758\uB41C \uAC12 / fire {npcId}
 - scale_delta {scale:"affinity", target:npcId, direction:"+"|"-", size:"S"|"M"|"L"|"XL", reason} \u2014 \uD06C\uAE30\uB9CC \uBD84\uB958. S=\uC0AC\uC18C\uD55C \uBC30\uB824, M=\uAC70\uB9AC \uC881\uD798, L=\uAE4A\uC740 \uC720\uB300, XL=\uAD00\uACC4 \uC804\uD658\uC810. \uD55C NPC\uB2F9 \uD558\uB8E8 1\uD68C.
@@ -5604,8 +5653,9 @@ select:focus { border-color: var(--amber-line); }
       var REWARD_PROMPT_APPENDIX = `
 
 [reward event]
-- reward {tier, reason} only when a quest/manual/request is complete and the reward tier is known (E~S). The engine chooses gold from schema rewards.gold[tier]; never write an amount.
-- Reward gold must only be represented by reward {tier}. Do not invent gold amounts. Use it only at completion/reporting time, not while work is still in progress.`;
+- reward {questId, tier, reason} only when a quest/manual/request is complete and the reward tier is known (E~S). questId is the stable unique id for that quest, such as "boar-hunt".
+- The same questId can be rewarded only once. If the player repeats "claim reward" for an already claimed quest, do not emit reward again; the engine rejects duplicates.
+- The engine chooses gold from schema rewards.gold[tier]; never write amount, goldDelta, cost, qty, or any numeric reward result. Use reward only at completion/reporting time, not while work is still in progress.`;
       function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput }) {
         const stateText = summarize3(schema2, state2);
         const npcIds = relatedNpcIds(schema2, state2, recentMessages, userInput);
@@ -6098,7 +6148,7 @@ ${row3.entry.content}`).join("\n\n");
       var canonicalSchema = require_yongsa_inn_v0();
       var SYSTEM_PROMPT = '\uB2F9\uC2E0\uC740 RisuAI \uC2DC\uBBAC\uBD07 \uCE74\uB4DC\uC758 "\uB8F0\uBD81 \uC0B0\uBB38"\uC744 \uACB0\uC815\uB860 \uAC8C\uC784 \uC5D4\uC9C4\uC6A9 \uD45C\uC900 \uC2A4\uD0A4\uB9C8 JSON\uC73C\uB85C \uBCC0\uD658\uD558\uB294 \uCEF4\uD30C\uC77C\uB7EC\uB2E4.\n\n[\uC124\uACC4 \uCCA0\uD559] \uB7F0\uD0C0\uC784\uC5D0 \uC11C\uC0AC\uB294 LLM\uC774, \uC218\uCE58 \uACC4\uC0B0\xB7\uC0C1\uD0DC\uB294 \uC5D4\uC9C4\uC774 \uC18C\uC720\uD55C\uB2E4. \uB108\uC758 \uC784\uBB34\uB294 \uB8F0\uBD81\uC5D0\uC11C "\uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD560 \uC218 \uC788\uB294 \uADDC\uCE59"(\uC218\uCE58\xB7\uBB38\uD131\xB7\uBC94\uC704\xB7\uD2F0\uC5B4\xB7\uACF5\uC2DD\xB7\uD45C)\uB9CC \uBF51\uC544 \uAD6C\uC870\uD654\uD558\uB294 \uAC83\uC774\uB2E4. \uBD84\uC704\uAE30\xB7\uC11C\uC0AC \uC9C0\uCE68\xB7\uC774\uBBF8\uC9C0 \uADDC\uCE59\uC740 \uB123\uC9C0 \uB9C8\uB77C.\n\n[\uCD9C\uB825 \uD615\uC2DD \u2014 \uC774 JSON \uD558\uB098\uB9CC. \uC55E\uB4A4 \uC124\uBA85\xB7\uB9C8\uD06C\uB2E4\uC6B4\xB7\uCF54\uB4DC\uD39C\uC2A4 \uAE08\uC9C0. \u2605\uD544\uB4DC\uBA85\uC740 \uC544\uB798 \uADF8\uB300\uB85C \uC4F0\uACE0 \uB300\uCCB4 \uC774\uB984\uC744 \uC9C0\uC5B4\uB0B4\uC9C0 \uB9C8\uB77C.]\n{\n  "meta": { "id": "kebab-id", "title": "\uCE74\uB4DC\uBA85", "schemaVersion": "0.1" },\n  "resources": [ { "id": "gold|food|drink|material", "unit": "\uBB38\uC790\uC5F4", "min": 0, "basePrice": \uC815\uC218\uC635\uC158 } ],\n  "scales": [ { "id": "affinity \uB4F1", "owner": "npc|player|captive", "range": [\uCD5C\uC18C,\uCD5C\uB300], "default": \uC815\uC218,\n    "steps": { "S": +\uC815\uC218, "M": +\uC815\uC218, "L": +\uC815\uC218, "XL": +\uC815\uC218, "S-": -\uC815\uC218, "M-": -\uC815\uC218, "L-": -\uC815\uC218, "XL-": -\uC815\uC218 },\n    "tiers": [ { "range": [lo,hi], "label": "\uD2F0\uC5B4\uBA85", "brief": "\uC9E7\uC740 \uC11C\uC220", "forbidden": ["\uAE08\uC9C0\uD589\uB3D9"] } ],\n    "actionMinimums": { "\uB3D9\uC791\uBA85": \uCD5C\uC18C\uC218\uCE58 } } ],\n  "ladders": [\n    { "id": "player_level", "currency": "exp", "thresholds": [\uBB38\uD131\uB4E4 \uB610\uB294 null], "sources": { "\uCE74\uD14C\uACE0\uB9AC": \uAC12 \uB610\uB294 [\uCD5C\uC18C,\uCD5C\uB300] } },\n    { "id": "reputation", "axes": ["\uCD95id"], "axisLabels": { "\uCD95id": "\uD55C\uAE00\uBA85" },\n      "ranks": [ { "id": "E", "next": \uBB38\uD131 }, { "id": "S", "next": null } ],\n      "onPromote": "resetExp", "onNegative": "demoteBorrow",\n      "categories": { "\uCD95id": { "\uCE74\uD14C\uACE0\uB9AC": [\uCD5C\uC18C,\uCD5C\uB300] } } } ],\n  "entities": [\n    { "type": "room", "fields": ["no","kind","pricePerNight","capacity","requiresRoomLevel"], "instances": [ { "no": \uC815\uC218, "kind": "\uBB38\uC790\uC5F4", "pricePerNight": \uC815\uC218, "capacity": \uC815\uC218\uB610\uB294null, "requiresRoomLevel": \uC815\uC218 } ] },\n    { "type": "menuItem", "fields": ["name","category","grade","price","requiresKitchenLevel","consumes"], "instances": [ { "name": "", "category": "", "grade": "E~S", "price": \uC815\uC218, "requiresKitchenLevel": \uC815\uC218, "consumes": { "food|drink": 1 } } ] },\n    { "type": "npc", "fields": ["id","nameKo","nameEn","class","group"], "instances": [ { "id":"", "nameKo":"", "nameEn":"", "class":"", "group":"" } ] },\n    { "type": "facility", "fields": ["id","label","maxLevel"], "instances": [ { "id":"", "label":"", "maxLevel": \uC815\uC218 } ] } ],\n  "formulas": [ { "id": "daily_revenue \uB4F1", "baseline": { "\uC2DC\uC124\uB808\uBCA8": { "cap": \uC815\uC218, "customers": [\uCD5C\uC18C,\uCD5C\uB300], "revenue": [\uCD5C\uC18C,\uCD5C\uB300] } }, "note": "" } ],\n  "processes": [ { "trigger": "dayEnd \uB4F1", "steps": [ { "id": "\uB2E8\uACC4id", "note": "" } ] } ],\n  "events": [ { "id": "sale|purchase|checkin|checkout|hire|fire|scale_delta|rep_event|exp_gain|gold_delta|resource_delta|day_end \uB4F1", "params": { "\uD544\uB4DC": "\uD0C0\uC785" } } ],\n  "initialState": { "day": 1, "gold": \uC815\uC218, "resources": {}, "facilities": {}, "staff": [], "player": {}, "reputation": {} },\n  "_assumptions": [ "\uB8F0\uBD81\uC5D0\uC11C \uD655\uC815 \uBABB \uD55C \uAC12\uACFC \uC0AC\uC720\uB97C \uBB38\uC7A5\uC73C\uB85C" ]\n}\n\n[\uBCC0\uD658 \uADDC\uCE59]\n1. \uB8F0\uBD81\uC5D0 \uBA85\uC2DC\uB41C \uC218\uCE58\uB9CC. \uC5C6\uB294 \uAC12\uC740 \uC9C0\uC5B4\uB0B4\uC9C0 \uB9D0\uACE0 \uC0DD\uB7B5\uD558\uAC70\uB098 null, \uADF8\uB9AC\uACE0 \uBB34\uC5C7\uC744 \uBABB \uC815\uD588\uB294\uC9C0 "_assumptions"\uC5D0 \uBC18\uB4DC\uC2DC \uC801\uB294\uB2E4.\n2. 0~200 \uB4F1 \uC720\uACC4 \uC218\uCE58 + \uAD6C\uAC04\uBCC4 \uC11C\uC220/\uAE08\uC9C0 = scales.tiers. \uC6D0\uBCF8 \uD2F0\uC5B4\uB97C \uD558\uB098\uB3C4 \uBE60\uB728\uB9AC\uC9C0 \uB9D0\uACE0 range\xB7label\xB7forbidden\uC744 \uC62E\uAE34\uB2E4.\n3. EXP \uB204\uC801\u2192\uBB38\uD131 \uC2B9\uAE09 = ladders. \uD3C9\uD310 \uC5EC\uB7EC \uCD95\uC740 axes\uB85C \uBB36\uACE0 \uCD95\uBCC4 \uBCC0\uB3D9 \uBC94\uC704\uD45C\uB97C categories\uB85C.\n4. \uD0DC\uADF8(\uC608: [ysp_affinity::id::\xB1N])\uB294 events\uB85C. \uC2A4\uCF00\uC77C \uBCC0\uB3D9\uC740 LLM\uC774 \uD06C\uAE30(S/M/L/XL)\uB9CC \uBD84\uB958\uD558\uACE0 \uC5D4\uC9C4\uC774 steps\uB85C \uC218\uCE58\uD654\uD558\uB294 \uC124\uACC4\uC774\uBBC0\uB85C params\uC5D0 size\uB97C \uB450\uACE0, \uC6D0\uBCF8\uC774 \xB1N\uC744 \uC918\uB3C4 \uADF8 \uAC12\uB4E4\uC740 steps\uB85C \uBF51\uB294\uB2E4.\n5. \u2605\uBA54\uB274\uB294 \uC5D4\uC9C4 \uD310\uB9E4\uC758 \uD575\uC2EC\uC774\uB2E4. \uC694\uB9AC\xB7\uC8FC\uB958\xB7\uD2B9\uC218\uBA54\uB274\xB7\uBB34\uAE30\xB7\uBC29\uC5B4\uAD6C \uB4F1 \uBAA8\uB4E0 \uD310\uB9E4 \uD488\uBAA9\uC744 entities.menuItem.instances\uC5D0 \uBE60\uC9D0\uC5C6\uC774 \uB123\uB418, name\uC740 \uB8F0\uBD81\uC5D0 \uC801\uD78C \uD55C\uAD6D\uC5B4 \uC774\uB984 \uADF8\uB300\uB85C(\uC608: "\uACE0\uAE30 \uC2A4\uD29C", "\uC5D0\uC77C", "\uCCA0\uC81C \uC7A5\uAC80"), price\uB294 \uC6D0\uBB38 \uAC00\uACA9(1\uB9CC\uC6D0=10000\uCC98\uB7FC \uC22B\uC790\uB9CC), requiresKitchenLevel/requiresForge\uB294 \uADF8 \uD488\uBAA9\uC774 \uB4F1\uC7A5\uD558\uB294 \uC2DC\uC124 \uB808\uBCA8({{#when kitchen level}} \uB4F1 \uC870\uAC74 \uBE14\uB85D\uC758 \uB808\uBCA8)\uB85C \uCC44\uC6B4\uB2E4. \uAC1D\uC2E4\xB7NPC\uB3C4 \uB9C8\uCC2C\uAC00\uC9C0\uB85C \uD45C/\uBAA9\uB85D\uC744 \uBE60\uC9D0\uC5C6\uC774 instances\uB85C.\n6. \uC815\uAE30 \uC815\uC0B0\xB7\uC77C\uAE09 \uCC28\uAC10\xB7\uC2DC\uAC04 \uACBD\uACFC\uB294 formulas + processes\uB85C.\n7. \u2605initialState\uB294 \uD50C\uB808\uC774\uB97C \uBC14\uB85C \uC2DC\uC791\uD560 \uC218 \uC788\uAC8C \uCC44\uC6B4\uB2E4. \uB8F0\uBD81\uC5D0 \uC2DC\uC791 \uC790\uBCF8\xB7\uCD08\uAE30 \uC7AC\uACE0\uAC00 \uC5C6\uC73C\uBA74(\uB300\uAC1C Lua \uBCC0\uC218\uB77C \uBA85\uC2DC \uC548 \uB428), \uC7AC\uD654 \uAC00\uACA9 \uADDC\uBAA8\uB97C \uBCF4\uACE0 \uCD08\uAE30 \uC6B4\uC601\uC774 \uAC00\uB2A5\uD55C \uAC12\uC73C\uB85C \uC815\uD55C\uB2E4: gold\uB294 \uAE30\uBCF8 \uC2DD\uC790\uC7AC/\uC7AC\uB8CC\uB97C \uC218\uC2ED \uC778\uBD84 \uC0B4 \uC218 \uC788\uB294 \uC218\uC900(\uC608: \uCD5C\uC18C 300,000 \uC774\uC0C1), food\xB7drink\uB294 \uCD5C\uC18C \uC601\uC5C5 \uAC00\uB2A5\uD55C \uCD08\uAE30 \uC7AC\uACE0(\uC608: \uAC01 20), facilities\uB294 \uBAA8\uB4E0 \uC2DC\uC124\uC744 \uB808\uBCA8 1\uB85C. \uC774\uB807\uAC8C \uC815\uD55C \uAC12\uC740 _assumptions\uC5D0 "\uC784\uC2DC \uC2DC\uC791\uAC12"\uC73C\uB85C \uAE30\uB85D\uD55C\uB2E4.\n8. \uCD9C\uB825\uC740 \uD30C\uC2F1 \uAC00\uB2A5\uD55C \uB2E8\uC77C JSON. \uADF8 \uC678 \uD14D\uC2A4\uD2B8 \uC808\uB300 \uAE08\uC9C0.\n\n\uC544\uB798 [\uB8F0\uBD81]\uC744 \uCEF4\uD30C\uC77C\uD558\uB77C.\n\n[\uB8F0\uBD81]\n{{RULEBOOK}}';
       var MAX_RULEBOOK_CHARS = 2e5;
-      var REWARD_SCHEMA_APPENDIX = '\n\n[rewards table rule]\nOutput JSON must include "rewards": { "gold": { "E":[min,max], "D":[min,max], "C":[min,max], "B":[min,max], "A":[min,max], "S":[min,max] } }. Quest/manual/request reward gold belongs only in this engine table, not in individual event params. If the rulebook does not give exact reward gold amounts, infer sensible tier ranges from menu prices and upgrade costs, then record the reason in _assumptions as temporary reward values.';
+      var REWARD_SCHEMA_APPENDIX = '\n\n[rewards/upgrades/gather table rules]\nOutput JSON must include "rewards": { "gold": { "E":[min,max], "D":[min,max], "C":[min,max], "B":[min,max], "A":[min,max], "S":[min,max] } }. Quest/manual/request reward gold belongs only in this engine table, not in individual event params. If the rulebook does not give exact reward gold amounts, infer sensible tier ranges from menu prices and upgrade costs, then record the reason in _assumptions as temporary reward values.\n\nEach facility instance should include "upgradeCosts": { "2": cost, "3": cost, "4": cost } for the next-level expansion costs. Upgrade costs are engine-owned table values; never place costs, gold deltas, or target levels in individual upgrade events. If the rulebook does not provide exact costs, infer them from the economy scale and record the temporary assumption in _assumptions.\n\nOutput top-level "gather": { "small":[min,max], "large":[min,max], "bulk":[min,max], "note":"..." } for self-supply yields such as hunting, gathering, and monster byproducts. Gather quantities are engine-owned table values; never place qty or amount in individual gain_resource events.';
       function promptTemplate() {
         return SYSTEM_PROMPT + REWARD_SCHEMA_APPENDIX;
       }
@@ -6211,6 +6261,7 @@ ${row3.content}`;
         validateFormulas(schema2, issues);
         validateProcesses(schema2, issues);
         validateRewards(schema2, issues);
+        validateGather(schema2, issues);
         validateEvents(schema2, issues);
         return { schema: schema2, issues };
       }
@@ -6338,6 +6389,9 @@ ${row3.content}`;
             for (const field4 of required) {
               if (!(field4 in instance)) error(issues, `${itemPath}.${field4}`, `Missing required field ${field4}.`);
             }
+            if (entity.type === "facility" && instance.upgradeCosts != null) {
+              validateUpgradeCosts(instance.upgradeCosts, `${itemPath}.upgradeCosts`, issues);
+            }
           });
         });
       }
@@ -6380,6 +6434,32 @@ ${row3.content}`;
             warn(issues, path, "Reward range values should be numeric.");
           } else if (min > max) {
             warn(issues, path, "Reward range should ascend.");
+          }
+        }
+      }
+      function validateGather(schema2, issues) {
+        if (schema2.gather == null) return;
+        if (!isObject(schema2.gather)) return error(issues, "gather", "gather must be an object when present.");
+        for (const scale of ["small", "large", "bulk"]) {
+          const path = `gather.${scale}`;
+          const range = schema2.gather[scale];
+          if (!isRange(range)) {
+            error(issues, path, "Gather range must be an array of length 2.");
+            continue;
+          }
+          validateAscendingIntegerRange(range, path, issues);
+        }
+      }
+      function validateUpgradeCosts(costs, path, issues) {
+        if (!isObject(costs)) return error(issues, path, "upgradeCosts must be an object when present.");
+        for (const [level, cost] of Object.entries(costs)) {
+          const numericLevel = Number(level);
+          const numericCost = Number(cost);
+          if (!Number.isInteger(numericLevel) || numericLevel <= 1) {
+            error(issues, `${path}.${level}`, "Upgrade cost level keys must be integer levels greater than 1.");
+          }
+          if (!Number.isInteger(numericCost) || numericCost <= 0) {
+            error(issues, `${path}.${level}`, "Upgrade cost values must be positive integers.");
           }
         }
       }
@@ -6431,6 +6511,15 @@ ${row3.content}`;
       function validateRange(value, path, issues, level) {
         if (!isRange(value)) {
           (level === "warn" ? warn : error)(issues, path, "Range must be an array of length 2.");
+        }
+      }
+      function validateAscendingIntegerRange(range, path, issues) {
+        const min = Number(range[0]);
+        const max = Number(range[1]);
+        if (!Number.isInteger(min) || !Number.isInteger(max)) {
+          error(issues, path, "Range values must be integers.");
+        } else if (min > max) {
+          error(issues, path, "Range must ascend.");
         }
       }
       function requireArray(value, path, issues) {
@@ -7072,6 +7161,8 @@ ${Array.from(extras).join(" ")}` : text;
     "checkout",
     "sale",
     "purchase",
+    "upgrade",
+    "gain_resource",
     "hire",
     "fire",
     "scale_delta",
@@ -7119,6 +7210,8 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function summarizeEvent(type, entry, formatMoney3) {
     if (entry.ok && type === "reward") return `reward \xB7 ${entry.tier} \xB7 gold +${formatMoney3(entry.goldDelta)}`;
+    if (entry.ok && type === "upgrade") return `upgrade \xB7 ${entry.facility} Lv.${entry.level} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}`;
+    if (entry.ok && type === "gain_resource") return `gain \xB7 ${entry.resource} +${entry.qty} (${entry.scale})`;
     if (!entry.ok) return `${type} \uC2E4\uD328: ${entry.reason || "\uC54C \uC218 \uC5C6\uC74C"}${entry.detail ? ` (${entry.detail})` : ""}`;
     if (type === "scale_delta") return entry.capped ? `${entry.target} capped \xB7 ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
     if (type === "rep_event") return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
@@ -7312,6 +7405,10 @@ ${Array.from(extras).join(" ")}` : text;
       wrap.append(field("\uBA54\uB274", menuSelect()), field("\uC218\uB7C9", namedInput("qty", "1", "number")));
     } else if (type === "purchase") {
       wrap.append(field("\uC790\uC6D0", resourceSelect("resource")), field("\uC218\uB7C9", namedInput("qty", "1", "number")), pricePreview());
+    } else if (type === "upgrade") {
+      wrap.append(field("\uC2DC\uC124", facilitySelect()), upgradePreview());
+    } else if (type === "gain_resource") {
+      wrap.append(field("\uC790\uC6D0", resourceSelect("resource")), field("scale", gatherScaleSelect()), field("\uC0AC\uC720", namedInput("reason", "")));
     } else if (type === "hire") {
       wrap.append(field("NPC", npcSelect(false)), field("\uC77C\uAE09", namedInput("dailyWage", "100000", "number")));
     } else if (type === "fire") {
@@ -7327,6 +7424,8 @@ ${Array.from(extras).join(" ")}` : text;
       wrap.append(field("\uCD95", axis), field("\uCE74\uD14C\uACE0\uB9AC", category), field("\uC0AC\uC720", namedInput("reason", "")));
     } else if (type === "exp_gain") {
       wrap.append(field("\uCE74\uD14C\uACE0\uB9AC", expCategorySelect()), field("\uC0AC\uC720", namedInput("reason", "")));
+    } else if (type === "reward") {
+      wrap.append(field("questId", namedInput("questId", "q1")), field("tier", rewardTierSelect()), field("\uC0AC\uC720", namedInput("reason", "")));
     } else if (type === "gold_delta") {
       wrap.append(field("\uAE08\uC561", namedInput("amount", "10000", "number")), field("\uC0AC\uC720", namedInput("reason", "")));
     } else if (type === "resource_delta") {
@@ -7350,11 +7449,14 @@ ${Array.from(extras).join(" ")}` : text;
     if (type === "checkout") Object.assign(params, parseOccupant(value("occupant")));
     if (type === "sale") Object.assign(params, { menuName: value("menuName"), qty: number("qty") });
     if (type === "purchase") Object.assign(params, { resource: value("resource"), qty: number("qty") });
+    if (type === "upgrade") Object.assign(params, { facility: value("facility") });
+    if (type === "gain_resource") Object.assign(params, { resource: value("resource"), scale: value("scale"), reason: value("reason") });
     if (type === "hire") Object.assign(params, { npcId: value("npcId"), dailyWage: number("dailyWage") });
     if (type === "fire") Object.assign(params, { npcId: value("npcId") });
     if (type === "scale_delta") Object.assign(params, { scale: "affinity", target: value("npcId"), direction: value("direction"), size: value("size"), charBonus: number("charBonus"), reason: value("reason") });
     if (type === "rep_event") Object.assign(params, { axis: value("axis"), category: value("category"), reason: value("reason") });
     if (type === "exp_gain") Object.assign(params, { category: value("category"), reason: value("reason") });
+    if (type === "reward") Object.assign(params, { questId: value("questId"), tier: value("tier"), reason: value("reason") });
     if (type === "gold_delta") Object.assign(params, { amount: number("amount"), reason: value("reason") });
     if (type === "resource_delta") Object.assign(params, { resource: value("resource"), amount: number("amount"), reason: value("reason") });
     return { id: type, params };
@@ -7450,6 +7552,27 @@ ${Array.from(extras).join(" ")}` : text;
     appendOption(select, "drink", "\uC8FC\uB958", false);
     return select;
   }
+  function facilitySelect() {
+    const select = namedSelect("facility");
+    const block = schema.entities.find((entry) => entry.type === "facility");
+    for (const facility of block && block.instances || []) {
+      appendOption(select, facility.id, facility.label || facility.id, false);
+    }
+    select.value = select.querySelector('option[value="tavern"]') ? "tavern" : select.value;
+    return select;
+  }
+  function gatherScaleSelect() {
+    const select = namedSelect("scale");
+    for (const scale of ["small", "large", "bulk"]) appendOption(select, scale, scale, false);
+    return select;
+  }
+  function rewardTierSelect() {
+    const select = namedSelect("tier");
+    const tiers = Object.keys(schema.rewards && schema.rewards.gold || {});
+    for (const tier of tiers) appendOption(select, tier, tier, false);
+    select.value = select.querySelector('option[value="D"]') ? "D" : select.value;
+    return select;
+  }
   function npcSelect(includeHired) {
     const engineState2 = getEngineState();
     const select = namedSelect("npcId");
@@ -7511,6 +7634,11 @@ ${Array.from(extras).join(" ")}` : text;
   function pricePreview() {
     const p = el("p", "muted-line engine-preview");
     p.textContent = "\uB2E8\uAC00: \uC2DD\uC790\uC7AC 3,000 / \uC8FC\uB958 5,000";
+    return p;
+  }
+  function upgradePreview() {
+    const p = el("p", "muted-line engine-preview");
+    p.textContent = "\uBE44\uC6A9\uACFC \uB2E4\uC74C \uB808\uBCA8\uC740 schema facility.upgradeCosts\uB85C \uC5D4\uC9C4\uC774 \uACC4\uC0B0";
     return p;
   }
   function parseOccupant(value) {

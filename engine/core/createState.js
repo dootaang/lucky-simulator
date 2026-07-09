@@ -16,6 +16,7 @@ function createState(schema, seed) {
     npcs: normalizeNpcs(schema, initial.npcs || {}),
     pendingCheckouts: [],
     unpaidWages: Number(initial.unpaidWages || 0),
+    claimedRewards: Array.isArray(initial.claimedRewards) ? clone(initial.claimedRewards) : [],
   };
   if (seed != null) state.seed = seed;
   return state;

@@ -9,7 +9,9 @@
       "initialState.gold=500000, food=20, drink=20 (원본 시작값 미확인)",
       "객실 잠금: 110호=lv_room 2, 111호=lv_room 3 필요 (원본 매핑 미확인)",
       "player_level.thresholds는 평판 문턱 준용 (원본 Lua 레벨 곡선 미확인)",
-      "정산 매출 범위: Lv1 10~25만 / Lv2 25~60만 / Lv3 60~150만 / Lv4 150~400만 (원본 명시값)"
+      "정산 매출 범위: Lv1 10~25만 / Lv2 25~60만 / Lv3 60~150만 / Lv4 150~400만 (원본 명시값)",
+      "facility.upgradeCosts는 SPEC-M3d 기준값을 적용: 2레벨 750,000, 3레벨 3,000,000, 4레벨 12,000,000. 시설별 원본 차등표가 없어 모든 시설에 동일 적용.",
+      "gather 수량표는 SPEC-M3d 기본값 적용: small 1~3, large 5~10, bulk 10~20. 사냥/채집/몬스터 부산물 자급 규모를 LLM이 수치로 쓰지 않도록 엔진 표로 둠."
     ]
   },
 
@@ -33,6 +35,13 @@
       "S": [3000000, 8000000]
     },
     "note": "Default quest/manual/request completion gold table. Values scale from several Lv1 menu sales through major facility-upgrade funding; exact canon values are not present in the rulebook, so this is recorded as an engine assumption."
+  },
+
+  "gather": {
+    "small": [1, 3],
+    "large": [5, 10],
+    "bulk": [10, 20],
+    "note": "Self-supply yield table for hunting, gathering, and monster byproducts. Engine-owned so event params never carry quantities."
   },
 
   "resources": [
@@ -221,12 +230,12 @@
     },
     {
       "type": "facility",
-      "fields": ["id", "label", "maxLevel"],
+      "fields": ["id", "label", "maxLevel", "upgradeCosts"],
       "instances": [
-        { "id": "tavern", "label": "주점홀", "maxLevel": 4 },
-        { "id": "kitchen", "label": "주방", "maxLevel": 4 },
-        { "id": "room", "label": "객실동", "maxLevel": 4 },
-        { "id": "quarters", "label": "용병 숙소", "maxLevel": 4 }
+        { "id": "tavern", "label": "주점홀", "maxLevel": 4, "upgradeCosts": { "2": 750000, "3": 3000000, "4": 12000000 } },
+        { "id": "kitchen", "label": "주방", "maxLevel": 4, "upgradeCosts": { "2": 750000, "3": 3000000, "4": 12000000 } },
+        { "id": "room", "label": "객실동", "maxLevel": 4, "upgradeCosts": { "2": 750000, "3": 3000000, "4": 12000000 } },
+        { "id": "quarters", "label": "용병 숙소", "maxLevel": 4, "upgradeCosts": { "2": 750000, "3": 3000000, "4": 12000000 } }
       ]
     }
   ],
@@ -304,11 +313,13 @@
 
   "events": [
     { "id": "gold_delta", "params": { "amount": "±정수", "reason": "string" }, "note": "의뢰 보수 등 액션 외 골드 변동" },
-    { "id": "resource_delta", "params": { "resource": "food|drink", "amount": "±정수", "reason": "string" }, "note": "사냥·채집 등 자급" },
+    { "id": "resource_delta", "params": { "resource": "food|drink", "amount": "±정수", "reason": "string" }, "note": "engine/internal stock adjustment; not exposed in play prompt" },
+    { "id": "upgrade", "params": { "facility": "tavern|kitchen|room|quarters" }, "note": "Engine deducts facility.upgradeCosts[nextLevel] and increments level. Params must not include cost or level." },
+    { "id": "gain_resource", "params": { "resource": "food|drink", "scale": "small|large|bulk", "reason": "string" }, "note": "Engine chooses qty from gather[scale] with seeded RNG. Params must not include qty or amount." },
     { "id": "scale_delta", "params": { "scale": "affinity", "target": "npcId", "size": "S|M|L|XL", "direction": "+|-", "charBonus": "-1|0|1", "reason": "string" }, "note": "LLM은 크기만 분류. 엔진이 steps로 수치화, dailyCap 적용" },
     { "id": "rep_event", "params": { "axis": "village|advent|mage|noble|under|merchant", "category": "categories 키", "reason": "string" }, "note": "엔진이 시드 RNG로 범위 내 값 결정, 승급/강등 처리" },
     { "id": "exp_gain", "params": { "category": "sources 키", "reason": "string" }, "note": "엔진이 값/범위 RNG 적용, 레벨업 판정" },
-    { "id": "reward", "params": { "tier": "E|D|C|B|A|S", "reason": "string" }, "note": "Engine chooses gold from rewards.gold[tier] with seeded RNG; event params must not include amount." },
+    { "id": "reward", "params": { "questId": "string", "tier": "E|D|C|B|A|S", "reason": "string" }, "note": "Engine chooses gold from rewards.gold[tier] with seeded RNG; questId is required and idempotent via state.claimedRewards; event params must not include amount." },
     { "id": "checkin", "params": { "roomNo": "int", "guestName": "string", "stayDays": "int" } },
     { "id": "checkout", "params": { "roomNo": "int", "guestName": "string" } },
     { "id": "sale", "params": { "menuName": "string", "qty": "int" } },

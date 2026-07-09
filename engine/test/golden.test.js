@@ -46,6 +46,7 @@ test('G1 createState initializes schema-backed state', () => {
   assert.equal(state.gold, 500000);
   assert.equal(state.resources.food, 20);
   assert.equal(state.resources.drink, 20);
+  assert.deepEqual(state.claimedRewards, []);
   assert.equal(state.npcs.silvia.affinity, 50);
   assert.deepEqual(state.rooms, {});
   assert.equal(roomStatus(schema, state).filter((room) => room.occupants.length).length, 0);
@@ -164,22 +165,104 @@ test('M3c reward uses schema table and seeded rng without amount params', () => 
   const before = JSON.stringify(state);
   deepFreeze(state);
 
-  const result = step(state, createRng(42), 'reward', { tier: 'C', reason: 'quest complete' });
+  const result = step(state, createRng(42), 'reward', { questId: 'quest-c', tier: 'C', reason: 'quest complete' });
   assert.equal(result.log[0].ok, true);
+  assert.equal(result.log[0].questId, 'quest-c');
   assert.equal(result.log[0].tier, 'C');
   assert.equal(result.log[0].goldDelta, 265276);
   assert.equal(result.state.gold, 765276);
+  assert.deepEqual(result.state.claimedRewards, ['quest-c']);
   assert.equal(JSON.stringify(state), before);
 
-  const missing = step(state, createRng(42), 'reward', { tier: 'Z', reason: 'bad tier' });
+  const missing = step(state, createRng(42), 'reward', { questId: 'quest-z', tier: 'Z', reason: 'bad tier' });
   assert.equal(missing.log[0].ok, false);
   assert.equal(missing.log[0].reason, 'unknown_reward_tier');
   assert.equal(missing.state, state);
 
-  const withAmount = step(state, createRng(42), 'reward', { tier: 'C', amount: 1, reason: 'bad params' });
+  const withAmount = step(state, createRng(42), 'reward', { questId: 'quest-amount', tier: 'C', amount: 1, reason: 'bad params' });
   assert.equal(withAmount.log[0].ok, false);
   assert.equal(withAmount.log[0].reason, 'reward_amount_not_allowed');
   assert.equal(withAmount.state, state);
+});
+
+test('M3d upgrade uses schema costs and rejects invalid upgrades without mutation', () => {
+  const rng = createRng(42);
+  const state = createState(schema);
+  state.gold = 1000000;
+  const before = JSON.stringify(state);
+  deepFreeze(state);
+
+  const result = step(state, rng, 'upgrade', { facility: 'tavern' });
+  assert.equal(result.log[0].ok, true);
+  assert.equal(result.log[0].facility, 'tavern');
+  assert.equal(result.log[0].level, 2);
+  assert.equal(result.log[0].goldDelta, -750000);
+  assert.equal(result.state.gold, 250000);
+  assert.equal(result.state.facilities.tavern, 2);
+  assert.equal(JSON.stringify(state), before);
+
+  const poor = createState(schema);
+  const insufficient = step(poor, createRng(42), 'upgrade', { facility: 'tavern' });
+  assert.equal(insufficient.log[0].ok, false);
+  assert.equal(insufficient.log[0].reason, 'insufficient_gold');
+  assert.equal(insufficient.state, poor);
+
+  const maxed = createState(schema);
+  maxed.facilities.tavern = 4;
+  const max = step(maxed, createRng(42), 'upgrade', { facility: 'tavern' });
+  assert.equal(max.log[0].ok, false);
+  assert.equal(max.log[0].reason, 'max_level');
+  assert.equal(max.state, maxed);
+});
+
+test('M3d reward requires questId and blocks duplicate claims', () => {
+  const rng = createRng(42);
+  let state = createState(schema);
+
+  const first = step(state, rng, 'reward', { questId: 'q1', tier: 'D', reason: 'quest complete' });
+  assert.equal(first.log[0].ok, true);
+  assert.equal(first.log[0].goldDelta, 106110);
+  assert.equal(first.state.gold, 606110);
+  assert.deepEqual(first.state.claimedRewards, ['q1']);
+
+  state = first.state;
+  const beforeSecondGold = state.gold;
+  const second = step(state, rng, 'reward', { questId: 'q1', tier: 'D', reason: 'repeat claim' });
+  assert.equal(second.log[0].ok, false);
+  assert.equal(second.log[0].reason, 'already_claimed');
+  assert.equal(second.state, state);
+  assert.equal(second.state.gold, beforeSecondGold);
+
+  const missing = step(createState(schema), createRng(42), 'reward', { tier: 'D', reason: 'missing quest id' });
+  assert.equal(missing.log[0].ok, false);
+  assert.equal(missing.log[0].reason, 'missing_questId');
+});
+
+test('M3d gain_resource uses schema gather ranges and seeded rng', () => {
+  const rng = createRng(42);
+  let state = createState(schema);
+
+  let result = step(state, rng, 'gain_resource', { resource: 'food', scale: 'small', reason: 'forage' });
+  assert.equal(result.log[0].ok, true);
+  assert.equal(result.log[0].qty, 1);
+  assert.equal(result.state.resources.food, 21);
+
+  state = result.state;
+  result = step(state, rng, 'gain_resource', { resource: 'drink', scale: 'large', reason: 'brew supplies' });
+  assert.equal(result.log[0].ok, true);
+  assert.equal(result.log[0].qty, 10);
+  assert.equal(result.state.resources.drink, 30);
+
+  state = result.state;
+  result = step(state, rng, 'gain_resource', { resource: 'food', scale: 'bulk', reason: 'monster byproducts' });
+  assert.equal(result.log[0].ok, true);
+  assert.equal(result.log[0].qty, 15);
+  assert.equal(result.state.resources.food, 36);
+
+  const unknown = step(state, createRng(42), 'gain_resource', { resource: 'wood', scale: 'small' });
+  assert.equal(unknown.log[0].ok, false);
+  assert.equal(unknown.log[0].reason, 'unknown_resource');
+  assert.equal(unknown.state, state);
 });
 
 test('M3c dayEnd repays unpaid wages from automatic revenue before new wages', () => {

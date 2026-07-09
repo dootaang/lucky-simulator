@@ -23,6 +23,7 @@ function validateSchema(obj) {
   validateFormulas(schema, issues);
   validateProcesses(schema, issues);
   validateRewards(schema, issues);
+  validateGather(schema, issues);
   validateEvents(schema, issues);
 
   return { schema, issues };
@@ -162,6 +163,9 @@ function validateEntities(schema, issues) {
       for (const field of required) {
         if (!(field in instance)) error(issues, `${itemPath}.${field}`, `Missing required field ${field}.`);
       }
+      if (entity.type === 'facility' && instance.upgradeCosts != null) {
+        validateUpgradeCosts(instance.upgradeCosts, `${itemPath}.upgradeCosts`, issues);
+      }
     });
   });
 }
@@ -208,6 +212,34 @@ function validateRewards(schema, issues) {
       warn(issues, path, 'Reward range values should be numeric.');
     } else if (min > max) {
       warn(issues, path, 'Reward range should ascend.');
+    }
+  }
+}
+
+function validateGather(schema, issues) {
+  if (schema.gather == null) return;
+  if (!isObject(schema.gather)) return error(issues, 'gather', 'gather must be an object when present.');
+  for (const scale of ['small', 'large', 'bulk']) {
+    const path = `gather.${scale}`;
+    const range = schema.gather[scale];
+    if (!isRange(range)) {
+      error(issues, path, 'Gather range must be an array of length 2.');
+      continue;
+    }
+    validateAscendingIntegerRange(range, path, issues);
+  }
+}
+
+function validateUpgradeCosts(costs, path, issues) {
+  if (!isObject(costs)) return error(issues, path, 'upgradeCosts must be an object when present.');
+  for (const [level, cost] of Object.entries(costs)) {
+    const numericLevel = Number(level);
+    const numericCost = Number(cost);
+    if (!Number.isInteger(numericLevel) || numericLevel <= 1) {
+      error(issues, `${path}.${level}`, 'Upgrade cost level keys must be integer levels greater than 1.');
+    }
+    if (!Number.isInteger(numericCost) || numericCost <= 0) {
+      error(issues, `${path}.${level}`, 'Upgrade cost values must be positive integers.');
     }
   }
 }
@@ -264,6 +296,16 @@ function normalizeObjectFields(obj, aliases, path, issues) {
 function validateRange(value, path, issues, level) {
   if (!isRange(value)) {
     (level === 'warn' ? warn : error)(issues, path, 'Range must be an array of length 2.');
+  }
+}
+
+function validateAscendingIntegerRange(range, path, issues) {
+  const min = Number(range[0]);
+  const max = Number(range[1]);
+  if (!Number.isInteger(min) || !Number.isInteger(max)) {
+    error(issues, path, 'Range values must be integers.');
+  } else if (min > max) {
+    error(issues, path, 'Range must ascend.');
   }
 }
 

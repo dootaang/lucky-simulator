@@ -203,6 +203,10 @@ function renderParamForm(type) {
     wrap.append(field('메뉴', menuSelect()), field('수량', namedInput('qty', '1', 'number')));
   } else if (type === 'purchase') {
     wrap.append(field('자원', resourceSelect('resource')), field('수량', namedInput('qty', '1', 'number')), pricePreview());
+  } else if (type === 'upgrade') {
+    wrap.append(field('시설', facilitySelect()), upgradePreview());
+  } else if (type === 'gain_resource') {
+    wrap.append(field('자원', resourceSelect('resource')), field('scale', gatherScaleSelect()), field('사유', namedInput('reason', '')));
   } else if (type === 'hire') {
     wrap.append(field('NPC', npcSelect(false)), field('일급', namedInput('dailyWage', '100000', 'number')));
   } else if (type === 'fire') {
@@ -218,6 +222,8 @@ function renderParamForm(type) {
     wrap.append(field('축', axis), field('카테고리', category), field('사유', namedInput('reason', '')));
   } else if (type === 'exp_gain') {
     wrap.append(field('카테고리', expCategorySelect()), field('사유', namedInput('reason', '')));
+  } else if (type === 'reward') {
+    wrap.append(field('questId', namedInput('questId', 'q1')), field('tier', rewardTierSelect()), field('사유', namedInput('reason', '')));
   } else if (type === 'gold_delta') {
     wrap.append(field('금액', namedInput('amount', '10000', 'number')), field('사유', namedInput('reason', '')));
   } else if (type === 'resource_delta') {
@@ -243,11 +249,14 @@ function collectEvent(type, form) {
   if (type === 'checkout') Object.assign(params, parseOccupant(value('occupant')));
   if (type === 'sale') Object.assign(params, { menuName: value('menuName'), qty: number('qty') });
   if (type === 'purchase') Object.assign(params, { resource: value('resource'), qty: number('qty') });
+  if (type === 'upgrade') Object.assign(params, { facility: value('facility') });
+  if (type === 'gain_resource') Object.assign(params, { resource: value('resource'), scale: value('scale'), reason: value('reason') });
   if (type === 'hire') Object.assign(params, { npcId: value('npcId'), dailyWage: number('dailyWage') });
   if (type === 'fire') Object.assign(params, { npcId: value('npcId') });
   if (type === 'scale_delta') Object.assign(params, { scale: 'affinity', target: value('npcId'), direction: value('direction'), size: value('size'), charBonus: number('charBonus'), reason: value('reason') });
   if (type === 'rep_event') Object.assign(params, { axis: value('axis'), category: value('category'), reason: value('reason') });
   if (type === 'exp_gain') Object.assign(params, { category: value('category'), reason: value('reason') });
+  if (type === 'reward') Object.assign(params, { questId: value('questId'), tier: value('tier'), reason: value('reason') });
   if (type === 'gold_delta') Object.assign(params, { amount: number('amount'), reason: value('reason') });
   if (type === 'resource_delta') Object.assign(params, { resource: value('resource'), amount: number('amount'), reason: value('reason') });
   return { id: type, params };
@@ -351,6 +360,30 @@ function resourceSelect(name) {
   return select;
 }
 
+function facilitySelect() {
+  const select = namedSelect('facility');
+  const block = schema.entities.find((entry) => entry.type === 'facility');
+  for (const facility of (block && block.instances) || []) {
+    appendOption(select, facility.id, facility.label || facility.id, false);
+  }
+  select.value = select.querySelector('option[value="tavern"]') ? 'tavern' : select.value;
+  return select;
+}
+
+function gatherScaleSelect() {
+  const select = namedSelect('scale');
+  for (const scale of ['small', 'large', 'bulk']) appendOption(select, scale, scale, false);
+  return select;
+}
+
+function rewardTierSelect() {
+  const select = namedSelect('tier');
+  const tiers = Object.keys((schema.rewards && schema.rewards.gold) || {});
+  for (const tier of tiers) appendOption(select, tier, tier, false);
+  select.value = select.querySelector('option[value="D"]') ? 'D' : select.value;
+  return select;
+}
+
 function npcSelect(includeHired) {
   const engineState = getEngineState();
   const select = namedSelect('npcId');
@@ -421,6 +454,12 @@ function expCategorySelect() {
 function pricePreview() {
   const p = el('p', 'muted-line engine-preview');
   p.textContent = '단가: 식자재 3,000 / 주류 5,000';
+  return p;
+}
+
+function upgradePreview() {
+  const p = el('p', 'muted-line engine-preview');
+  p.textContent = '비용과 다음 레벨은 schema facility.upgradeCosts로 엔진이 계산';
   return p;
 }
 

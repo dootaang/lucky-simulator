@@ -33,8 +33,12 @@ function applyEvent(schema, state, event, rng) {
   switch (type) {
     case 'gold_delta':
       return goldDelta(next, params, ok);
+    case 'upgrade':
+      return upgrade(schema, next, params, ok, fail);
     case 'reward':
       return reward(schema, next, params, rng, ok, fail);
+    case 'gain_resource':
+      return gainResource(schema, next, params, rng, ok, fail);
     case 'resource_delta':
       return resourceDelta(next, params, ok, fail);
     case 'scale_delta':
@@ -68,15 +72,20 @@ function goldDelta(state, params, ok) {
 }
 
 function reward(schema, state, params, rng, ok, fail) {
-  if ('amount' in params || 'goldDelta' in params) return fail('reward_amount_not_allowed');
+  const questId = params.questId;
+  if (questId == null || String(questId).trim() === '') return fail('missing_questId');
+  const normalizedQuestId = String(questId);
+  if ((state.claimedRewards || []).includes(normalizedQuestId)) return fail('already_claimed', normalizedQuestId);
   const tier = params.tier;
   const range = schema && schema.rewards && schema.rewards.gold && schema.rewards.gold[tier];
   if (!isRewardRange(range)) return fail('unknown_reward_tier', tier);
+  if ('amount' in params || 'goldDelta' in params) return fail('reward_amount_not_allowed');
 
   const amount = rng.int(range[0], range[1]);
   const before = state.gold;
   state.gold = Number(state.gold || 0) + amount;
-  return ok({ tier, goldDelta: amount, before, after: state.gold, reason: params.reason || '' });
+  state.claimedRewards = (state.claimedRewards || []).concat([normalizedQuestId]);
+  return ok({ questId: normalizedQuestId, tier, goldDelta: amount, before, after: state.gold, reason: params.reason || '' });
 }
 
 function isRewardRange(range) {
@@ -84,6 +93,38 @@ function isRewardRange(range) {
   const min = Number(range[0]);
   const max = Number(range[1]);
   return Number.isFinite(min) && Number.isFinite(max) && max >= min;
+}
+
+function upgrade(schema, state, params, ok, fail) {
+  const facility = params.facility || params.facilityId;
+  const def = findById(schema, 'facility', facility);
+  if (!def) return fail('unknown_facility', facility);
+  const current = Number((state.facilities && state.facilities[facility]) || 0);
+  if (current >= Number(def.maxLevel || 0)) return fail('max_level', facility);
+  const level = current + 1;
+  const cost = def.upgradeCosts && def.upgradeCosts[String(level)];
+  if (!Number.isFinite(Number(cost))) return fail('no_upgrade_cost', facility);
+  if (Number(state.gold || 0) < Number(cost)) return fail('insufficient_gold', facility);
+
+  state.gold = Number(state.gold || 0) - Number(cost);
+  state.facilities[facility] = level;
+  return ok({ facility, level, goldDelta: -Number(cost) });
+}
+
+function gainResource(schema, state, params, rng, ok, fail) {
+  const resource = params.resource || params.resourceId;
+  if (!resource || !(state.resources && resource in state.resources)) return fail('unknown_resource', resource);
+
+  const table = (schema && schema.gather) || {};
+  const requestedScale = params.scale || 'small';
+  const scale = table[requestedScale] ? requestedScale : 'small';
+  const range = table[scale];
+  if (!isRewardRange(range)) return fail('unknown_gather_scale', scale);
+
+  const qty = rng.int(range[0], range[1]);
+  const before = Number(state.resources[resource] || 0);
+  state.resources[resource] = before + qty;
+  return ok({ resource, qty, scale, before, after: state.resources[resource], reason: params.reason || '' });
 }
 
 function resourceDelta(state, params, ok, fail) {
