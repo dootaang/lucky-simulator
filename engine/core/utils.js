@@ -27,7 +27,12 @@ function findRoom(schema, roomNo) {
 }
 
 function findMenu(schema, menuName) {
-  return findEntity(schema, 'menuItem', (entry) => entry.name === menuName);
+  // 관대 매칭: 컴파일된 스키마의 메뉴명과 LLM이 부르는 이름이 공백·대소문자만
+  // 다를 때 sale이 헛되이 실패하는 것을 막는다.
+  const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase();
+  const target = norm(menuName);
+  return findEntity(schema, 'menuItem', (entry) => entry.name === menuName)
+      || findEntity(schema, 'menuItem', (entry) => norm(entry.name) === target);
 }
 
 function scaleById(schema, id) {

@@ -36,13 +36,23 @@ function renderChat(ctx, render) {
   const p = el('p');
   p.textContent = 'LLM은 서사와 사건 후보만 제안하고, 상태는 엔진이 계산합니다.';
   title.append(h2, p);
+  const copy = button('대화 복사', 'secondary-btn');
+  copy.disabled = !messages.length;
+  copy.addEventListener('click', () => {
+    const text = transcriptText();
+    const done = () => { copy.textContent = '복사됨!'; setTimeout(() => { copy.textContent = '대화 복사'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+    else fallbackCopy(text, done);
+  });
   const clear = button('대화 초기화', 'secondary-btn');
   clear.addEventListener('click', () => {
     messages = [];
     lastPrompt = null;
     render();
   });
-  header.append(title, clear);
+  const actions = el('div', 'engine-header-controls');
+  actions.append(copy, clear);
+  header.append(title, actions);
 
   const list = el('div', 'play-message-list');
   if (!messages.length) {
@@ -390,4 +400,24 @@ function el(tag, className = '') {
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('ko-KR')}원`;
+}
+
+// 전체 대화(서사 + 사건 결과 칩)를 붙여넣기용 평문으로.
+function transcriptText() {
+  const out = [];
+  for (const m of messages) {
+    out.push((m.role === 'user' ? '유저: ' : 'AI: ') + String(m.content || ''));
+    if (m.chips && m.chips.length) out.push(m.chips.map((c) => `[${c.text}]`).join(' '));
+  }
+  return out.join('\n\n');
+}
+
+function fallbackCopy(text, done) {
+  const ta = el('textarea', 'offscreen');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  document.body.append(ta);
+  ta.select();
+  try { document.execCommand('copy'); if (done) done(); } catch (_) { /* ignore */ }
+  ta.remove();
 }

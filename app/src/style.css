@@ -937,3 +937,5 @@ select:focus { border-color: var(--amber-line); }
   .topbar h1::before { animation: none; }
   * { transition: none !important; }
 }
+
+.offscreen { position: fixed; left: -9999px; top: 0; opacity: 0; }

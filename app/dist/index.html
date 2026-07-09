@@ -946,6 +946,8 @@ select:focus { border-color: var(--amber-line); }
   * { transition: none !important; }
 }
 
+.offscreen { position: fixed; left: -9999px; top: 0; opacity: 0; }
+
   </style>
 </head>
 <body>
@@ -4945,7 +4947,9 @@ select:focus { border-color: var(--amber-line); }
         return findEntity(schema2, "room", (entry) => String(entry.no) === String(roomNo));
       }
       function findMenu(schema2, menuName) {
-        return findEntity(schema2, "menuItem", (entry) => entry.name === menuName);
+        const norm = (s) => String(s == null ? "" : s).replace(/\s+/g, "").toLowerCase();
+        const target = norm(menuName);
+        return findEntity(schema2, "menuItem", (entry) => entry.name === menuName) || findEntity(schema2, "menuItem", (entry) => norm(entry.name) === target);
       }
       function scaleById(schema2, id) {
         return (schema2.scales || []).find((scale) => scale.id === id) || null;
@@ -5531,6 +5535,7 @@ select:focus { border-color: var(--amber-line); }
 [\uC0AC\uAC74 \uADDC\uCE59]
 - \uC2E4\uC81C\uB85C \uC644\uACB0\uB41C \uC77C\uB9CC. \uC9C4\uD589 \uC911\xB7\uACC4\uD68D\uC740 \uC0AC\uAC74\uC774 \uC544\uB2C8\uB2E4.
 - npcId\uB294 [NPC \uBAA9\uB85D]\uC758 \uC601\uBB38 id\uB9CC \uC0AC\uC6A9.
+- sale\uC758 menuName\uC740 [\uBA54\uB274 \uBAA9\uB85D]\uC5D0 \uC788\uB294 \uC774\uB984\uC744 \uC815\uD655\uD788 \uADF8\uB300\uB85C \uC0AC\uC6A9\uD55C\uB2E4(\uBAA9\uB85D\uC5D0 \uC5C6\uB294 \uBA54\uB274\uB294 \uD310\uB9E4 \uBD88\uAC00).
 - \uD655\uC2E0\uC774 \uC5C6\uC73C\uBA74 \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C. \uBE48 \uBC30\uC5F4\uC774 \uC548\uC804\uD558\uB2E4.`;
       function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput }) {
         const stateText = summarize3(schema2, state2);
@@ -5538,6 +5543,7 @@ select:focus { border-color: var(--amber-line); }
         const npcText = npcIds.map((id) => npcSummary3(schema2, state2, id)).filter(Boolean).join("\n");
         const repCats = reputationCategories(schema2);
         const npcList = npcListText(schema2);
+        const menuList = menuListText(schema2, state2);
         const loreText = loreContext(lore, recentMessages, userInput);
         const context = [
           "[\uC0C1\uD0DC]",
@@ -5550,6 +5556,7 @@ select:focus { border-color: var(--amber-line); }
           "[NPC \uBAA9\uB85D]",
           npcList,
           "",
+          menuList ? "[\uBA54\uB274 \uBAA9\uB85D]\n" + menuList + "\n" : "",
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -5566,6 +5573,7 @@ select:focus { border-color: var(--amber-line); }
           npc: estimateTokens2(npcText),
           repCats: estimateTokens2(repCats),
           npcList: estimateTokens2(npcList),
+          menuList: estimateTokens2(menuList),
           lore: estimateTokens2(loreText || "")
         };
         const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
@@ -5610,6 +5618,12 @@ select:focus { border-color: var(--amber-line); }
       }
       function npcListText(schema2) {
         return npcEntities(schema2).map((npc) => `${npc.id}: ${npc.nameKo}${npc.class ? ` (${npc.class})` : ""}`).join("\n");
+      }
+      function menuListText(schema2, state2) {
+        const block = (schema2.entities || []).find((entry) => entry.type === "menuItem");
+        const items = block && Array.isArray(block.instances) ? block.instances : [];
+        const kitchen = Number(state2 && state2.facilities && state2.facilities.kitchen || 1);
+        return items.filter((m) => Number(m.requiresKitchenLevel || 1) <= kitchen).map((m) => `${m.name}${m.category ? ` (${m.category})` : ""}${m.price != null ? ` ${Number(m.price).toLocaleString("ko-KR")}\uC6D0` : ""}`).join("\n");
       }
       function loreContext(lore, recentMessages, userInput) {
         if (!lore) return "";
@@ -6781,7 +6795,7 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function summarizeEvent(type, entry, formatMoney3) {
-    if (!entry.ok) return `${type} \uC2E4\uD328`;
+    if (!entry.ok) return `${type} \uC2E4\uD328: ${entry.reason || "\uC54C \uC218 \uC5C6\uC74C"}${entry.detail ? ` (${entry.detail})` : ""}`;
     if (type === "scale_delta") return entry.capped ? `${entry.target} capped \xB7 ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
     if (type === "rep_event") return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
     if (type === "day_end") return `\uD558\uB8E8 \uB9C8\uAC10 \xB7 ${entry.report.day}\uC77C\uCC28 \uC815\uC0B0`;
@@ -7291,13 +7305,28 @@ ${Array.from(extras).join(" ")}` : text;
     const p = el2("p");
     p.textContent = "LLM\uC740 \uC11C\uC0AC\uC640 \uC0AC\uAC74 \uD6C4\uBCF4\uB9CC \uC81C\uC548\uD558\uACE0, \uC0C1\uD0DC\uB294 \uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD569\uB2C8\uB2E4.";
     title.append(h2, p);
+    const copy = button2("\uB300\uD654 \uBCF5\uC0AC", "secondary-btn");
+    copy.disabled = !messages.length;
+    copy.addEventListener("click", () => {
+      const text = transcriptText();
+      const done = () => {
+        copy.textContent = "\uBCF5\uC0AC\uB428!";
+        setTimeout(() => {
+          copy.textContent = "\uB300\uD654 \uBCF5\uC0AC";
+        }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+      else fallbackCopy(text, done);
+    });
     const clear = button2("\uB300\uD654 \uCD08\uAE30\uD654", "secondary-btn");
     clear.addEventListener("click", () => {
       messages = [];
       lastPrompt = null;
       render2();
     });
-    header.append(title, clear);
+    const actions = el2("div", "engine-header-controls");
+    actions.append(copy, clear);
+    header.append(title, actions);
     const list = el2("div", "play-message-list");
     if (!messages.length) {
       const empty = el2("div", "play-empty");
@@ -7601,6 +7630,27 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function formatMoney2(value) {
     return `${Number(value || 0).toLocaleString("ko-KR")}\uC6D0`;
+  }
+  function transcriptText() {
+    const out = [];
+    for (const m of messages) {
+      out.push((m.role === "user" ? "\uC720\uC800: " : "AI: ") + String(m.content || ""));
+      if (m.chips && m.chips.length) out.push(m.chips.map((c) => `[${c.text}]`).join(" "));
+    }
+    return out.join("\n\n");
+  }
+  function fallbackCopy(text, done) {
+    const ta = el2("textarea", "offscreen");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    document.body.append(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      if (done) done();
+    } catch (_) {
+    }
+    ta.remove();
   }
 
   // src/importView.js
