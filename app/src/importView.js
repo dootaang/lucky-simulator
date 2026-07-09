@@ -56,13 +56,13 @@ function renderHeader(ctx, render) {
   const header = el('div', 'view-header import-header');
   const title = el('div');
   const h2 = el('h2');
-  h2.textContent = 'Import compiler';
+  h2.textContent = '임포트 컴파일러';
   const p = el('p');
-  p.textContent = 'Compile card lorebook rules into a game schema. LLM output is only a proposal until validation passes and you approve it.';
+  p.textContent = '카드의 룰북(규칙 설명글)을 게임 스키마로 컴파일합니다. LLM 출력은 검증을 통과하고 사용자가 승인하기 전까지는 제안일 뿐입니다.';
   title.append(h2, p);
 
   const buttonRow = el('div', 'engine-header-controls');
-  const compile = button(busy ? 'Compiling...' : 'Compile', 'primary-btn');
+  const compile = button(busy ? '컴파일 중...' : '컴파일', 'primary-btn');
   compile.disabled = busy || (!ctx.lore && settings.provider !== 'mock');
   compile.addEventListener('click', async () => {
     await runCompile(ctx, render);
@@ -82,33 +82,33 @@ function renderRunPanel(ctx, render) {
   const panel = el('section', 'import-run-panel');
   panel.append(renderSettings(render));
 
-  const status = titled('Status');
+  const status = titled('상태');
   const cardLine = el('p', 'muted-line');
   cardLine.textContent = ctx.lore
-    ? `Card lorebook entries: ${ctx.lore.entries.length}`
+    ? `카드 로어북 항목: ${ctx.lore.entries.length}개`
     : settings.provider === 'mock'
-      ? 'No card loaded. Mock can still produce a deterministic schema.'
-      : 'Load a card before compiling with a real provider.';
+      ? '카드가 없습니다. mock 제공자는 카드 없이도 결정론 스키마를 만듭니다.'
+      : '실제 제공자로 컴파일하려면 먼저 카드를 드롭하세요.';
   status.append(cardLine);
 
   const result = currentResult(ctx);
   if (result) {
     const counts = issueCounts(result.issues);
     const stamp = el('p', 'muted-line');
-    stamp.textContent = `Last compile: ${result.compiledAt} / errors ${counts.error} / warnings ${counts.warn}`;
+    stamp.textContent = `마지막 컴파일: ${result.compiledAt} / 에러 ${counts.error} / 경고 ${counts.warn}`;
     status.append(stamp);
     if (result.approved) {
       const approved = el('p', 'badge engine-ok import-status-badge');
-      approved.textContent = 'Approved and applied to engine session';
+      approved.textContent = '승인됨 · 엔진 세션에 반영됨';
       status.append(approved);
     }
   }
 
-  const log = titled('Compiler log');
+  const log = titled('컴파일 로그');
   const lines = currentLog(ctx);
   if (!lines.length) {
     const empty = el('p', 'muted-line');
-    empty.textContent = 'No compiler run yet.';
+    empty.textContent = '아직 컴파일하지 않았습니다.';
     log.append(empty);
   } else {
     const list = el('div', 'engine-list');
@@ -129,7 +129,7 @@ function renderSettings(render) {
   const hasKey = settings.provider === 'mock' || !!readKey(settings.provider);
   details.open = !hasKey;
   const summary = el('summary');
-  summary.textContent = 'Provider settings';
+  summary.textContent = '제공자 설정';
   details.append(summary);
 
   const provider = namedSelect('provider');
@@ -164,7 +164,7 @@ function renderSettings(render) {
   key.placeholder = readKey(settings.provider) ? maskedKey(settings.provider) : 'API key';
   key.disabled = settings.provider === 'mock';
 
-  const save = button('Store key', 'secondary-btn');
+  const save = button('키 저장', 'secondary-btn');
   save.disabled = settings.provider === 'mock';
   save.addEventListener('click', () => {
     const value = key.value.trim();
@@ -173,7 +173,7 @@ function renderSettings(render) {
     render();
   });
 
-  const del = button('Delete key', 'secondary-btn');
+  const del = button('키 삭제', 'secondary-btn');
   del.disabled = settings.provider === 'mock';
   del.addEventListener('click', () => {
     localStorage.removeItem(keyName(settings.provider));
@@ -186,7 +186,7 @@ function renderSettings(render) {
     field('Model', model),
     field('API key', key),
     row(save, del),
-    notice('Keys stay in this browser localStorage. The mock provider does not use the network.')
+    notice('키는 이 브라우저의 localStorage에만 저장됩니다. mock 제공자는 네트워크를 쓰지 않습니다.')
   );
   return details;
 }
@@ -197,9 +197,9 @@ function renderReviewPanel(ctx, render) {
   if (!result) {
     const empty = el('div', 'empty-state import-empty');
     const h = el('h2');
-    h.textContent = 'No schema proposal';
+    h.textContent = '스키마 제안 없음';
     const p = el('p');
-    p.textContent = 'Run the compiler to review, edit, validate, and approve a schema.';
+    p.textContent = '컴파일을 실행하면 스키마를 검수·편집·검증·승인할 수 있습니다.';
     empty.append(h, p);
     panel.append(empty);
     return panel;
@@ -214,16 +214,16 @@ function renderReviewPanel(ctx, render) {
 }
 
 function renderIssueSummary(result) {
-  const section = titled('Validation');
+  const section = titled('검증');
   const counts = issueCounts(result.issues);
   const row = el('div', 'import-metric-row');
-  row.append(metric('Errors', counts.error), metric('Warnings', counts.warn));
+  row.append(metric('에러', counts.error), metric('경고', counts.warn));
   section.append(row);
 
   const list = el('div', 'import-issue-list');
   if (!result.issues.length) {
     const ok = el('p', 'badge engine-ok import-status-badge');
-    ok.textContent = 'No validation issues';
+    ok.textContent = '검증 문제 없음';
     list.append(ok);
   } else {
     for (const issue of result.issues) {
@@ -237,10 +237,10 @@ function renderIssueSummary(result) {
 }
 
 function renderSchemaSummary(schema) {
-  const section = titled('Sections');
+  const section = titled('섹션');
   if (!schema) {
     const p = el('p', 'engine-warning');
-    p.textContent = 'Compiler output could not be parsed as JSON.';
+    p.textContent = '컴파일러 출력을 JSON으로 파싱할 수 없습니다.';
     section.append(p);
     return section;
   }
@@ -261,13 +261,13 @@ function renderSchemaSummary(schema) {
 }
 
 function renderAssumptions(schema) {
-  const section = titled('Assumptions');
+  const section = titled('가정(확정 못 한 값)');
   const items = Array.isArray(schema._assumptions) ? schema._assumptions
     : schema.meta && Array.isArray(schema.meta.assumptions) ? schema.meta.assumptions
       : [];
   if (!items.length) {
     const p = el('p', 'muted-line');
-    p.textContent = 'No assumptions were provided.';
+    p.textContent = '기록된 가정이 없습니다.';
     section.append(p);
     return section;
   }
@@ -282,7 +282,7 @@ function renderAssumptions(schema) {
 }
 
 function renderSectionEditors(ctx, result, render) {
-  const section = titled('Section editor');
+  const section = titled('섹션 편집기');
   const wrap = el('div', 'import-editor-list');
   for (const key of SECTION_KEYS) {
     if (!result.schema || !(key in result.schema)) continue;
@@ -292,7 +292,7 @@ function renderSectionEditors(ctx, result, render) {
     const textarea = el('textarea', 'import-json-input');
     textarea.name = key;
     textarea.value = JSON.stringify(result.schema[key], null, 2);
-    const validate = button('Revalidate section', 'secondary-btn');
+    const validate = button('섹션 재검증', 'secondary-btn');
     validate.addEventListener('click', () => {
       revalidateSection(ctx, key, textarea.value);
       render();
@@ -307,7 +307,7 @@ function renderSectionEditors(ctx, result, render) {
 function renderFullJson(schema) {
   const details = el('details', 'import-full-json');
   const summary = el('summary');
-  summary.textContent = 'Normalized JSON preview';
+  summary.textContent = '정규화된 JSON 미리보기';
   const pre = el('pre', 'engine-preview import-json-pre');
   pre.textContent = JSON.stringify(schema, null, 2);
   details.append(summary, pre);
@@ -316,7 +316,7 @@ function renderFullJson(schema) {
 
 function renderApproval(ctx, result, render) {
   const section = el('section', 'import-approval');
-  const approve = button('Approve and apply to engine', 'primary-btn');
+  const approve = button('승인 후 엔진에 반영', 'primary-btn');
   const counts = issueCounts(result.issues);
   approve.disabled = !result.schema || counts.error > 0 || busy;
   approve.addEventListener('click', () => {
@@ -324,26 +324,26 @@ function renderApproval(ctx, result, render) {
     if (!current || !current.schema || issueCounts(current.issues).error > 0) return;
     setActiveSchema(current.schema);
     current.approved = true;
-    addLog(ctx, 'Schema approved and active engine session reset.');
+    addLog(ctx, '스키마 승인됨 · 엔진 세션이 재설정되었습니다.');
     render();
   });
   const note = el('p', 'muted-line');
   note.textContent = counts.error > 0
-    ? 'Fix validation errors before approval. Raw LLM output is never applied directly.'
-    : 'Approval resets the active engine session to use this normalized schema.';
+    ? '승인 전에 검증 에러를 해결하세요. LLM 원출력은 절대 그대로 반영되지 않습니다.'
+    : '승인하면 활성 엔진 세션이 이 정규화된 스키마로 재설정됩니다.';
   section.append(approve, note);
   return section;
 }
 
 async function runCompile(ctx, render) {
   busy = true;
-  addLog(ctx, `Compile started with provider ${settings.provider}.`);
+  addLog(ctx, `컴파일 시작 (제공자 ${settings.provider}).`);
   render();
   try {
     const result = await compileSchemaForImport(ctx, providerConfig());
     setCurrentResult(ctx, result);
     const counts = issueCounts(result.issues);
-    addLog(ctx, `Compile finished: ${counts.error} errors, ${counts.warn} warnings.`);
+    addLog(ctx, `컴파일 완료: 에러 ${counts.error}, 경고 ${counts.warn}.`);
   } catch (err) {
     setCurrentResult(ctx, {
       raw: '',
@@ -352,7 +352,7 @@ async function runCompile(ctx, render) {
       compiledAt: new Date().toISOString(),
       approved: false,
     });
-    addLog(ctx, `Compile failed: ${safeError(err)}`);
+    addLog(ctx, `컴파일 실패: ${safeError(err)}`);
   } finally {
     busy = false;
     render();
@@ -369,12 +369,12 @@ function revalidateSection(ctx, key, value) {
     result.schema = checked.schema;
     result.issues = checked.issues;
     result.approved = false;
-    addLog(ctx, `Section ${key} revalidated: ${issueCounts(checked.issues).error} errors.`);
+    addLog(ctx, `섹션 ${key} 재검증: 에러 ${issueCounts(checked.issues).error}개.`);
   } catch (err) {
     result.issues = result.issues.filter((issue) => issue.path !== key);
     result.issues.unshift({ level: 'error', path: key, msg: safeError(err) });
     result.approved = false;
-    addLog(ctx, `Section ${key} JSON parse failed.`);
+    addLog(ctx, `섹션 ${key} JSON 파싱 실패.`);
   }
 }
 

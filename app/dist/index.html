@@ -7651,12 +7651,12 @@ ${Array.from(extras).join(" ")}` : text;
     const header = el3("div", "view-header import-header");
     const title = el3("div");
     const h2 = el3("h2");
-    h2.textContent = "Import compiler";
+    h2.textContent = "\uC784\uD3EC\uD2B8 \uCEF4\uD30C\uC77C\uB7EC";
     const p = el3("p");
-    p.textContent = "Compile card lorebook rules into a game schema. LLM output is only a proposal until validation passes and you approve it.";
+    p.textContent = "\uCE74\uB4DC\uC758 \uB8F0\uBD81(\uADDC\uCE59 \uC124\uBA85\uAE00)\uC744 \uAC8C\uC784 \uC2A4\uD0A4\uB9C8\uB85C \uCEF4\uD30C\uC77C\uD569\uB2C8\uB2E4. LLM \uCD9C\uB825\uC740 \uAC80\uC99D\uC744 \uD1B5\uACFC\uD558\uACE0 \uC0AC\uC6A9\uC790\uAC00 \uC2B9\uC778\uD558\uAE30 \uC804\uAE4C\uC9C0\uB294 \uC81C\uC548\uC77C \uBFD0\uC785\uB2C8\uB2E4.";
     title.append(h2, p);
     const buttonRow = el3("div", "engine-header-controls");
-    const compile = button3(busy2 ? "Compiling..." : "Compile", "primary-btn");
+    const compile = button3(busy2 ? "\uCEF4\uD30C\uC77C \uC911..." : "\uCEF4\uD30C\uC77C", "primary-btn");
     compile.disabled = busy2 || !ctx.lore && settings2.provider !== "mock";
     compile.addEventListener("click", async () => {
       await runCompile(ctx, render2);
@@ -7673,27 +7673,27 @@ ${Array.from(extras).join(" ")}` : text;
   function renderRunPanel(ctx, render2) {
     const panel = el3("section", "import-run-panel");
     panel.append(renderSettings2(render2));
-    const status = titled2("Status");
+    const status = titled2("\uC0C1\uD0DC");
     const cardLine = el3("p", "muted-line");
-    cardLine.textContent = ctx.lore ? `Card lorebook entries: ${ctx.lore.entries.length}` : settings2.provider === "mock" ? "No card loaded. Mock can still produce a deterministic schema." : "Load a card before compiling with a real provider.";
+    cardLine.textContent = ctx.lore ? `\uCE74\uB4DC \uB85C\uC5B4\uBD81 \uD56D\uBAA9: ${ctx.lore.entries.length}\uAC1C` : settings2.provider === "mock" ? "\uCE74\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. mock \uC81C\uACF5\uC790\uB294 \uCE74\uB4DC \uC5C6\uC774\uB3C4 \uACB0\uC815\uB860 \uC2A4\uD0A4\uB9C8\uB97C \uB9CC\uB4ED\uB2C8\uB2E4." : "\uC2E4\uC81C \uC81C\uACF5\uC790\uB85C \uCEF4\uD30C\uC77C\uD558\uB824\uBA74 \uBA3C\uC800 \uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uC138\uC694.";
     status.append(cardLine);
     const result = currentResult(ctx);
     if (result) {
       const counts = issueCounts(result.issues);
       const stamp = el3("p", "muted-line");
-      stamp.textContent = `Last compile: ${result.compiledAt} / errors ${counts.error} / warnings ${counts.warn}`;
+      stamp.textContent = `\uB9C8\uC9C0\uB9C9 \uCEF4\uD30C\uC77C: ${result.compiledAt} / \uC5D0\uB7EC ${counts.error} / \uACBD\uACE0 ${counts.warn}`;
       status.append(stamp);
       if (result.approved) {
         const approved = el3("p", "badge engine-ok import-status-badge");
-        approved.textContent = "Approved and applied to engine session";
+        approved.textContent = "\uC2B9\uC778\uB428 \xB7 \uC5D4\uC9C4 \uC138\uC158\uC5D0 \uBC18\uC601\uB428";
         status.append(approved);
       }
     }
-    const log = titled2("Compiler log");
+    const log = titled2("\uCEF4\uD30C\uC77C \uB85C\uADF8");
     const lines = currentLog(ctx);
     if (!lines.length) {
       const empty = el3("p", "muted-line");
-      empty.textContent = "No compiler run yet.";
+      empty.textContent = "\uC544\uC9C1 \uCEF4\uD30C\uC77C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
       log.append(empty);
     } else {
       const list = el3("div", "engine-list");
@@ -7712,7 +7712,7 @@ ${Array.from(extras).join(" ")}` : text;
     const hasKey = settings2.provider === "mock" || !!readKey2(settings2.provider);
     details.open = !hasKey;
     const summary = el3("summary");
-    summary.textContent = "Provider settings";
+    summary.textContent = "\uC81C\uACF5\uC790 \uC124\uC815";
     details.append(summary);
     const provider = namedSelect3("provider");
     for (const key2 of Object.keys(PROVIDERS2)) appendOption3(provider, key2, key2, false);
@@ -7742,7 +7742,7 @@ ${Array.from(extras).join(" ")}` : text;
     const key = namedInput3("apiKey", "", "password");
     key.placeholder = readKey2(settings2.provider) ? maskedKey2(settings2.provider) : "API key";
     key.disabled = settings2.provider === "mock";
-    const save = button3("Store key", "secondary-btn");
+    const save = button3("\uD0A4 \uC800\uC7A5", "secondary-btn");
     save.disabled = settings2.provider === "mock";
     save.addEventListener("click", () => {
       const value = key.value.trim();
@@ -7750,7 +7750,7 @@ ${Array.from(extras).join(" ")}` : text;
       key.value = "";
       render2();
     });
-    const del = button3("Delete key", "secondary-btn");
+    const del = button3("\uD0A4 \uC0AD\uC81C", "secondary-btn");
     del.disabled = settings2.provider === "mock";
     del.addEventListener("click", () => {
       localStorage.removeItem(keyName2(settings2.provider));
@@ -7762,7 +7762,7 @@ ${Array.from(extras).join(" ")}` : text;
       field3("Model", model),
       field3("API key", key),
       row2(save, del),
-      notice2("Keys stay in this browser localStorage. The mock provider does not use the network.")
+      notice2("\uD0A4\uB294 \uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 localStorage\uC5D0\uB9CC \uC800\uC7A5\uB429\uB2C8\uB2E4. mock \uC81C\uACF5\uC790\uB294 \uB124\uD2B8\uC6CC\uD06C\uB97C \uC4F0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.")
     );
     return details;
   }
@@ -7772,9 +7772,9 @@ ${Array.from(extras).join(" ")}` : text;
     if (!result) {
       const empty = el3("div", "empty-state import-empty");
       const h = el3("h2");
-      h.textContent = "No schema proposal";
+      h.textContent = "\uC2A4\uD0A4\uB9C8 \uC81C\uC548 \uC5C6\uC74C";
       const p = el3("p");
-      p.textContent = "Run the compiler to review, edit, validate, and approve a schema.";
+      p.textContent = "\uCEF4\uD30C\uC77C\uC744 \uC2E4\uD589\uD558\uBA74 \uC2A4\uD0A4\uB9C8\uB97C \uAC80\uC218\xB7\uD3B8\uC9D1\xB7\uAC80\uC99D\xB7\uC2B9\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
       empty.append(h, p);
       panel.append(empty);
       return panel;
@@ -7787,15 +7787,15 @@ ${Array.from(extras).join(" ")}` : text;
     return panel;
   }
   function renderIssueSummary(result) {
-    const section = titled2("Validation");
+    const section = titled2("\uAC80\uC99D");
     const counts = issueCounts(result.issues);
     const row3 = el3("div", "import-metric-row");
-    row3.append(metric2("Errors", counts.error), metric2("Warnings", counts.warn));
+    row3.append(metric2("\uC5D0\uB7EC", counts.error), metric2("\uACBD\uACE0", counts.warn));
     section.append(row3);
     const list = el3("div", "import-issue-list");
     if (!result.issues.length) {
       const ok = el3("p", "badge engine-ok import-status-badge");
-      ok.textContent = "No validation issues";
+      ok.textContent = "\uAC80\uC99D \uBB38\uC81C \uC5C6\uC74C";
       list.append(ok);
     } else {
       for (const issue of result.issues) {
@@ -7808,10 +7808,10 @@ ${Array.from(extras).join(" ")}` : text;
     return section;
   }
   function renderSchemaSummary(schema2) {
-    const section = titled2("Sections");
+    const section = titled2("\uC139\uC158");
     if (!schema2) {
       const p = el3("p", "engine-warning");
-      p.textContent = "Compiler output could not be parsed as JSON.";
+      p.textContent = "\uCEF4\uD30C\uC77C\uB7EC \uCD9C\uB825\uC744 JSON\uC73C\uB85C \uD30C\uC2F1\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.";
       section.append(p);
       return section;
     }
@@ -7831,11 +7831,11 @@ ${Array.from(extras).join(" ")}` : text;
     return section;
   }
   function renderAssumptions(schema2) {
-    const section = titled2("Assumptions");
+    const section = titled2("\uAC00\uC815(\uD655\uC815 \uBABB \uD55C \uAC12)");
     const items = Array.isArray(schema2._assumptions) ? schema2._assumptions : schema2.meta && Array.isArray(schema2.meta.assumptions) ? schema2.meta.assumptions : [];
     if (!items.length) {
       const p = el3("p", "muted-line");
-      p.textContent = "No assumptions were provided.";
+      p.textContent = "\uAE30\uB85D\uB41C \uAC00\uC815\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.";
       section.append(p);
       return section;
     }
@@ -7849,7 +7849,7 @@ ${Array.from(extras).join(" ")}` : text;
     return section;
   }
   function renderSectionEditors(ctx, result, render2) {
-    const section = titled2("Section editor");
+    const section = titled2("\uC139\uC158 \uD3B8\uC9D1\uAE30");
     const wrap = el3("div", "import-editor-list");
     for (const key of SECTION_KEYS) {
       if (!result.schema || !(key in result.schema)) continue;
@@ -7859,7 +7859,7 @@ ${Array.from(extras).join(" ")}` : text;
       const textarea = el3("textarea", "import-json-input");
       textarea.name = key;
       textarea.value = JSON.stringify(result.schema[key], null, 2);
-      const validate = button3("Revalidate section", "secondary-btn");
+      const validate = button3("\uC139\uC158 \uC7AC\uAC80\uC99D", "secondary-btn");
       validate.addEventListener("click", () => {
         revalidateSection(ctx, key, textarea.value);
         render2();
@@ -7873,7 +7873,7 @@ ${Array.from(extras).join(" ")}` : text;
   function renderFullJson(schema2) {
     const details = el3("details", "import-full-json");
     const summary = el3("summary");
-    summary.textContent = "Normalized JSON preview";
+    summary.textContent = "\uC815\uADDC\uD654\uB41C JSON \uBBF8\uB9AC\uBCF4\uAE30";
     const pre = el3("pre", "engine-preview import-json-pre");
     pre.textContent = JSON.stringify(schema2, null, 2);
     details.append(summary, pre);
@@ -7881,7 +7881,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderApproval(ctx, result, render2) {
     const section = el3("section", "import-approval");
-    const approve = button3("Approve and apply to engine", "primary-btn");
+    const approve = button3("\uC2B9\uC778 \uD6C4 \uC5D4\uC9C4\uC5D0 \uBC18\uC601", "primary-btn");
     const counts = issueCounts(result.issues);
     approve.disabled = !result.schema || counts.error > 0 || busy2;
     approve.addEventListener("click", () => {
@@ -7889,23 +7889,23 @@ ${Array.from(extras).join(" ")}` : text;
       if (!current || !current.schema || issueCounts(current.issues).error > 0) return;
       setActiveSchema(current.schema);
       current.approved = true;
-      addLog(ctx, "Schema approved and active engine session reset.");
+      addLog(ctx, "\uC2A4\uD0A4\uB9C8 \uC2B9\uC778\uB428 \xB7 \uC5D4\uC9C4 \uC138\uC158\uC774 \uC7AC\uC124\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
       render2();
     });
     const note = el3("p", "muted-line");
-    note.textContent = counts.error > 0 ? "Fix validation errors before approval. Raw LLM output is never applied directly." : "Approval resets the active engine session to use this normalized schema.";
+    note.textContent = counts.error > 0 ? "\uC2B9\uC778 \uC804\uC5D0 \uAC80\uC99D \uC5D0\uB7EC\uB97C \uD574\uACB0\uD558\uC138\uC694. LLM \uC6D0\uCD9C\uB825\uC740 \uC808\uB300 \uADF8\uB300\uB85C \uBC18\uC601\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." : "\uC2B9\uC778\uD558\uBA74 \uD65C\uC131 \uC5D4\uC9C4 \uC138\uC158\uC774 \uC774 \uC815\uADDC\uD654\uB41C \uC2A4\uD0A4\uB9C8\uB85C \uC7AC\uC124\uC815\uB429\uB2C8\uB2E4.";
     section.append(approve, note);
     return section;
   }
   async function runCompile(ctx, render2) {
     busy2 = true;
-    addLog(ctx, `Compile started with provider ${settings2.provider}.`);
+    addLog(ctx, `\uCEF4\uD30C\uC77C \uC2DC\uC791 (\uC81C\uACF5\uC790 ${settings2.provider}).`);
     render2();
     try {
       const result = await compileSchemaForImport(ctx, providerConfig2());
       setCurrentResult(ctx, result);
       const counts = issueCounts(result.issues);
-      addLog(ctx, `Compile finished: ${counts.error} errors, ${counts.warn} warnings.`);
+      addLog(ctx, `\uCEF4\uD30C\uC77C \uC644\uB8CC: \uC5D0\uB7EC ${counts.error}, \uACBD\uACE0 ${counts.warn}.`);
     } catch (err) {
       setCurrentResult(ctx, {
         raw: "",
@@ -7914,7 +7914,7 @@ ${Array.from(extras).join(" ")}` : text;
         compiledAt: (/* @__PURE__ */ new Date()).toISOString(),
         approved: false
       });
-      addLog(ctx, `Compile failed: ${safeError2(err)}`);
+      addLog(ctx, `\uCEF4\uD30C\uC77C \uC2E4\uD328: ${safeError2(err)}`);
     } finally {
       busy2 = false;
       render2();
@@ -7930,12 +7930,12 @@ ${Array.from(extras).join(" ")}` : text;
       result.schema = checked.schema;
       result.issues = checked.issues;
       result.approved = false;
-      addLog(ctx, `Section ${key} revalidated: ${issueCounts(checked.issues).error} errors.`);
+      addLog(ctx, `\uC139\uC158 ${key} \uC7AC\uAC80\uC99D: \uC5D0\uB7EC ${issueCounts(checked.issues).error}\uAC1C.`);
     } catch (err) {
       result.issues = result.issues.filter((issue) => issue.path !== key);
       result.issues.unshift({ level: "error", path: key, msg: safeError2(err) });
       result.approved = false;
-      addLog(ctx, `Section ${key} JSON parse failed.`);
+      addLog(ctx, `\uC139\uC158 ${key} JSON \uD30C\uC2F1 \uC2E4\uD328.`);
     }
   }
   function currentResult(ctx) {
