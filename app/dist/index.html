@@ -6613,6 +6613,187 @@ ${row3.content}`;
     }
   });
 
+  // src/llm/schemaPatch.js
+  var require_schemaPatch = __commonJS({
+    "src/llm/schemaPatch.js"(exports, module) {
+      "use strict";
+      var RANK_KEYS = ["E", "D", "C", "B", "A", "S", "SS", "SSS", "EX"];
+      function patchSchemaWithMined2(schema2, mined) {
+        const patches = [];
+        const tables = mined && mined.tables;
+        if (!schema2 || typeof schema2 !== "object" || !tables || !Object.keys(tables).length) {
+          return { schema: schema2, patches };
+        }
+        patchRewardGold(schema2, tables, patches);
+        patchUpgradeCosts(schema2, tables, patches);
+        patchThresholds(schema2, tables, patches);
+        return { schema: schema2, patches };
+      }
+      function patchRewardGold(schema2, tables, patches) {
+        const source = findRankPayTable(tables);
+        if (!source) return;
+        if (!schema2.rewards || typeof schema2.rewards !== "object") schema2.rewards = {};
+        if (!schema2.rewards.gold || typeof schema2.rewards.gold !== "object") schema2.rewards.gold = {};
+        const gold = schema2.rewards.gold;
+        for (const rank of Object.keys(source.byRank)) {
+          const value = source.byRank[rank];
+          if (!sameArray(gold[rank], value)) {
+            patches.push({ path: `rewards.gold.${rank}`, from: cloneVal(gold[rank]), to: cloneVal(value) });
+            gold[rank] = value.slice();
+          }
+        }
+      }
+      function patchUpgradeCosts(schema2, tables, patches) {
+        const facility = findEntity(schema2, "facility");
+        if (!facility || !Array.isArray(facility.instances)) return;
+        const ids = facility.instances.map((inst) => inst && inst.id).filter(Boolean);
+        const source = findCostTable(tables, ids);
+        if (!source) return;
+        for (const inst of facility.instances) {
+          if (!inst || !inst.id) continue;
+          const arr = source[inst.id];
+          if (!Array.isArray(arr) || !arr.every((n) => typeof n === "number")) continue;
+          const next = {};
+          for (let i = 0; i < arr.length; i++) next[String(i + 2)] = arr[i];
+          if (!sameObject(inst.upgradeCosts, next)) {
+            patches.push({ path: `facility(${inst.id}).upgradeCosts`, from: cloneVal(inst.upgradeCosts), to: cloneVal(next) });
+            inst.upgradeCosts = next;
+          }
+        }
+      }
+      function patchThresholds(schema2, tables, patches) {
+        const thr = findThresholdArray(tables);
+        if (!thr) return;
+        const ladders = Array.isArray(schema2.ladders) ? schema2.ladders : [];
+        for (const ladder of ladders) {
+          if (!ladder || typeof ladder !== "object") continue;
+          if (Array.isArray(ladder.thresholds) && ladder.thresholds.length === thr.length && !sameArray(ladder.thresholds, thr)) {
+            patches.push({ path: `ladder(${ladder.id || "?"}).thresholds`, from: cloneVal(ladder.thresholds), to: cloneVal(thr) });
+            ladder.thresholds = thr.slice();
+          }
+          if (Array.isArray(ladder.ranks) && ladder.ranks.length === thr.length + 1) {
+            let changed = false;
+            const before = ladder.ranks.map((r) => r ? r.next : void 0);
+            ladder.ranks.forEach((rank, i) => {
+              if (!rank || typeof rank !== "object") return;
+              const want = i < thr.length ? thr[i] : null;
+              if (rank.next !== want) {
+                rank.next = want;
+                changed = true;
+              }
+            });
+            if (changed) {
+              patches.push({ path: `ladder(${ladder.id || "?"}).ranks[].next`, from: cloneVal(before), to: ladder.ranks.map((r) => r ? r.next : null) });
+            }
+          }
+        }
+      }
+      function findRankPayTable(tables) {
+        let best = null;
+        for (const name of Object.keys(tables)) {
+          const t = tables[name];
+          if (!isPlainObject(t)) continue;
+          const rankKeys = Object.keys(t).filter((k) => isRank(k) && isPlainObject(t[k]));
+          if (rankKeys.length < 2) continue;
+          const field4 = pickPayField(t, rankKeys);
+          if (!field4) continue;
+          const byRank = {};
+          for (const k of rankKeys) {
+            const v = t[k][field4];
+            if (isNumberRange(v)) byRank[normalizeRank(k)] = v;
+          }
+          const score = Object.keys(byRank).length + (/pay|reward|gold/i.test(field4) ? 1 : 0);
+          if (Object.keys(byRank).length >= 2 && (!best || score > best.score)) best = { byRank, score };
+        }
+        return best;
+      }
+      function pickPayField(table, rankKeys) {
+        const counts = {};
+        for (const k of rankKeys) {
+          const entry = table[k];
+          for (const f of Object.keys(entry)) {
+            if (isNumberRange(entry[f])) counts[f] = (counts[f] || 0) + 1;
+          }
+        }
+        const candidates = Object.keys(counts).filter((f) => counts[f] >= Math.min(2, rankKeys.length));
+        if (!candidates.length) return null;
+        candidates.sort((a, b) => rankFieldScore(b) - rankFieldScore(a) || counts[b] - counts[a]);
+        return candidates[0];
+      }
+      function rankFieldScore(name) {
+        if (/pay/i.test(name)) return 3;
+        if (/gold/i.test(name)) return 2;
+        if (/reward/i.test(name)) return 1;
+        return 0;
+      }
+      function findCostTable(tables, facilityIds) {
+        const idSet = new Set(facilityIds);
+        let best = null;
+        for (const name of Object.keys(tables)) {
+          const t = tables[name];
+          if (!isPlainObject(t)) continue;
+          const hitKeys = Object.keys(t).filter((k) => idSet.has(k) && isNumberArray(t[k]));
+          if (hitKeys.length < 2) continue;
+          const score = hitKeys.length + (/upgrade|cost/i.test(name) ? 2 : 0);
+          if (!best || score > best.score) best = { table: t, score };
+        }
+        return best ? best.table : null;
+      }
+      function findThresholdArray(tables) {
+        let best = null;
+        for (const name of Object.keys(tables)) {
+          const t = tables[name];
+          if (!isNumberArray(t) || t.length < 2) continue;
+          if (!isAscendingPositive(t)) continue;
+          const score = (/threshold/i.test(name) ? 3 : 0) + (/next|rank|level/i.test(name) ? 1 : 0);
+          if (score === 0) continue;
+          if (!best || score > best.score) best = { arr: t, score };
+        }
+        return best ? best.arr : null;
+      }
+      function findEntity(schema2, type) {
+        const list = Array.isArray(schema2.entities) ? schema2.entities : [];
+        return list.find((e) => e && e.type === type) || null;
+      }
+      function isRank(key) {
+        return RANK_KEYS.includes(String(key).toUpperCase().replace(/[+\s].*$/, ""));
+      }
+      function normalizeRank(key) {
+        return String(key).toUpperCase().replace(/[+\s].*$/, "");
+      }
+      function isPlainObject(v) {
+        return v && typeof v === "object" && !Array.isArray(v) && !v.__ref;
+      }
+      function isNumberRange(v) {
+        return Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === "number" && Number.isFinite(n));
+      }
+      function isNumberArray(v) {
+        return Array.isArray(v) && v.length > 0 && v.every((n) => typeof n === "number" && Number.isFinite(n));
+      }
+      function isAscendingPositive(arr) {
+        for (let i = 0; i < arr.length; i++) {
+          if (arr[i] <= 0) return false;
+          if (i > 0 && arr[i] <= arr[i - 1]) return false;
+        }
+        return true;
+      }
+      function sameArray(a, b) {
+        if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+        return a.every((v, i) => v === b[i]);
+      }
+      function sameObject(a, b) {
+        if (!isPlainObject(a) || !isPlainObject(b)) return false;
+        const ka = Object.keys(a), kb = Object.keys(b);
+        if (ka.length !== kb.length) return false;
+        return ka.every((k) => a[k] === b[k]);
+      }
+      function cloneVal(v) {
+        return v === void 0 ? null : JSON.parse(JSON.stringify(v));
+      }
+      module.exports = { patchSchemaWithMined: patchSchemaWithMined2 };
+    }
+  });
+
   // src/schema/validate.js
   var require_validate = __commonJS({
     "src/schema/validate.js"(exports, module) {
@@ -8517,6 +8698,7 @@ ${Array.from(extras).join(" ")}` : text;
   // src/importView.js
   var { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require_compilerPrompt();
   var { mineCard } = require_luaMine();
+  var { patchSchemaWithMined } = require_schemaPatch();
   var { PROVIDERS: PROVIDERS2, callProvider: callProvider2, providerDef: providerDef2 } = require_providers();
   var { validateSchema } = require_validate();
   var SECTION_KEYS = ["meta", "resources", "scales", "ladders", "entities", "formulas", "processes", "events", "initialState", "_assumptions"];
@@ -8556,14 +8738,16 @@ ${Array.from(extras).join(" ")}` : text;
         mined
       };
     }
-    const checked = validateSchema(parsed.json);
+    const patched = patchSchemaWithMined(parsed.json, mined);
+    const checked = validateSchema(patched.schema);
     return {
       raw,
       schema: checked.schema,
       issues: checked.issues,
       compiledAt: (/* @__PURE__ */ new Date()).toISOString(),
       approved: false,
-      mined
+      mined,
+      patches: patched.patches
     };
   }
   function renderHeader2(ctx, render2) {
@@ -8713,7 +8897,7 @@ ${Array.from(extras).join(" ")}` : text;
       panel.append(empty);
       return panel;
     }
-    panel.append(renderCopyBar(result), renderIssueSummary(result), renderSchemaSummary(result.schema));
+    panel.append(renderCopyBar(result), renderIssueSummary(result), renderPatches(result), renderSchemaSummary(result.schema));
     if (result.schema) {
       panel.append(renderAssumptions(result.schema), renderSectionEditors(ctx, result, render2), renderFullJson(result.schema));
     }
@@ -8725,8 +8909,12 @@ ${Array.from(extras).join(" ")}` : text;
     const copy = button3("\uAC80\uC218 \uACB0\uACFC \uBCF5\uC0AC", "secondary-btn");
     copy.addEventListener("click", () => {
       const issues = (result.issues || []).map((i) => `${String(i.level).toUpperCase()} ${i.path}: ${i.msg}`).join("\n") || "(\uC774\uC288 \uC5C6\uC74C)";
+      const patches = (result.patches || []).map((p) => `${p.path}: ${fmtPatchVal(p.from)} \u2192 ${fmtPatchVal(p.to)}`).join("\n") || "(\uC5C6\uC74C)";
       const text = `=== \uAC80\uC99D \uC774\uC288 ===
 ${issues}
+
+=== \uCC44\uAD74\uAC12 \uAC15\uC81C \uC801\uC6A9 ===
+${patches}
 
 === \uC2A4\uD0A4\uB9C8 JSON ===
 ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4\uD328)"}`;
@@ -8775,6 +8963,26 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     }
     section.append(list);
     return section;
+  }
+  function renderPatches(result) {
+    const patches = result && result.patches;
+    if (!patches || !patches.length) return el3("div", "play-hidden");
+    const section = titled2("\uCC44\uAD74\uAC12 \uAC15\uC81C \uC801\uC6A9 (\uCE74\uB4DC Lua \uC2E4\uAC12\uC73C\uB85C \uAD50\uC815)");
+    const p = el3("p", "muted-line");
+    p.textContent = "\uC544\uB798 \uC22B\uC790\uB294 LLM \uCD9C\uB825\uC774 \uC544\uB2C8\uB77C \uCE74\uB4DC Lua\uC5D0\uC11C \uC9C1\uC811 \uCC44\uAD74\uD55C \uAC12\uC73C\uB85C \uB36E\uC5B4\uC4F4 \uAC83\uC785\uB2C8\uB2E4.";
+    section.append(p);
+    const list = el3("div", "import-issue-list");
+    for (const patch of patches) {
+      const item = el3("div", "engine-list-row import-issue import-warn");
+      item.textContent = `${patch.path}: ${fmtPatchVal(patch.from)} \u2192 ${fmtPatchVal(patch.to)}`;
+      list.append(item);
+    }
+    section.append(list);
+    return section;
+  }
+  function fmtPatchVal(value) {
+    if (value === null || value === void 0) return "(\uC5C6\uC74C)";
+    return JSON.stringify(value);
   }
   function renderSchemaSummary(schema2) {
     const section = titled2("\uC139\uC158");
@@ -8881,6 +9089,9 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       setCurrentResult(ctx, result);
       const counts = issueCounts(result.issues);
       addLog(ctx, `\uCEF4\uD30C\uC77C \uC644\uB8CC: \uC5D0\uB7EC ${counts.error}, \uACBD\uACE0 ${counts.warn}.`);
+      if (result.patches && result.patches.length) {
+        addLog(ctx, `\uCC44\uAD74\uAC12 \uAC15\uC81C \uC801\uC6A9: ${result.patches.length}\uAC1C \uD544\uB4DC\uB97C \uCE74\uB4DC \uC2E4\uAC12\uC73C\uB85C \uAD50\uC815.`);
+      }
     } catch (err) {
       setCurrentResult(ctx, {
         raw: "",

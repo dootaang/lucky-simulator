@@ -1,5 +1,6 @@
 const { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require('./llm/compilerPrompt.js');
 const { mineCard } = require('./llm/luaMine.js');
+const { patchSchemaWithMined } = require('./llm/schemaPatch.js');
 const { PROVIDERS, callProvider, providerDef } = require('./llm/providers.js');
 const { validateSchema } = require('./schema/validate.js');
 import { setActiveSchema } from './engineSession.js';
@@ -49,7 +50,8 @@ export async function compileSchemaForImport(ctx, config) {
       mined,
     };
   }
-  const checked = validateSchema(parsed.json);
+  const patched = patchSchemaWithMined(parsed.json, mined);
+  const checked = validateSchema(patched.schema);
   return {
     raw,
     schema: checked.schema,
@@ -57,6 +59,7 @@ export async function compileSchemaForImport(ctx, config) {
     compiledAt: new Date().toISOString(),
     approved: false,
     mined,
+    patches: patched.patches,
   };
 }
 
@@ -237,7 +240,7 @@ function renderReviewPanel(ctx, render) {
     return panel;
   }
 
-  panel.append(renderCopyBar(result), renderIssueSummary(result), renderSchemaSummary(result.schema));
+  panel.append(renderCopyBar(result), renderIssueSummary(result), renderPatches(result), renderSchemaSummary(result.schema));
   if (result.schema) {
     panel.append(renderAssumptions(result.schema), renderSectionEditors(ctx, result, render), renderFullJson(result.schema));
   }
@@ -251,7 +254,8 @@ function renderCopyBar(result) {
   const copy = button('검수 결과 복사', 'secondary-btn');
   copy.addEventListener('click', () => {
     const issues = (result.issues || []).map((i) => `${String(i.level).toUpperCase()} ${i.path}: ${i.msg}`).join('\n') || '(이슈 없음)';
-    const text = `=== 검증 이슈 ===\n${issues}\n\n=== 스키마 JSON ===\n${result.schema ? JSON.stringify(result.schema, null, 2) : '(파싱 실패)'}`;
+    const patches = (result.patches || []).map((p) => `${p.path}: ${fmtPatchVal(p.from)} → ${fmtPatchVal(p.to)}`).join('\n') || '(없음)';
+    const text = `=== 검증 이슈 ===\n${issues}\n\n=== 채굴값 강제 적용 ===\n${patches}\n\n=== 스키마 JSON ===\n${result.schema ? JSON.stringify(result.schema, null, 2) : '(파싱 실패)'}`;
     const done = () => { copy.textContent = '복사됨!'; setTimeout(() => { copy.textContent = '검수 결과 복사'; }, 1500); };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => copyFallback(text, done));
     else copyFallback(text, done);
@@ -291,6 +295,29 @@ function renderIssueSummary(result) {
   }
   section.append(list);
   return section;
+}
+
+// 채굴값으로 강제 교정된 필드를 투명하게 표시(LLM 값 → 카드 실값).
+function renderPatches(result) {
+  const patches = result && result.patches;
+  if (!patches || !patches.length) return el('div', 'play-hidden');
+  const section = titled('채굴값 강제 적용 (카드 Lua 실값으로 교정)');
+  const p = el('p', 'muted-line');
+  p.textContent = '아래 숫자는 LLM 출력이 아니라 카드 Lua에서 직접 채굴한 값으로 덮어쓴 것입니다.';
+  section.append(p);
+  const list = el('div', 'import-issue-list');
+  for (const patch of patches) {
+    const item = el('div', 'engine-list-row import-issue import-warn');
+    item.textContent = `${patch.path}: ${fmtPatchVal(patch.from)} → ${fmtPatchVal(patch.to)}`;
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
+function fmtPatchVal(value) {
+  if (value === null || value === undefined) return '(없음)';
+  return JSON.stringify(value);
 }
 
 function renderSchemaSummary(schema) {
@@ -407,6 +434,9 @@ async function runCompile(ctx, render) {
     setCurrentResult(ctx, result);
     const counts = issueCounts(result.issues);
     addLog(ctx, `컴파일 완료: 에러 ${counts.error}, 경고 ${counts.warn}.`);
+    if (result.patches && result.patches.length) {
+      addLog(ctx, `채굴값 강제 적용: ${result.patches.length}개 필드를 카드 실값으로 교정.`);
+    }
   } catch (err) {
     setCurrentResult(ctx, {
       raw: '',
