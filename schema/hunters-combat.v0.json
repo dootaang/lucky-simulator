@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "id": "hunters-combat",
+    "title": "헌터 전투 코어 (참조 스키마)",
+    "schemaVersion": "0.1"
+  },
+  "pools": [
+    { "id": "hp", "label": "체력", "max": 130 },
+    { "id": "mp", "label": "마나", "max": 150 },
+    { "id": "sp", "label": "스태미나", "max": 100 }
+  ],
+  "scales": [
+    { "id": "strength", "owner": "player", "range": [1, 99], "default": 12 },
+    { "id": "constitution", "owner": "player", "range": [1, 99], "default": 13 },
+    { "id": "agility", "owner": "player", "range": [1, 99], "default": 10 },
+    { "id": "intelligence", "owner": "player", "range": [1, 99], "default": 15 },
+    { "id": "sense", "owner": "player", "range": [1, 99], "default": 11 }
+  ],
+  "ladders": [
+    { "id": "player_level", "currency": "exp", "thresholds": [100, 300, 800, 2000, 5000] }
+  ],
+  "combat": {
+    "d": 20,
+    "minDamage": 1,
+    "critMult": 2,
+    "guardMult": 0.5,
+    "fleeRate": 50,
+    "expTable": { "E": [10, 20], "D": [30, 60], "C": [80, 150], "default": [5, 10] },
+    "lootGold": { "E": [1000, 3000], "D": [5000, 10000], "default": [500, 1000] }
+  },
+  "skills": {
+    "power_strike": { "name": "파워 스트라이크", "cost": 20, "pool": "mp", "power": 10, "acc": 2 },
+    "focus_shot": { "name": "집중 사격", "cost": 15, "pool": "sp", "power": 6, "acc": 5 }
+  },
+  "initialState": {
+    "gold": 0,
+    "player": {
+      "level": 8,
+      "exp": 450,
+      "atk": 12,
+      "def": 5,
+      "evade": 11,
+      "acc": 3,
+      "pools": {
+        "hp": { "cur": 90, "max": 130 },
+        "mp": { "cur": 90, "max": 150 },
+        "sp": { "cur": 90, "max": 100 }
+      }
+    }
+  }
+}

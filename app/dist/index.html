@@ -5013,11 +5013,57 @@ select:focus { border-color: var(--amber-line); }
     }
   });
 
+  // ../engine/core/pools.js
+  var require_pools = __commonJS({
+    "../engine/core/pools.js"(exports, module) {
+      "use strict";
+      function normalizePool(value) {
+        if (value && typeof value === "object") {
+          const max2 = num(value.max, num(value.cur, 0));
+          const cur = clamp(num(value.cur, max2), 0, max2);
+          return { cur, max: max2 };
+        }
+        const max = num(value, 0);
+        return { cur: max, max };
+      }
+      function poolDamage(pool, n) {
+        const p = normalizePool(pool);
+        return { cur: clamp(p.cur - Math.max(0, num(n, 0)), 0, p.max), max: p.max };
+      }
+      function poolHeal(pool, n) {
+        const p = normalizePool(pool);
+        return { cur: clamp(p.cur + Math.max(0, num(n, 0)), 0, p.max), max: p.max };
+      }
+      function poolSpend(pool, n) {
+        const p = normalizePool(pool);
+        const cost = Math.max(0, num(n, 0));
+        if (p.cur < cost) return null;
+        return { cur: p.cur - cost, max: p.max };
+      }
+      function poolRestore(pool) {
+        const p = normalizePool(pool);
+        return { cur: p.max, max: p.max };
+      }
+      function isDead(pool) {
+        return normalizePool(pool).cur <= 0;
+      }
+      function num(v, fallback) {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : fallback;
+      }
+      function clamp(v, lo, hi) {
+        return Math.min(hi, Math.max(lo, v));
+      }
+      module.exports = { normalizePool, poolDamage, poolHeal, poolSpend, poolRestore, isDead };
+    }
+  });
+
   // ../engine/core/createState.js
   var require_createState = __commonJS({
     "../engine/core/createState.js"(exports, module) {
       "use strict";
       var { clone, entityList, ladderById, scaleById } = require_utils();
+      var { normalizePool } = require_pools();
       function createState2(schema2, seed) {
         const initial = clone(schema2.initialState || {});
         const state2 = {
@@ -5027,15 +5073,31 @@ select:focus { border-color: var(--amber-line); }
           facilities: clone(initial.facilities || {}),
           staff: Array.isArray(initial.staff) ? clone(initial.staff) : [],
           rooms: clone(initial.rooms || {}),
-          player: clone(initial.player || { level: 1, exp: 0 }),
+          player: normalizePlayer(schema2, initial.player),
           reputation: normalizeReputation(schema2, initial.reputation || {}),
           npcs: normalizeNpcs(schema2, initial.npcs || {}),
           pendingCheckouts: [],
           unpaidWages: Number(initial.unpaidWages || 0),
-          claimedRewards: Array.isArray(initial.claimedRewards) ? clone(initial.claimedRewards) : []
+          claimedRewards: Array.isArray(initial.claimedRewards) ? clone(initial.claimedRewards) : [],
+          combat: null
         };
         if (seed != null) state2.seed = seed;
         return state2;
+      }
+      function normalizePlayer(schema2, initialPlayer) {
+        const player = clone(initialPlayer || { level: 1, exp: 0 });
+        const defs = Array.isArray(schema2.pools) ? schema2.pools : null;
+        const src = player.pools && typeof player.pools === "object" ? player.pools : null;
+        if (defs || src) {
+          const pools = {};
+          const ids = defs ? defs.map((d) => d.id) : Object.keys(src || {});
+          for (const id of ids) {
+            const raw = (src && src[id]) != null ? src[id] : defs && (defs.find((d) => d.id === id) || {}).max;
+            pools[id] = normalizePool(raw);
+          }
+          player.pools = pools;
+        }
+        return player;
       }
       function normalizeReputation(schema2, initial) {
         const ladder = ladderById(schema2, "reputation");
@@ -5268,11 +5330,261 @@ select:focus { border-color: var(--amber-line); }
     }
   });
 
+  // ../engine/core/resolveCheck.js
+  var require_resolveCheck = __commonJS({
+    "../engine/core/resolveCheck.js"(exports, module) {
+      "use strict";
+      function resolveCheck(rng2, spec) {
+        const mode = spec && spec.mode === "rate" ? "rate" : "dc";
+        return mode === "rate" ? rateCheck(rng2, spec) : dcCheck(rng2, spec);
+      }
+      function dcCheck(rng2, spec) {
+        const sides = intOr(spec.sides, 20);
+        const dc = intOr(spec.dc, 10);
+        const mod = intOr(spec.mod, 0);
+        const rand = rng2.int(1, Math.max(1, sides));
+        const total = rand + mod;
+        const success = total >= dc;
+        let tier;
+        if (success) tier = rand === sides ? "critical_success" : "success";
+        else tier = rand === 1 ? "critical_failure" : "failure";
+        return { mode: "dc", rand, total, success, tier };
+      }
+      function rateCheck(rng2, spec) {
+        const rate = clampInt(spec.rate, 0, 100, 50);
+        const rand = rng2.int(1, 100);
+        const success = rand <= rate;
+        let tier;
+        if (success) tier = rand <= 5 ? "critical_success" : "success";
+        else tier = rand >= 95 ? "critical_failure" : "failure";
+        return { mode: "rate", rand, total: rand, success, tier };
+      }
+      function intOr(value, fallback) {
+        const n = Math.trunc(Number(value));
+        return Number.isFinite(n) ? n : fallback;
+      }
+      function clampInt(value, lo, hi, fallback) {
+        const n = intOr(value, fallback);
+        return Math.min(hi, Math.max(lo, n));
+      }
+      module.exports = { resolveCheck };
+    }
+  });
+
+  // ../engine/core/combat.js
+  var require_combat = __commonJS({
+    "../engine/core/combat.js"(exports, module) {
+      "use strict";
+      var { resolveCheck } = require_resolveCheck();
+      var { normalizePool, poolDamage, poolSpend, isDead } = require_pools();
+      var { ladderById } = require_utils();
+      function combatConfig(schema2) {
+        const c = schema2 && schema2.combat || {};
+        return {
+          d: intOr(c.d, 20),
+          minDamage: intOr(c.minDamage, 1),
+          critMult: numOr(c.critMult, 2),
+          guardMult: numOr(c.guardMult, 0.5),
+          fleeRate: intOr(c.fleeRate, 50),
+          expTable: c.expTable || {},
+          lootGold: c.lootGold || {}
+        };
+      }
+      function playerCombat(state2) {
+        const p = state2.player || {};
+        return {
+          atk: intOr(p.atk, 5),
+          def: intOr(p.def, 0),
+          evade: intOr(p.evade, 10),
+          acc: intOr(p.acc, 0)
+        };
+      }
+      function hasNumberParam(params) {
+        return ["power", "damage", "dmg", "roll", "amount", "hp"].some((k) => k in (params || {}));
+      }
+      function startEncounter(schema2, state2, params, rng2, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("encounter_active");
+        const roster = Array.isArray(params.enemies) ? params.enemies : [];
+        if (!roster.length) return fail("no_enemies");
+        const enemies = [];
+        for (let i = 0; i < roster.length; i++) {
+          const e = roster[i] || {};
+          const hp = intOr(e.hp, 0);
+          if (hp <= 0) return fail("invalid_enemy_hp", e.name || `e${i + 1}`);
+          enemies.push({
+            id: `e${i + 1}`,
+            name: String(e.name || `\uC801 ${i + 1}`),
+            rank: e.rank != null ? String(e.rank) : null,
+            hp: { cur: hp, max: hp },
+            atk: intOr(e.atk, 5),
+            def: intOr(e.def, 0),
+            evade: intOr(e.evade, 10),
+            acc: intOr(e.acc, 0),
+            dead: false
+          });
+        }
+        state2.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false };
+        return ok({ enemies: enemies.map(publicEnemy) });
+      }
+      function combatAction(schema2, state2, params, rng2, ok, fail) {
+        const combat = state2.combat;
+        if (!combat || !combat.active) return fail("no_encounter");
+        if (hasNumberParam(params)) return fail("combat_number_not_allowed");
+        const action = params.action;
+        if (action === "defend") {
+          combat.guard = true;
+          return ok({ action, guard: true });
+        }
+        if (action === "flee") {
+          const cfg2 = combatConfig(schema2);
+          const check = resolveCheck(rng2, { mode: "rate", rate: cfg2.fleeRate });
+          if (check.success) {
+            combat.active = false;
+            combat.fled = true;
+          }
+          return ok({ action, check, fled: check.success });
+        }
+        if (action !== "attack" && action !== "skill") return fail("unknown_combat_action", action);
+        const enemy = findEnemy(combat, params.target);
+        if (!enemy) return fail("unknown_target", params.target);
+        if (enemy.dead) return fail("target_dead", enemy.id);
+        const cfg = combatConfig(schema2);
+        const pc = playerCombat(state2);
+        let skill = null;
+        if (action === "skill") {
+          skill = (schema2.skills || {})[params.skill];
+          if (!skill) return fail("unknown_skill", params.skill);
+          const poolId = skill.pool || "mp";
+          const pool = state2.player.pools && state2.player.pools[poolId];
+          const spent = poolSpend(pool, skill.cost || 0);
+          if (spent === null) return fail(`insufficient_${poolId}`, params.skill);
+          state2.player.pools[poolId] = spent;
+        }
+        const skillPower = intOr(skill && skill.power, 0);
+        const skillAcc = intOr(skill && skill.acc, 0);
+        const hit = resolveCheck(rng2, { mode: "dc", sides: cfg.d, dc: enemy.evade, mod: pc.acc + skillAcc });
+        let dmg = 0;
+        if (hit.success) {
+          const base = pc.atk + skillPower;
+          dmg = Math.max(cfg.minDamage, base - enemy.def);
+          if (hit.tier === "critical_success") dmg = Math.round(dmg * cfg.critMult);
+          enemy.hp = poolDamage(enemy.hp, dmg);
+          if (isDead(enemy.hp)) enemy.dead = true;
+        }
+        if (combat.enemies.every((e) => e.dead)) combat.cleared = true;
+        return ok({
+          action,
+          skill: params.skill || null,
+          target: enemy.id,
+          hit: hit.success,
+          tier: hit.tier,
+          roll: hit.rand,
+          damage: dmg,
+          enemy: publicEnemy(enemy),
+          cleared: combat.cleared
+        });
+      }
+      function enemyAction(schema2, state2, params, rng2, ok, fail) {
+        const combat = state2.combat;
+        if (!combat || !combat.active) return fail("no_encounter");
+        if (hasNumberParam(params)) return fail("combat_number_not_allowed");
+        const enemy = findEnemy(combat, params.enemyId);
+        if (!enemy) return fail("unknown_enemy", params.enemyId);
+        if (enemy.dead) return fail("enemy_dead", enemy.id);
+        const cfg = combatConfig(schema2);
+        const pc = playerCombat(state2);
+        const skill = params.skill ? (schema2.skills || {})[params.skill] : null;
+        const skillPower = intOr(skill && skill.power, 0);
+        const skillAcc = intOr(skill && skill.acc, 0);
+        const hit = resolveCheck(rng2, { mode: "dc", sides: cfg.d, dc: pc.evade, mod: enemy.acc + skillAcc });
+        let dmg = 0;
+        if (hit.success) {
+          dmg = Math.max(cfg.minDamage, enemy.atk + skillPower - pc.def);
+          if (hit.tier === "critical_success") dmg = Math.round(dmg * cfg.critMult);
+          if (combat.guard) dmg = Math.max(0, Math.floor(dmg * cfg.guardMult));
+          const hp = state2.player.pools && state2.player.pools.hp || { cur: 0, max: 0 };
+          state2.player.pools.hp = poolDamage(hp, dmg);
+          if (isDead(state2.player.pools.hp)) state2.player.dead = true;
+        }
+        combat.guard = false;
+        return ok({
+          enemyId: enemy.id,
+          action: params.action || "attack",
+          skill: params.skill || null,
+          hit: hit.success,
+          tier: hit.tier,
+          roll: hit.rand,
+          damage: dmg,
+          playerHp: normalizePool(state2.player.pools && state2.player.pools.hp),
+          playerDead: !!state2.player.dead
+        });
+      }
+      function endEncounter(schema2, state2, params, rng2, ok, fail) {
+        const combat = state2.combat;
+        if (!combat) return fail("no_encounter_to_end");
+        if (combat.active && !combat.cleared && !combat.fled) return fail("encounter_unresolved");
+        const cfg = combatConfig(schema2);
+        let expGained = 0;
+        let goldGained = 0;
+        const levelUps = [];
+        if (combat.cleared) {
+          for (const enemy of combat.enemies) {
+            const expRange = cfg.expTable[enemy.rank] || cfg.expTable.default;
+            if (isRange(expRange)) expGained += rng2.int(expRange[0], expRange[1]);
+            const goldRange = cfg.lootGold[enemy.rank] || cfg.lootGold.default;
+            if (isRange(goldRange)) goldGained += rng2.int(goldRange[0], goldRange[1]);
+          }
+          if (expGained) applyExp(schema2, state2, expGained, levelUps);
+          if (goldGained) state2.gold = Number(state2.gold || 0) + goldGained;
+        }
+        const outcome = combat.cleared ? "victory" : combat.fled ? "fled" : "ended";
+        state2.combat = null;
+        return ok({ outcome, expGained, goldGained, levelUps, player: clonePlayer(state2.player) });
+      }
+      function applyExp(schema2, state2, amount, levelUps) {
+        const ladder = ladderById(schema2, "player_level");
+        state2.player.exp = Number(state2.player.exp || 0) + amount;
+        if (!ladder || !Array.isArray(ladder.thresholds)) return;
+        while (state2.player.level <= ladder.thresholds.length) {
+          const threshold = Number(ladder.thresholds[state2.player.level - 1]);
+          if (!threshold || state2.player.exp < threshold) break;
+          state2.player.exp -= threshold;
+          state2.player.level += 1;
+          levelUps.push(state2.player.level);
+        }
+      }
+      function findEnemy(combat, ref) {
+        if (ref == null) return null;
+        const key = String(ref);
+        return combat.enemies.find((e) => e.id === key || e.name === key) || null;
+      }
+      function publicEnemy(e) {
+        return { id: e.id, name: e.name, rank: e.rank, hp: { cur: e.hp.cur, max: e.hp.max }, dead: e.dead };
+      }
+      function clonePlayer(player) {
+        return JSON.parse(JSON.stringify(player || {}));
+      }
+      function isRange(r) {
+        return Array.isArray(r) && r.length === 2 && Number.isFinite(Number(r[0])) && Number.isFinite(Number(r[1]));
+      }
+      function intOr(value, fallback) {
+        const n = Math.trunc(Number(value));
+        return Number.isFinite(n) ? n : fallback;
+      }
+      function numOr(value, fallback) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+      }
+      module.exports = { startEncounter, combatAction, enemyAction, endEncounter };
+    }
+  });
+
   // ../engine/core/applyEvent.js
   var require_applyEvent = __commonJS({
     "../engine/core/applyEvent.js"(exports, module) {
       "use strict";
       var { runDayEnd } = require_dayEnd();
+      var { startEncounter, combatAction, enemyAction, endEncounter } = require_combat();
       var { staffMax: staffMax2, tierOf } = require_selectors();
       var {
         clone,
@@ -5328,6 +5640,14 @@ select:focus { border-color: var(--amber-line); }
             return hire(schema2, next, params, ok, fail);
           case "fire":
             return fire(next, params, ok, fail);
+          case "start_encounter":
+            return startEncounter(schema2, next, params, rng2, ok, fail);
+          case "combat_action":
+            return combatAction(schema2, next, params, rng2, ok, fail);
+          case "enemy_action":
+            return enemyAction(schema2, next, params, rng2, ok, fail);
+          case "end_encounter":
+            return endEncounter(schema2, next, params, rng2, ok, fail);
           default:
             return fail("unknown_event", `Unknown event id: ${type}`);
         }

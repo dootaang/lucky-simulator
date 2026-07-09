@@ -1,6 +1,7 @@
 'use strict';
 
 const { runDayEnd } = require('./dayEnd.js');
+const { startEncounter, combatAction, enemyAction, endEncounter } = require('./combat.js');
 const { staffMax, tierOf } = require('./selectors.js');
 const {
   clone,
@@ -59,6 +60,14 @@ function applyEvent(schema, state, event, rng) {
       return hire(schema, next, params, ok, fail);
     case 'fire':
       return fire(next, params, ok, fail);
+    case 'start_encounter':
+      return startEncounter(schema, next, params, rng, ok, fail);
+    case 'combat_action':
+      return combatAction(schema, next, params, rng, ok, fail);
+    case 'enemy_action':
+      return enemyAction(schema, next, params, rng, ok, fail);
+    case 'end_encounter':
+      return endEncounter(schema, next, params, rng, ok, fail);
     default:
       return fail('unknown_event', `Unknown event id: ${type}`);
   }
