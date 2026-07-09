@@ -1,4 +1,5 @@
 const { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require('./llm/compilerPrompt.js');
+const { mineCard } = require('./llm/luaMine.js');
 const { PROVIDERS, callProvider, providerDef } = require('./llm/providers.js');
 const { validateSchema } = require('./schema/validate.js');
 import { setActiveSchema } from './engineSession.js';
@@ -23,7 +24,12 @@ export function renderImportView(container, ctx) {
 
 export async function compileSchemaForImport(ctx, config) {
   const cfg = config || providerConfig();
-  const compilerInput = buildCompilerInput(ctx && ctx.lore);
+  const mined = cfg.provider === 'mock'
+    ? null
+    : Object.prototype.hasOwnProperty.call(cfg, 'mined')
+      ? cfg.mined
+      : mineCard(ctx && ctx.parsed);
+  const compilerInput = buildCompilerInput(ctx && ctx.lore, mined);
   const raw = cfg.provider === 'mock'
     ? mockCompilerOutput()
     : await callProvider(cfg, {
@@ -40,6 +46,7 @@ export async function compileSchemaForImport(ctx, config) {
       issues: [{ level: 'error', path: '$', msg: parsed.error }],
       compiledAt: new Date().toISOString(),
       approved: false,
+      mined,
     };
   }
   const checked = validateSchema(parsed.json);
@@ -49,6 +56,7 @@ export async function compileSchemaForImport(ctx, config) {
     issues: checked.issues,
     compiledAt: new Date().toISOString(),
     approved: false,
+    mined,
   };
 }
 
@@ -387,9 +395,15 @@ function renderApproval(ctx, result, render) {
 async function runCompile(ctx, render) {
   busy = true;
   addLog(ctx, `컴파일 시작 (제공자 ${settings.provider}).`);
+  const cfg = providerConfig();
+  let mined = null;
+  if (cfg.provider !== 'mock') {
+    mined = mineCard(ctx && ctx.parsed);
+    addLog(ctx, formatMineLog(mined));
+  }
   render();
   try {
-    const result = await compileSchemaForImport(ctx, providerConfig());
+    const result = await compileSchemaForImport(ctx, Object.assign({}, cfg, { mined }));
     setCurrentResult(ctx, result);
     const counts = issueCounts(result.issues);
     addLog(ctx, `컴파일 완료: 에러 ${counts.error}, 경고 ${counts.warn}.`);
@@ -406,6 +420,17 @@ async function runCompile(ctx, render) {
     busy = false;
     render();
   }
+}
+
+function formatMineLog(mined) {
+  if (!mined || !mined.hasModule) {
+    const reason = mined && mined.reason ? ` (${mined.reason})` : '';
+    return `Lua mining: prose fallback${reason}.`;
+  }
+  if (mined.archetype !== 'lua-rich') {
+    return `Lua mining: prose / tables ${mined.tableCount || 0} / Lua ${mined.luaSize || 0} chars.`;
+  }
+  return `Lua mining: lua-rich / mined tables ${mined.tableCount || 0} / rule tables ${mined.ruleTableCount || 0} / Lua ${mined.luaSize || 0} chars.`;
 }
 
 function revalidateSection(ctx, key, value) {

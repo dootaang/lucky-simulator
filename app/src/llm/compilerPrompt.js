@@ -12,7 +12,7 @@ function promptTemplate() {
   return SYSTEM_PROMPT + REWARD_SCHEMA_APPENDIX;
 }
 
-function buildCompilerInput(lore) {
+function buildCompilerInput(lore, mined) {
   const entries = Array.isArray(lore && lore.entries) ? lore.entries : [];
   const rows = entries
     .filter((entry) => String(entry && entry.content || '').trim())
@@ -23,12 +23,13 @@ function buildCompilerInput(lore) {
       content: String(entry.content || ''),
     }));
 
-  if (!rows.length) return promptTemplate().replace('{{RULEBOOK}}', mockRulebook());
+  const minedBlock = formatMinedRules(mined);
+  if (!rows.length && !minedBlock) return promptTemplate().replace('{{RULEBOOK}}', mockRulebook());
 
   const constantRows = rows.filter((row) => row.constant);
   const restRows = rows.filter((row) => !row.constant).sort((a, b) => b.content.length - a.content.length || a.index - b.index);
-  const selected = [];
-  let used = 0;
+  const selected = minedBlock ? [minedBlock] : [];
+  let used = minedBlock.length;
 
   for (const row of constantRows.concat(restRows)) {
     const block = formatEntry(row);
@@ -38,9 +39,9 @@ function buildCompilerInput(lore) {
     if (used >= MAX_RULEBOOK_CHARS) break;
   }
 
-  const omitted = rows.length - selected.length;
+  const omitted = rows.length - (selected.length - (minedBlock ? 1 : 0));
   if (omitted > 0 && typeof console !== 'undefined' && console.info) {
-    console.info('[simbot] compiler input trimmed', { included: selected.length, omitted });
+    console.info('[simbot] compiler input trimmed', { included: rows.length - omitted, omitted });
   }
   return promptTemplate().replace('{{RULEBOOK}}', selected.join('\n\n').slice(0, MAX_RULEBOOK_CHARS));
 }
@@ -93,6 +94,28 @@ function mockCompilerOutput() {
 
 function formatEntry(row) {
   return `### \ub8f0\ubd81 \ud56d\ubaa9: ${row.name}\n${row.content}`;
+}
+
+function formatMinedRules(mined) {
+  if (!mined || mined.archetype !== 'lua-rich') return '';
+  const payload = {};
+  if (mined.tables && Object.keys(mined.tables).length) payload.tables = sortObject(mined.tables);
+  if (mined.constants && Object.keys(mined.constants).length) payload.constants = sortObject(mined.constants);
+  if (!Object.keys(payload).length) return '';
+  return [
+    '[채굴된 규칙 값 - 카드 Lua에서 정확 추출]',
+    '이 블록의 숫자는 카드에 내장된 Lua 테이블 리터럴을 정적 파싱한 authoritative 값이다.',
+    '룰북 prose와 충돌하면 채굴된 값을 우선하고, 이름을 스키마 필드에 자연스럽게 매핑하라.',
+    JSON.stringify(payload, null, 2),
+  ].join('\n');
+}
+
+function sortObject(value) {
+  if (Array.isArray(value)) return value.map(sortObject);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) out[key] = sortObject(value[key]);
+  return out;
 }
 
 function mockRulebook() {

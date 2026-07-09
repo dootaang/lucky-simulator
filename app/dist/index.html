@@ -6165,7 +6165,7 @@ ${row3.entry.content}`).join("\n\n");
       function promptTemplate() {
         return SYSTEM_PROMPT + REWARD_SCHEMA_APPENDIX;
       }
-      function buildCompilerInput2(lore) {
+      function buildCompilerInput2(lore, mined) {
         const entries = Array.isArray(lore && lore.entries) ? lore.entries : [];
         const rows = entries.filter((entry) => String(entry && entry.content || "").trim()).map((entry, index) => ({
           index,
@@ -6173,11 +6173,12 @@ ${row3.entry.content}`).join("\n\n");
           name: String(entry.name || entry.comment || `entry-${index + 1}`),
           content: String(entry.content || "")
         }));
-        if (!rows.length) return promptTemplate().replace("{{RULEBOOK}}", mockRulebook());
+        const minedBlock = formatMinedRules(mined);
+        if (!rows.length && !minedBlock) return promptTemplate().replace("{{RULEBOOK}}", mockRulebook());
         const constantRows = rows.filter((row3) => row3.constant);
         const restRows = rows.filter((row3) => !row3.constant).sort((a, b) => b.content.length - a.content.length || a.index - b.index);
-        const selected = [];
-        let used = 0;
+        const selected = minedBlock ? [minedBlock] : [];
+        let used = minedBlock.length;
         for (const row3 of constantRows.concat(restRows)) {
           const block = formatEntry(row3);
           if (used + block.length > MAX_RULEBOOK_CHARS && selected.length) continue;
@@ -6185,9 +6186,9 @@ ${row3.entry.content}`).join("\n\n");
           used += block.length;
           if (used >= MAX_RULEBOOK_CHARS) break;
         }
-        const omitted = rows.length - selected.length;
+        const omitted = rows.length - (selected.length - (minedBlock ? 1 : 0));
         if (omitted > 0 && typeof console !== "undefined" && console.info) {
-          console.info("[simbot] compiler input trimmed", { included: selected.length, omitted });
+          console.info("[simbot] compiler input trimmed", { included: rows.length - omitted, omitted });
         }
         return promptTemplate().replace("{{RULEBOOK}}", selected.join("\n\n").slice(0, MAX_RULEBOOK_CHARS));
       }
@@ -6236,6 +6237,26 @@ ${row3.entry.content}`).join("\n\n");
         return `### \uB8F0\uBD81 \uD56D\uBAA9: ${row3.name}
 ${row3.content}`;
       }
+      function formatMinedRules(mined) {
+        if (!mined || mined.archetype !== "lua-rich") return "";
+        const payload = {};
+        if (mined.tables && Object.keys(mined.tables).length) payload.tables = sortObject(mined.tables);
+        if (mined.constants && Object.keys(mined.constants).length) payload.constants = sortObject(mined.constants);
+        if (!Object.keys(payload).length) return "";
+        return [
+          "[\uCC44\uAD74\uB41C \uADDC\uCE59 \uAC12 - \uCE74\uB4DC Lua\uC5D0\uC11C \uC815\uD655 \uCD94\uCD9C]",
+          "\uC774 \uBE14\uB85D\uC758 \uC22B\uC790\uB294 \uCE74\uB4DC\uC5D0 \uB0B4\uC7A5\uB41C Lua \uD14C\uC774\uBE14 \uB9AC\uD130\uB7F4\uC744 \uC815\uC801 \uD30C\uC2F1\uD55C authoritative \uAC12\uC774\uB2E4.",
+          "\uB8F0\uBD81 prose\uC640 \uCDA9\uB3CC\uD558\uBA74 \uCC44\uAD74\uB41C \uAC12\uC744 \uC6B0\uC120\uD558\uACE0, \uC774\uB984\uC744 \uC2A4\uD0A4\uB9C8 \uD544\uB4DC\uC5D0 \uC790\uC5F0\uC2A4\uB7FD\uAC8C \uB9E4\uD551\uD558\uB77C.",
+          JSON.stringify(payload, null, 2)
+        ].join("\n");
+      }
+      function sortObject(value) {
+        if (Array.isArray(value)) return value.map(sortObject);
+        if (!value || typeof value !== "object") return value;
+        const out = {};
+        for (const key of Object.keys(value).sort()) out[key] = sortObject(value[key]);
+        return out;
+      }
       function mockRulebook() {
         return "Mock lorebook entry: use the default inn schema shape and keep assumptions explicit.";
       }
@@ -6246,6 +6267,307 @@ ${row3.content}`;
         return JSON.parse(JSON.stringify(value));
       }
       module.exports = { SYSTEM_PROMPT, buildCompilerInput: buildCompilerInput2, parseCompilerOutput: parseCompilerOutput2, mockCompilerOutput: mockCompilerOutput2 };
+    }
+  });
+
+  // src/llm/luaMine.js
+  var require_luaMine = __commonJS({
+    "src/llm/luaMine.js"(exports, module) {
+      "use strict";
+      var { inflateSync, unzipSync } = require_browser();
+      var { parseRisum } = require_risum();
+      var RULE_TABLE_RE = /(cost|threshold|reward|price|rank|cap|capacity|room|max|upgrade)/i;
+      var CONSTANT_RE = /(cost|threshold|reward|price|rank|cap|capacity|room|max|upgrade|gold|exp|level)/i;
+      function mineCard2(parsed) {
+        try {
+          const moduleBytes = extractModuleRisum(parsed);
+          if (!moduleBytes) return fallback("module.risum not found");
+          const decoded = parseRisum(moduleBytes);
+          const root = decoded && decoded.module;
+          const moduleRoot = root && root.module ? root.module : root;
+          const luaParts = collectLuaCode(moduleRoot);
+          const lua = luaParts.join("\n\n");
+          const tables = parseLuaTables(lua);
+          const constants = parseLuaConstants(lua);
+          const tableNames = Object.keys(tables);
+          const ruleTableNames = tableNames.filter((name) => RULE_TABLE_RE.test(name) && numericSignal(tables[name]));
+          const setVarCount = countMatches(lua, /\b(?:setChatVar|setvar)\s*\(/gi);
+          const archetype = ruleTableNames.length >= 3 ? "lua-rich" : "prose";
+          const result = {
+            hasModule: true,
+            archetype,
+            tables,
+            constants,
+            moduleLoreCount: Array.isArray(moduleRoot && moduleRoot.lorebook) ? moduleRoot.lorebook.length : 0,
+            luaSize: lua.length,
+            luaPurpose: summarizePurpose(lua),
+            tableCount: tableNames.length,
+            ruleTableCount: ruleTableNames.length,
+            ruleTableNames,
+            setVarCount
+          };
+          logMine(result);
+          return result;
+        } catch (err) {
+          return fallback(err && err.message ? err.message : String(err || "mining failed"));
+        }
+      }
+      function extractModuleRisum(parsed) {
+        const bytes = parsed && parsed._bytes;
+        if (!bytes) return null;
+        const b = toBytes(bytes);
+        if (parsed && parsed.format === "risum") return b;
+        if (!(b[0] === 80 && b[1] === 75)) return null;
+        try {
+          const files = unzipSync(b, { filter: (file) => file.name === "module.risum" || /\.risum$/i.test(file.name) });
+          if (files["module.risum"]) return files["module.risum"];
+          const key = Object.keys(files).find((name) => /\.risum$/i.test(name));
+          if (key) return files[key];
+        } catch (err) {
+          logFallback(`fflate module lookup failed: ${err && err.message ? err.message : err}`);
+        }
+        return extractZipEntryByLocalHeader(b, "module.risum") || extractFirstRisumByLocalHeader(b);
+      }
+      function extractZipEntryByLocalHeader(bytes, targetName) {
+        return scanZipLocalHeaders(bytes, (name) => name === targetName);
+      }
+      function extractFirstRisumByLocalHeader(bytes) {
+        return scanZipLocalHeaders(bytes, (name) => /\.risum$/i.test(name));
+      }
+      function scanZipLocalHeaders(bytes, acceptName) {
+        const decoder = textDecoder();
+        let off = 0;
+        while (off + 30 <= bytes.length) {
+          if (u32(bytes, off) !== 67324752) {
+            off = indexLocalHeader(bytes, off + 1);
+            if (off < 0) return null;
+          }
+          const compression = u16(bytes, off + 8);
+          const compressedSize = u32(bytes, off + 18);
+          const nameLen = u16(bytes, off + 26);
+          const extraLen = u16(bytes, off + 28);
+          const nameStart = off + 30;
+          const dataStart = nameStart + nameLen + extraLen;
+          if (dataStart > bytes.length) return null;
+          const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLen));
+          let dataEnd = compressedSize > 0 ? dataStart + compressedSize : indexLocalHeader(bytes, dataStart + 1);
+          if (dataEnd < 0) dataEnd = bytes.length;
+          if (acceptName(name)) {
+            const payload = bytes.subarray(dataStart, dataEnd);
+            if (compression === 0) return payload;
+            if (compression === 8) return inflateSync(payload);
+            throw new Error(`unsupported zip compression ${compression} for ${name}`);
+          }
+          off = dataEnd;
+        }
+        return null;
+      }
+      function collectLuaCode(moduleRoot) {
+        const out = [];
+        const triggers = Array.isArray(moduleRoot && moduleRoot.trigger) ? moduleRoot.trigger : [];
+        for (const trigger of triggers) {
+          const effects = Array.isArray(trigger && trigger.effect) ? trigger.effect : [];
+          for (const effect of effects) {
+            if (effect && typeof effect.code === "string") out.push(effect.code);
+          }
+        }
+        return out;
+      }
+      function parseLuaTables(lua) {
+        const tables = {};
+        const re = /(?:local\s+)?(\w+)\s*=\s*\{/g;
+        let match;
+        while (match = re.exec(lua)) {
+          const braceIndex = match.index + match[0].lastIndexOf("{");
+          const parsed = parseValue(lua, braceIndex);
+          tables[match[1]] = parsed[0];
+          re.lastIndex = parsed[1];
+        }
+        return tables;
+      }
+      function parseLuaConstants(lua) {
+        const constants = {};
+        const re = /(?:^|[^\w.])(?:local\s+)?(\w+)\s*=\s*(-?\d+(?:\.\d+)?)(?![\w.])/g;
+        let match;
+        while (match = re.exec(lua)) {
+          const name = match[1];
+          const before = lua[match.index + match[0].indexOf("=") - 1];
+          const after = lua[re.lastIndex];
+          if (before === "=" || before === "~" || before === "<" || before === ">" || after === "=") continue;
+          if (CONSTANT_RE.test(name)) constants[name] = Number(match[2]);
+        }
+        return constants;
+      }
+      function skip(s, i) {
+        while (i < s.length) {
+          if (/\s/.test(s[i])) i++;
+          else if (s.slice(i, i + 2) === "--") {
+            while (i < s.length && s[i] !== "\n") i++;
+          } else break;
+        }
+        return i;
+      }
+      function parseStr(s, i) {
+        const q = s[i];
+        i++;
+        let out = "";
+        while (i < s.length && s[i] !== q) {
+          if (s[i] === "\\") {
+            out += s[i + 1];
+            i += 2;
+          } else {
+            out += s[i++];
+          }
+        }
+        return [out, i + 1];
+      }
+      function parseValue(s, i) {
+        i = skip(s, i);
+        const c = s[i];
+        if (c === "{") return parseTable(s, i);
+        if (c === '"' || c === "'") return parseStr(s, i);
+        const num = /^-?\d+(\.\d+)?/.exec(s.slice(i));
+        if (num) return [Number(num[0]), i + num[0].length];
+        const id = /^[A-Za-z_][\w.]*/.exec(s.slice(i));
+        if (id) return [{ __ref: id[0] }, i + id[0].length];
+        return [null, i + 1];
+      }
+      function parseTable(s, i) {
+        i++;
+        const arr = [];
+        const obj = {};
+        let isArr = true;
+        for (; ; ) {
+          i = skip(s, i);
+          if (s[i] === "}") {
+            i++;
+            break;
+          }
+          if (i >= s.length) break;
+          if (s[i] === "[") {
+            const [k, i2] = parseValue(s, i + 1);
+            let j = skip(s, i2);
+            if (s[j] === "]") j++;
+            j = skip(s, j);
+            if (s[j] === "=") {
+              const [v, i3] = parseValue(s, j + 1);
+              obj[String(k)] = v;
+              isArr = false;
+              i = i3;
+            } else i = j;
+          } else {
+            const idm = /^[A-Za-z_]\w*/.exec(s.slice(i));
+            let j = idm ? skip(s, i + idm[0].length) : i;
+            if (idm && s[j] === "=" && s[j + 1] !== "=") {
+              const [v, i2] = parseValue(s, j + 1);
+              obj[idm[0]] = v;
+              isArr = false;
+              i = i2;
+            } else {
+              const [v, i2] = parseValue(s, i);
+              arr.push(v);
+              i = i2;
+            }
+          }
+          i = skip(s, i);
+          if (s[i] === "," || s[i] === ";") i++;
+        }
+        return [isArr ? arr : obj, i];
+      }
+      function numericSignal(value) {
+        let numbers = 0;
+        let total = 0;
+        walk(value, (item) => {
+          total++;
+          if (typeof item === "number" && Number.isFinite(item)) numbers++;
+        });
+        return numbers >= 2 || numbers >= 1 && total <= 3;
+      }
+      function walk(value, visit) {
+        visit(value);
+        if (Array.isArray(value)) {
+          for (const item of value) walk(item, visit);
+        } else if (value && typeof value === "object" && !value.__ref) {
+          for (const key of Object.keys(value)) walk(value[key], visit);
+        }
+      }
+      function summarizePurpose(lua) {
+        const lines = String(lua || "").split(/\r?\n/);
+        const comments = [];
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            if (comments.length) break;
+            continue;
+          }
+          if (!trimmed.startsWith("--")) break;
+          const text = trimmed.replace(/^--\s?/, "").trim();
+          if (text && !/^=+$/.test(text)) comments.push(text);
+          if (comments.length >= 3) break;
+        }
+        return comments.join(" / ");
+      }
+      function fallback(reason) {
+        const result = {
+          hasModule: false,
+          archetype: "prose",
+          tables: {},
+          constants: {},
+          moduleLoreCount: 0,
+          luaSize: 0,
+          luaPurpose: "",
+          tableCount: 0,
+          ruleTableCount: 0,
+          ruleTableNames: [],
+          setVarCount: 0,
+          reason: String(reason || "mining unavailable")
+        };
+        logFallback(result.reason);
+        return result;
+      }
+      function logMine(result) {
+        if (typeof console !== "undefined" && console.info) {
+          console.info("[simbot] lua mining", {
+            archetype: result.archetype,
+            tables: result.tableCount,
+            ruleTables: result.ruleTableCount,
+            luaSize: result.luaSize
+          });
+        }
+      }
+      function logFallback(reason) {
+        if (typeof console !== "undefined" && console.info) {
+          console.info("[simbot] lua mining fallback", { reason: String(reason || "") });
+        }
+      }
+      function countMatches(text, re) {
+        return (String(text || "").match(re) || []).length;
+      }
+      function toBytes(x) {
+        return x instanceof Uint8Array ? x : new Uint8Array(x);
+      }
+      function u16(b, off) {
+        return b[off] | b[off + 1] << 8;
+      }
+      function u32(b, off) {
+        return (b[off] | b[off + 1] << 8 | b[off + 2] << 16 | b[off + 3] << 24) >>> 0;
+      }
+      function indexLocalHeader(b, start) {
+        for (let i = start; i + 3 < b.length; i++) {
+          if (b[i] === 80 && b[i + 1] === 75 && b[i + 2] === 3 && b[i + 3] === 4) return i;
+        }
+        return -1;
+      }
+      function textDecoder() {
+        return new TextDecoder("utf-8");
+      }
+      module.exports = {
+        mineCard: mineCard2,
+        parseLuaTables,
+        parseLuaConstants,
+        parseValue,
+        parseTable
+      };
     }
   });
 
@@ -8152,6 +8474,7 @@ ${Array.from(extras).join(" ")}` : text;
 
   // src/importView.js
   var { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require_compilerPrompt();
+  var { mineCard } = require_luaMine();
   var { PROVIDERS: PROVIDERS2, callProvider: callProvider2, providerDef: providerDef2 } = require_providers();
   var { validateSchema } = require_validate();
   var SECTION_KEYS = ["meta", "resources", "scales", "ladders", "entities", "formulas", "processes", "events", "initialState", "_assumptions"];
@@ -8172,7 +8495,8 @@ ${Array.from(extras).join(" ")}` : text;
   }
   async function compileSchemaForImport(ctx, config) {
     const cfg = config || providerConfig2();
-    const compilerInput = buildCompilerInput(ctx && ctx.lore);
+    const mined = cfg.provider === "mock" ? null : Object.prototype.hasOwnProperty.call(cfg, "mined") ? cfg.mined : mineCard(ctx && ctx.parsed);
+    const compilerInput = buildCompilerInput(ctx && ctx.lore, mined);
     const raw = cfg.provider === "mock" ? mockCompilerOutput() : await callProvider2(cfg, {
       system: compilerInput,
       messages: [{ role: "user", content: "Return only the compiled JSON object." }],
@@ -8186,7 +8510,8 @@ ${Array.from(extras).join(" ")}` : text;
         schema: null,
         issues: [{ level: "error", path: "$", msg: parsed.error }],
         compiledAt: (/* @__PURE__ */ new Date()).toISOString(),
-        approved: false
+        approved: false,
+        mined
       };
     }
     const checked = validateSchema(parsed.json);
@@ -8195,7 +8520,8 @@ ${Array.from(extras).join(" ")}` : text;
       schema: checked.schema,
       issues: checked.issues,
       compiledAt: (/* @__PURE__ */ new Date()).toISOString(),
-      approved: false
+      approved: false,
+      mined
     };
   }
   function renderHeader2(ctx, render2) {
@@ -8501,9 +8827,15 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
   async function runCompile(ctx, render2) {
     busy2 = true;
     addLog(ctx, `\uCEF4\uD30C\uC77C \uC2DC\uC791 (\uC81C\uACF5\uC790 ${settings2.provider}).`);
+    const cfg = providerConfig2();
+    let mined = null;
+    if (cfg.provider !== "mock") {
+      mined = mineCard(ctx && ctx.parsed);
+      addLog(ctx, formatMineLog(mined));
+    }
     render2();
     try {
-      const result = await compileSchemaForImport(ctx, providerConfig2());
+      const result = await compileSchemaForImport(ctx, Object.assign({}, cfg, { mined }));
       setCurrentResult(ctx, result);
       const counts = issueCounts(result.issues);
       addLog(ctx, `\uCEF4\uD30C\uC77C \uC644\uB8CC: \uC5D0\uB7EC ${counts.error}, \uACBD\uACE0 ${counts.warn}.`);
@@ -8520,6 +8852,16 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       busy2 = false;
       render2();
     }
+  }
+  function formatMineLog(mined) {
+    if (!mined || !mined.hasModule) {
+      const reason = mined && mined.reason ? ` (${mined.reason})` : "";
+      return `Lua mining: prose fallback${reason}.`;
+    }
+    if (mined.archetype !== "lua-rich") {
+      return `Lua mining: prose / tables ${mined.tableCount || 0} / Lua ${mined.luaSize || 0} chars.`;
+    }
+    return `Lua mining: lua-rich / mined tables ${mined.tableCount || 0} / rule tables ${mined.ruleTableCount || 0} / Lua ${mined.luaSize || 0} chars.`;
   }
   function revalidateSection(ctx, key, value) {
     const result = currentResult(ctx);
