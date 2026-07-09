@@ -61,7 +61,34 @@ function summarize(schema, state) {
 
   const repParts = Object.entries(state.reputation || {}).map(([axis, rep]) => `${labels[axis] || axis} ${rep.rank}(${rep.exp})`);
   lines.push(`[평판] ${repParts.join(' · ')}`);
-  return lines.slice(0, 4).join('\n');
+
+  const player = state.player || {};
+  if (player.pools) {
+    const pools = Object.entries(player.pools).map(([id, pool]) => {
+      const value = pool || {};
+      return `${String(id).toUpperCase()} ${value.cur}/${value.max}`;
+    });
+    const stats = [
+      ['atk', '공'],
+      ['def', '방'],
+      ['evade', '회피'],
+      ['acc', '명중'],
+    ].filter(([id]) => player[id] != null).map(([id, label]) => `${label}${player[id]}`);
+    lines.push(`[플레이어] Lv.${player.level} · EXP ${player.exp}${pools.length ? ` · ${pools.join(' · ')}` : ''}${stats.length ? ` · ${stats.join(' ')}` : ''}`);
+  }
+
+  const combat = state.combat;
+  if (combat && combat.active) {
+    const enemies = (combat.enemies || []).map((enemy) => {
+      const hp = enemy.hp || {};
+      return enemy.dead || Number(hp.cur) <= 0
+        ? `${enemy.id} ${enemy.name}(전투불능)`
+        : `${enemy.id} ${enemy.name}(HP ${hp.cur}/${hp.max})`;
+    });
+    lines.push(`[전투] ROUND ${combat.round} · ${enemies.join(' · ')}${combat.guard ? ' · 방어 중' : ''}`);
+  }
+
+  return lines.join('\n');
 }
 
 function npcSummary(schema, state, npcId) {

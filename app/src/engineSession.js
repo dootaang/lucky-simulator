@@ -25,6 +25,10 @@ export const eventTypes = [
   'reward',
   'gold_delta',
   'resource_delta',
+  'start_encounter',
+  'combat_action',
+  'enemy_action',
+  'end_encounter',
   'day_end',
 ];
 
@@ -76,6 +80,14 @@ export function summarizeEvent(type, entry, formatMoney) {
   if (entry.ok && type === 'upgrade') return `upgrade · ${entry.facility} Lv.${entry.level} · gold ${entry.goldDelta >= 0 ? '+' : ''}${formatMoney(entry.goldDelta)}`;
   if (entry.ok && type === 'gain_resource') return `gain · ${entry.resource} +${entry.qty} (${entry.scale})`;
   if (!entry.ok) return `${type} 실패: ${entry.reason || '알 수 없음'}${entry.detail ? ` (${entry.detail})` : ''}`;
+  if (type === 'start_encounter') return `전투 시작 · 적 ${(entry.enemies || []).length}`;
+  if (type === 'combat_action') {
+    if (entry.action === 'defend') return '방어 태세';
+    if (entry.action === 'flee') return `도주 ${entry.fled ? '성공' : '실패'}`;
+    return `${entry.skill || '공격'} · ${entry.target} ${entry.hit ? (entry.tier === 'critical_success' ? '크리티컬' : '명중') : '빗나감'} · 피해 ${entry.damage}${entry.cleared ? ' · 전멸' : ''}`;
+  }
+  if (type === 'enemy_action') return `${entry.enemyId} 반격 · ${entry.hit ? `피해 ${entry.damage}` : '회피'}${entry.playerDead ? ' · 플레이어 전투불능' : ''}`;
+  if (type === 'end_encounter') return `전투 종료(${entry.outcome}) · EXP +${entry.expGained} · 골드 +${formatMoney(entry.goldGained)}${entry.levelUps && entry.levelUps.length ? ` · Lv.${entry.levelUps.join(',')}` : ''}`;
   if (type === 'scale_delta') return entry.capped ? `${entry.target} capped · ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
   if (type === 'rep_event') return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
   if (type === 'day_end') return `하루 마감 · ${entry.report.day}일차 정산`;

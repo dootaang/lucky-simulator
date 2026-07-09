@@ -42,7 +42,21 @@ const REWARD_PROMPT_APPENDIX = `
 - The same questId can be rewarded only once. If the player repeats "claim reward" for an already claimed quest, do not emit reward again; the engine rejects duplicates.
 - The engine chooses gold from schema rewards.gold[tier]; never write amount, goldDelta, cost, qty, or any numeric reward result. Use reward only at completion/reporting time, not while work is still in progress.`;
 
+const COMBAT_PROMPT_APPENDIX = `
+
+[전투 사건]
+- start_encounter {enemies:[{name, hp, atk?, def?, evade?, acc?, rank?}]} — 적과 조우해 전투가 시작될 때 1회만 제안한다. 적 스탯은 서사에 맞게 제안하되 시작 후에는 엔진에 고정되어 재수정할 수 없다. rank는 E~S(경험치·전리품 표 기준)다.
+- combat_action {action:"attack"|"skill"|"defend"|"flee", target?, skill?} — 플레이어의 전투 행동이다. target은 [전투] 상태의 적 id(e1 등), skill은 [스킬 목록]의 id만 쓴다.
+- enemy_action {enemyId, action:"attack", skill?} — 적의 반격이다. 어떤 적이 행동하는지만 정하고 결과는 엔진이 계산한다.
+- end_encounter {} — 전멸(victory) 또는 도주 성공 후 전투를 닫을 때 제안한다. 보상(EXP·골드)은 엔진이 표에서 계산한다.
+
+[전투 규칙]
+- ★데미지·명중·성공여부·굴림·보상 수치를 절대 쓰지 마라. 사건에도 서사에도 단정하지 마라. 엔진 로그가 결과다.
+- 죽은 적 공격·부활·없는 MP 사용은 엔진이 거부한다. 전투 중에는 [전투] 상태의 HP만 사실이다.
+- 사건 흐름: 조우→start_encounter, 플레이어 턴→combat_action 1개 + 적 반격 enemy_action 1개를 같은 events 배열에 순서대로, 전멸/도주 후→end_encounter.`;
+
 function buildPrompt({ schema, state, lore, recentMessages, userInput }) {
+  const combatCapable = !!(schema.combat || schema.pools);
   const stateText = summarize(schema, state);
   const npcIds = relatedNpcIds(schema, state, recentMessages, userInput);
   const npcText = npcIds.map((id) => npcSummary(schema, state, id)).filter(Boolean).join('\n');
@@ -51,6 +65,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput }) {
   const npcList = npcListText(schema);
   const menuList = menuListText(schema, state);
   const roomList = roomListText(schema);
+  const skillList = combatCapable ? skillListText(schema) : '';
   const loreText = loreContext(lore, recentMessages, userInput);
 
   const context = [
@@ -67,6 +82,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput }) {
     '',
     menuList ? '[메뉴 목록]\n' + menuList + '\n' : '',
     roomList ? '[객실 목록]\n' + roomList + '\n' : '',
+    combatCapable && skillList ? '[스킬 목록]\n' + skillList + '\n' : '',
     '[세계 정보]',
     loreText || (lore ? '없음' : '카드를 드롭하면 세계관 로어북이 자동 주입됩니다'),
     '',
@@ -90,10 +106,11 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput }) {
     roomList: estimateTokens(roomList),
     lore: estimateTokens(loreText || ''),
   };
+  if (combatCapable) injectedParts.skills = estimateTokens(skillList);
   const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
 
   return {
-    system: SYSTEM_PROMPT + REWARD_PROMPT_APPENDIX,
+    system: SYSTEM_PROMPT + REWARD_PROMPT_APPENDIX + (combatCapable ? COMBAT_PROMPT_APPENDIX : ''),
     messages,
     injectedTokens,
     injectedParts,
@@ -181,6 +198,12 @@ function roomListText(schema) {
     .join('\n');
 }
 
+function skillListText(schema) {
+  return Object.entries(schema.skills || {})
+    .map(([id, skill]) => `${id}: ${skill.name || id} (${skill.pool || 'mp'} ${skill.cost || 0}, 위력 ${skill.power || 0})`)
+    .join('\n');
+}
+
 function loreContext(lore, recentMessages, userInput) {
   if (!lore) return '';
   const text = [...(recentMessages || []).map((m) => m.content || ''), userInput || ''].join('\n');
@@ -209,7 +232,7 @@ function relevance(entry, query) {
 }
 
 function npcEntities(schema) {
-  const block = schema.entities.find((entry) => entry.type === 'npc');
+  const block = (schema.entities || []).find((entry) => entry.type === 'npc');
   return block && Array.isArray(block.instances) ? block.instances : [];
 }
 

@@ -5186,7 +5186,29 @@ select:focus { border-color: var(--amber-line); }
         lines.push(`[\uAC1D\uC2E4] ${occupied.length ? occupied.join(" \xB7 ") + " \xB7 \uB098\uBA38\uC9C0 \uACF5\uC2E4" : "\uC804 \uAC1D\uC2E4 \uACF5\uC2E4"}`);
         const repParts = Object.entries(state2.reputation || {}).map(([axis, rep]) => `${labels[axis] || axis} ${rep.rank}(${rep.exp})`);
         lines.push(`[\uD3C9\uD310] ${repParts.join(" \xB7 ")}`);
-        return lines.slice(0, 4).join("\n");
+        const player = state2.player || {};
+        if (player.pools) {
+          const pools = Object.entries(player.pools).map(([id, pool]) => {
+            const value = pool || {};
+            return `${String(id).toUpperCase()} ${value.cur}/${value.max}`;
+          });
+          const stats = [
+            ["atk", "\uACF5"],
+            ["def", "\uBC29"],
+            ["evade", "\uD68C\uD53C"],
+            ["acc", "\uBA85\uC911"]
+          ].filter(([id]) => player[id] != null).map(([id, label]) => `${label}${player[id]}`);
+          lines.push(`[\uD50C\uB808\uC774\uC5B4] Lv.${player.level} \xB7 EXP ${player.exp}${pools.length ? ` \xB7 ${pools.join(" \xB7 ")}` : ""}${stats.length ? ` \xB7 ${stats.join(" ")}` : ""}`);
+        }
+        const combat = state2.combat;
+        if (combat && combat.active) {
+          const enemies = (combat.enemies || []).map((enemy) => {
+            const hp = enemy.hp || {};
+            return enemy.dead || Number(hp.cur) <= 0 ? `${enemy.id} ${enemy.name}(\uC804\uD22C\uBD88\uB2A5)` : `${enemy.id} ${enemy.name}(HP ${hp.cur}/${hp.max})`;
+          });
+          lines.push(`[\uC804\uD22C] ROUND ${combat.round} \xB7 ${enemies.join(" \xB7 ")}${combat.guard ? " \xB7 \uBC29\uC5B4 \uC911" : ""}`);
+        }
+        return lines.join("\n");
       }
       function npcSummary3(schema2, state2, npcId) {
         const npc = entityList(schema2, "npc").find((entry) => entry.id === npcId);
@@ -5977,7 +5999,20 @@ select:focus { border-color: var(--amber-line); }
 - reward {questId, tier, reason} only when a quest/manual/request is complete and the reward tier is known (E~S). questId is the stable unique id for that quest, such as "boar-hunt".
 - The same questId can be rewarded only once. If the player repeats "claim reward" for an already claimed quest, do not emit reward again; the engine rejects duplicates.
 - The engine chooses gold from schema rewards.gold[tier]; never write amount, goldDelta, cost, qty, or any numeric reward result. Use reward only at completion/reporting time, not while work is still in progress.`;
+      var COMBAT_PROMPT_APPENDIX = `
+
+[\uC804\uD22C \uC0AC\uAC74]
+- start_encounter {enemies:[{name, hp, atk?, def?, evade?, acc?, rank?}]} \u2014 \uC801\uACFC \uC870\uC6B0\uD574 \uC804\uD22C\uAC00 \uC2DC\uC791\uB420 \uB54C 1\uD68C\uB9CC \uC81C\uC548\uD55C\uB2E4. \uC801 \uC2A4\uD0EF\uC740 \uC11C\uC0AC\uC5D0 \uB9DE\uAC8C \uC81C\uC548\uD558\uB418 \uC2DC\uC791 \uD6C4\uC5D0\uB294 \uC5D4\uC9C4\uC5D0 \uACE0\uC815\uB418\uC5B4 \uC7AC\uC218\uC815\uD560 \uC218 \uC5C6\uB2E4. rank\uB294 E~S(\uACBD\uD5D8\uCE58\xB7\uC804\uB9AC\uD488 \uD45C \uAE30\uC900)\uB2E4.
+- combat_action {action:"attack"|"skill"|"defend"|"flee", target?, skill?} \u2014 \uD50C\uB808\uC774\uC5B4\uC758 \uC804\uD22C \uD589\uB3D9\uC774\uB2E4. target\uC740 [\uC804\uD22C] \uC0C1\uD0DC\uC758 \uC801 id(e1 \uB4F1), skill\uC740 [\uC2A4\uD0AC \uBAA9\uB85D]\uC758 id\uB9CC \uC4F4\uB2E4.
+- enemy_action {enemyId, action:"attack", skill?} \u2014 \uC801\uC758 \uBC18\uACA9\uC774\uB2E4. \uC5B4\uB5A4 \uC801\uC774 \uD589\uB3D9\uD558\uB294\uC9C0\uB9CC \uC815\uD558\uACE0 \uACB0\uACFC\uB294 \uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD55C\uB2E4.
+- end_encounter {} \u2014 \uC804\uBA78(victory) \uB610\uB294 \uB3C4\uC8FC \uC131\uACF5 \uD6C4 \uC804\uD22C\uB97C \uB2EB\uC744 \uB54C \uC81C\uC548\uD55C\uB2E4. \uBCF4\uC0C1(EXP\xB7\uACE8\uB4DC)\uC740 \uC5D4\uC9C4\uC774 \uD45C\uC5D0\uC11C \uACC4\uC0B0\uD55C\uB2E4.
+
+[\uC804\uD22C \uADDC\uCE59]
+- \u2605\uB370\uBBF8\uC9C0\xB7\uBA85\uC911\xB7\uC131\uACF5\uC5EC\uBD80\xB7\uAD74\uB9BC\xB7\uBCF4\uC0C1 \uC218\uCE58\uB97C \uC808\uB300 \uC4F0\uC9C0 \uB9C8\uB77C. \uC0AC\uAC74\uC5D0\uB3C4 \uC11C\uC0AC\uC5D0\uB3C4 \uB2E8\uC815\uD558\uC9C0 \uB9C8\uB77C. \uC5D4\uC9C4 \uB85C\uADF8\uAC00 \uACB0\uACFC\uB2E4.
+- \uC8FD\uC740 \uC801 \uACF5\uACA9\xB7\uBD80\uD65C\xB7\uC5C6\uB294 MP \uC0AC\uC6A9\uC740 \uC5D4\uC9C4\uC774 \uAC70\uBD80\uD55C\uB2E4. \uC804\uD22C \uC911\uC5D0\uB294 [\uC804\uD22C] \uC0C1\uD0DC\uC758 HP\uB9CC \uC0AC\uC2E4\uC774\uB2E4.
+- \uC0AC\uAC74 \uD750\uB984: \uC870\uC6B0\u2192start_encounter, \uD50C\uB808\uC774\uC5B4 \uD134\u2192combat_action 1\uAC1C + \uC801 \uBC18\uACA9 enemy_action 1\uAC1C\uB97C \uAC19\uC740 events \uBC30\uC5F4\uC5D0 \uC21C\uC11C\uB300\uB85C, \uC804\uBA78/\uB3C4\uC8FC \uD6C4\u2192end_encounter.`;
       function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput }) {
+        const combatCapable = !!(schema2.combat || schema2.pools);
         const stateText = summarize3(schema2, state2);
         const npcIds = relatedNpcIds(schema2, state2, recentMessages, userInput);
         const npcText = npcIds.map((id) => npcSummary3(schema2, state2, id)).filter(Boolean).join("\n");
@@ -5986,6 +6021,7 @@ select:focus { border-color: var(--amber-line); }
         const npcList = npcListText(schema2);
         const menuList = menuListText(schema2, state2);
         const roomList = roomListText(schema2);
+        const skillList = combatCapable ? skillListText(schema2) : "";
         const loreText = loreContext(lore, recentMessages, userInput);
         const context = [
           "[\uC0C1\uD0DC]",
@@ -6001,6 +6037,7 @@ select:focus { border-color: var(--amber-line); }
           "",
           menuList ? "[\uBA54\uB274 \uBAA9\uB85D]\n" + menuList + "\n" : "",
           roomList ? "[\uAC1D\uC2E4 \uBAA9\uB85D]\n" + roomList + "\n" : "",
+          combatCapable && skillList ? "[\uC2A4\uD0AC \uBAA9\uB85D]\n" + skillList + "\n" : "",
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -6022,9 +6059,10 @@ select:focus { border-color: var(--amber-line); }
           roomList: estimateTokens2(roomList),
           lore: estimateTokens2(loreText || "")
         };
+        if (combatCapable) injectedParts.skills = estimateTokens2(skillList);
         const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
         return {
-          system: SYSTEM_PROMPT + REWARD_PROMPT_APPENDIX,
+          system: SYSTEM_PROMPT + REWARD_PROMPT_APPENDIX + (combatCapable ? COMBAT_PROMPT_APPENDIX : ""),
           messages: messages2,
           injectedTokens,
           injectedParts,
@@ -6085,6 +6123,9 @@ select:focus { border-color: var(--amber-line); }
         const rooms = block && Array.isArray(block.instances) ? block.instances : [];
         return rooms.map((r) => `${r.no}\uD638${r.kind ? ` (${r.kind})` : ""}${r.pricePerNight != null ? ` ${Number(r.pricePerNight).toLocaleString("ko-KR")}\uC6D0/\uBC15` : ""}`).join("\n");
       }
+      function skillListText(schema2) {
+        return Object.entries(schema2.skills || {}).map(([id, skill]) => `${id}: ${skill.name || id} (${skill.pool || "mp"} ${skill.cost || 0}, \uC704\uB825 ${skill.power || 0})`).join("\n");
+      }
       function loreContext(lore, recentMessages, userInput) {
         if (!lore) return "";
         const text = [...(recentMessages || []).map((m) => m.content || ""), userInput || ""].join("\n");
@@ -6107,7 +6148,7 @@ ${row3.entry.content}`).join("\n\n");
         return 2;
       }
       function npcEntities(schema2) {
-        const block = schema2.entities.find((entry) => entry.type === "npc");
+        const block = (schema2.entities || []).find((entry) => entry.type === "npc");
         return block && Array.isArray(block.instances) ? block.instances : [];
       }
       module.exports = { SYSTEM_PROMPT, buildPrompt: buildPrompt2, parseAssistantResponse: parseAssistantResponse2 };
@@ -7448,6 +7489,63 @@ ${row3.content}`;
     }
   });
 
+  // ../schema/hunters-combat.v0.json
+  var require_hunters_combat_v0 = __commonJS({
+    "../schema/hunters-combat.v0.json"(exports, module) {
+      module.exports = {
+        meta: {
+          id: "hunters-combat",
+          title: "\uD5CC\uD130 \uC804\uD22C \uCF54\uC5B4 (\uCC38\uC870 \uC2A4\uD0A4\uB9C8)",
+          schemaVersion: "0.1"
+        },
+        pools: [
+          { id: "hp", label: "\uCCB4\uB825", max: 130 },
+          { id: "mp", label: "\uB9C8\uB098", max: 150 },
+          { id: "sp", label: "\uC2A4\uD0DC\uBBF8\uB098", max: 100 }
+        ],
+        scales: [
+          { id: "strength", owner: "player", range: [1, 99], default: 12 },
+          { id: "constitution", owner: "player", range: [1, 99], default: 13 },
+          { id: "agility", owner: "player", range: [1, 99], default: 10 },
+          { id: "intelligence", owner: "player", range: [1, 99], default: 15 },
+          { id: "sense", owner: "player", range: [1, 99], default: 11 }
+        ],
+        ladders: [
+          { id: "player_level", currency: "exp", thresholds: [100, 300, 800, 2e3, 5e3] }
+        ],
+        combat: {
+          d: 20,
+          minDamage: 1,
+          critMult: 2,
+          guardMult: 0.5,
+          fleeRate: 50,
+          expTable: { E: [10, 20], D: [30, 60], C: [80, 150], default: [5, 10] },
+          lootGold: { E: [1e3, 3e3], D: [5e3, 1e4], default: [500, 1e3] }
+        },
+        skills: {
+          power_strike: { name: "\uD30C\uC6CC \uC2A4\uD2B8\uB77C\uC774\uD06C", cost: 20, pool: "mp", power: 10, acc: 2 },
+          focus_shot: { name: "\uC9D1\uC911 \uC0AC\uACA9", cost: 15, pool: "sp", power: 6, acc: 5 }
+        },
+        initialState: {
+          gold: 0,
+          player: {
+            level: 8,
+            exp: 450,
+            atk: 12,
+            def: 5,
+            evade: 11,
+            acc: 3,
+            pools: {
+              hp: { cur: 90, max: 130 },
+              mp: { cur: 90, max: 150 },
+              sp: { cur: 90, max: 100 }
+            }
+          }
+        }
+      };
+    }
+  });
+
   // src/main.js
   var import_parseCard = __toESM(require_parseCard());
   var import_cardAssets = __toESM(require_cardAssets());
@@ -8057,6 +8155,10 @@ ${Array.from(extras).join(" ")}` : text;
     "reward",
     "gold_delta",
     "resource_delta",
+    "start_encounter",
+    "combat_action",
+    "enemy_action",
+    "end_encounter",
     "day_end"
   ];
   function getSchema() {
@@ -8099,6 +8201,14 @@ ${Array.from(extras).join(" ")}` : text;
     if (entry.ok && type === "upgrade") return `upgrade \xB7 ${entry.facility} Lv.${entry.level} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}`;
     if (entry.ok && type === "gain_resource") return `gain \xB7 ${entry.resource} +${entry.qty} (${entry.scale})`;
     if (!entry.ok) return `${type} \uC2E4\uD328: ${entry.reason || "\uC54C \uC218 \uC5C6\uC74C"}${entry.detail ? ` (${entry.detail})` : ""}`;
+    if (type === "start_encounter") return `\uC804\uD22C \uC2DC\uC791 \xB7 \uC801 ${(entry.enemies || []).length}`;
+    if (type === "combat_action") {
+      if (entry.action === "defend") return "\uBC29\uC5B4 \uD0DC\uC138";
+      if (entry.action === "flee") return `\uB3C4\uC8FC ${entry.fled ? "\uC131\uACF5" : "\uC2E4\uD328"}`;
+      return `${entry.skill || "\uACF5\uACA9"} \xB7 ${entry.target} ${entry.hit ? entry.tier === "critical_success" ? "\uD06C\uB9AC\uD2F0\uCEEC" : "\uBA85\uC911" : "\uBE57\uB098\uAC10"} \xB7 \uD53C\uD574 ${entry.damage}${entry.cleared ? " \xB7 \uC804\uBA78" : ""}`;
+    }
+    if (type === "enemy_action") return `${entry.enemyId} \uBC18\uACA9 \xB7 ${entry.hit ? `\uD53C\uD574 ${entry.damage}` : "\uD68C\uD53C"}${entry.playerDead ? " \xB7 \uD50C\uB808\uC774\uC5B4 \uC804\uD22C\uBD88\uB2A5" : ""}`;
+    if (type === "end_encounter") return `\uC804\uD22C \uC885\uB8CC(${entry.outcome}) \xB7 EXP +${entry.expGained} \xB7 \uACE8\uB4DC +${formatMoney3(entry.goldGained)}${entry.levelUps && entry.levelUps.length ? ` \xB7 Lv.${entry.levelUps.join(",")}` : ""}`;
     if (type === "scale_delta") return entry.capped ? `${entry.target} capped \xB7 ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
     if (type === "rep_event") return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
     if (type === "day_end") return `\uD558\uB8E8 \uB9C8\uAC10 \xB7 ${entry.report.day}\uC77C\uCC28 \uC815\uC0B0`;
@@ -9091,7 +9201,14 @@ ${Array.from(extras).join(" ")}` : text;
       addLog(ctx, "\uB0B4\uC7A5(\uAE30\uBCF8) \uC2A4\uD0A4\uB9C8\uB85C \uB418\uB3CC\uB838\uC2B5\uB2C8\uB2E4. \uD50C\uB808\uC774 \uD0ED\uC5D0\uC11C \uB9E4\uB044\uB7FD\uAC8C \uD50C\uB808\uC774\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
       render2();
     });
-    buttonRow.append(compile, revert);
+    const combatSchema = button3("\uB0B4\uC7A5 \uC804\uD22C \uC2A4\uD0A4\uB9C8(\uD5CC\uD130) \uC801\uC6A9", "secondary-btn");
+    combatSchema.disabled = busy2;
+    combatSchema.addEventListener("click", () => {
+      setActiveSchema(require_hunters_combat_v0());
+      addLog(ctx, "\uB0B4\uC7A5 \uC804\uD22C \uC2A4\uD0A4\uB9C8 \uC801\uC6A9\uB428 \xB7 \uD50C\uB808\uC774 \uD0ED\uC5D0\uC11C \uC804\uD22C\uB97C \uD14C\uC2A4\uD2B8\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4");
+      render2();
+    });
+    buttonRow.append(compile, revert, combatSchema);
     header.append(title, buttonRow);
     return header;
   }

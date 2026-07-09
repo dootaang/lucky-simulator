@@ -85,7 +85,14 @@ function renderHeader(ctx, render) {
     addLog(ctx, '내장(기본) 스키마로 되돌렸습니다. 플레이 탭에서 매끄럽게 플레이할 수 있습니다.');
     render();
   });
-  buttonRow.append(compile, revert);
+  const combatSchema = button('내장 전투 스키마(헌터) 적용', 'secondary-btn');
+  combatSchema.disabled = busy;
+  combatSchema.addEventListener('click', () => {
+    setActiveSchema(require('../../schema/hunters-combat.v0.json'));
+    addLog(ctx, '내장 전투 스키마 적용됨 · 플레이 탭에서 전투를 테스트할 수 있습니다');
+    render();
+  });
+  buttonRow.append(compile, revert, combatSchema);
   header.append(title, buttonRow);
   return header;
 }
