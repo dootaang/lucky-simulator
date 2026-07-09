@@ -5145,7 +5145,7 @@ details.source-preview pre,
         lines.push(`[\uD3C9\uD310] ${repParts.join(" \xB7 ")}`);
         return lines.slice(0, 4).join("\n");
       }
-      function npcSummary2(schema4, state2, npcId) {
+      function npcSummary3(schema4, state2, npcId) {
         const npc = entityList(schema4, "npc").find((entry) => entry.id === npcId);
         const data = state2.npcs && state2.npcs[npcId];
         if (!npc || !data) return "";
@@ -5168,7 +5168,7 @@ details.source-preview pre,
       function formatNumber(n) {
         return Number(n || 0).toLocaleString("ko-KR");
       }
-      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, roomStatus: roomStatus2, tierOf, summarize: summarize3, npcSummary: npcSummary2, rankWeight };
+      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, roomStatus: roomStatus2, tierOf, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
     }
   });
 
@@ -5557,7 +5557,7 @@ details.source-preview pre,
     "src/llm/prompt.js"(exports, module) {
       var { simulateActivation: simulateActivation2 } = require_activate();
       var { estimateTokens: estimateTokens2 } = require_tokens();
-      var { summarize: summarize3, npcSummary: npcSummary2 } = require_selectors();
+      var { summarize: summarize3, npcSummary: npcSummary3 } = require_selectors();
       var SYSTEM_PROMPT = `\uB2F9\uC2E0\uC740 \uD310\uD0C0\uC9C0 \uC5EC\uAD00 \uACBD\uC601 RP "\uC6A9\uC0AC\uC5EC\uAD00"\uC758 \uB0B4\uB808\uC774\uD130\uB2E4. \uD50C\uB808\uC774\uC5B4({{user}})\uB294 \uC5EC\uAD00 \uC8FC\uC778\uC774\uB2E4.
 
 [\uC808\uB300 \uADDC\uCE59]
@@ -5587,7 +5587,8 @@ details.source-preview pre,
 - \uD655\uC2E0\uC774 \uC5C6\uC73C\uBA74 \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C. \uBE48 \uBC30\uC5F4\uC774 \uC548\uC804\uD558\uB2E4.`;
       function buildPrompt2({ schema: schema4, state: state2, lore, recentMessages, userInput }) {
         const stateText = summarize3(schema4, state2);
-        const npcText = relatedNpcText(schema4, state2, recentMessages, userInput);
+        const npcIds = relatedNpcIds(schema4, state2, recentMessages, userInput);
+        const npcText = npcIds.map((id) => npcSummary3(schema4, state2, id)).filter(Boolean).join("\n");
         const repCats = reputationCategories(schema4);
         const npcList = npcListText(schema4);
         const loreText = loreContext(lore, recentMessages, userInput);
@@ -5626,6 +5627,7 @@ details.source-preview pre,
           messages: messages2,
           injectedTokens,
           injectedParts,
+          relatedNpcIds: npcIds,
           injectedText: { state: stateText, npc: npcText, repCats, npcList, lore: loreText }
         };
       }
@@ -5646,16 +5648,14 @@ details.source-preview pre,
         const narrative = jsonBlock ? source.replace(blocks[blocks.length - 1][0], "").trim() : source.trim();
         return { narrative, events };
       }
-      function relatedNpcText(schema4, state2, recentMessages, userInput) {
+      function relatedNpcIds(schema4, state2, recentMessages, userInput) {
         const haystack = [...(recentMessages || []).map((m) => m.content || ""), userInput || ""].join("\n").toLowerCase();
         const staff = new Set((state2.staff || []).map((item) => item.npcId));
-        const npcs2 = npcEntities(schema4);
-        const related = npcs2.filter((npc) => {
+        return npcEntities(schema4).filter((npc) => {
           if (staff.has(npc.id)) return true;
           const names = [npc.id, npc.nameKo, npc.nameEn].filter(Boolean).map((x) => String(x).toLowerCase());
           return names.some((name) => name && haystack.includes(name));
-        });
-        return related.map((npc) => npcSummary2(schema4, state2, npc.id)).filter(Boolean).join("\n");
+        }).map((npc) => npc.id);
       }
       function reputationCategories(schema4) {
         const ladder = schema4.ladders.find((entry) => entry.id === "reputation");
@@ -6947,7 +6947,7 @@ ${Array.from(extras).join(" ")}` : text;
 
   // src/playView.js
   var schema3 = require_yongsa_inn_v0();
-  var { summarize: summarize2 } = require_selectors();
+  var { summarize: summarize2, npcSummary: npcSummary2 } = require_selectors();
   var { estimateTokens } = require_tokens();
   var { buildPrompt, parseAssistantResponse } = require_prompt();
   var { PROVIDERS, callProvider, providerDef } = require_providers();
@@ -7108,12 +7108,14 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderStateBox() {
     const section = titled("LLM\uC774 \uBCF4\uB294 \uC0C1\uD0DC");
+    const state2 = getEngineState();
     const pre = el2("pre", "play-context-pre");
-    pre.textContent = lastPrompt ? lastPrompt.injectedText.state : summarize2(schema3, getEngineState());
+    pre.textContent = summarize2(schema3, state2);
     section.append(pre);
-    if (lastPrompt && lastPrompt.injectedText.npc) {
+    const npcText = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : []).map((id) => npcSummary2(schema3, state2, id)).filter(Boolean).join("\n");
+    if (npcText) {
       const npc = el2("pre", "play-context-pre");
-      npc.textContent = lastPrompt.injectedText.npc;
+      npc.textContent = npcText;
       section.append(npc);
     }
     return section;

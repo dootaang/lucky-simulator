@@ -1,5 +1,5 @@
 const schema = require('../../schema/yongsa-inn.v0.json');
-const { summarize } = require('../../engine/core/selectors.js');
+const { summarize, npcSummary } = require('../../engine/core/selectors.js');
 const { estimateTokens } = require('../core/lorebook/tokens.js');
 const { buildPrompt, parseAssistantResponse } = require('./llm/prompt.js');
 const { PROVIDERS, callProvider, providerDef } = require('./llm/providers.js');
@@ -176,12 +176,17 @@ function renderSettings(render) {
 
 function renderStateBox() {
   const section = titled('LLM이 보는 상태');
+  const state = getEngineState();
   const pre = el('pre', 'play-context-pre');
-  pre.textContent = lastPrompt ? lastPrompt.injectedText.state : summarize(schema, getEngineState());
+  pre.textContent = summarize(schema, state);
   section.append(pre);
-  if (lastPrompt && lastPrompt.injectedText.npc) {
+  const npcText = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : [])
+    .map((id) => npcSummary(schema, state, id))
+    .filter(Boolean)
+    .join('\n');
+  if (npcText) {
     const npc = el('pre', 'play-context-pre');
-    npc.textContent = lastPrompt.injectedText.npc;
+    npc.textContent = npcText;
     section.append(npc);
   }
   return section;
