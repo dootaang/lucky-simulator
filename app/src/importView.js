@@ -29,7 +29,7 @@ export async function compileSchemaForImport(ctx, config) {
     : await callProvider(cfg, {
       system: compilerInput,
       messages: [{ role: 'user', content: 'Return only the compiled JSON object.' }],
-      maxTokens: 12000,
+      maxTokens: 16000,
       temperature: 0.2,
     });
   const parsed = parseCompilerOutput(raw);
@@ -168,7 +168,7 @@ function renderSettings(render) {
   });
 
   const key = namedInput('apiKey', '', 'password');
-  key.placeholder = readKey(settings.provider) ? maskedKey(settings.provider) : 'API key';
+  key.placeholder = readKey(settings.provider) ? maskedKey(settings.provider) : 'API 키';
   key.disabled = settings.provider === 'mock';
 
   const save = button('키 저장', 'secondary-btn');
@@ -188,10 +188,10 @@ function renderSettings(render) {
   });
 
   details.append(
-    field('Provider', provider),
-    settings.provider === 'custom' ? field('Base URL', base) : hiddenBase(base),
-    field('Model', model),
-    field('API key', key),
+    field('제공자', provider),
+    settings.provider === 'custom' ? field('베이스 URL', base) : hiddenBase(base),
+    field('모델', model),
+    field('API 키', key),
     row(save, del),
     notice('키는 이 브라우저의 localStorage에만 저장됩니다. mock 제공자는 네트워크를 쓰지 않습니다.')
   );
