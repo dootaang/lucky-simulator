@@ -206,23 +206,39 @@ function checkout(state, params, ok, fail) {
   return ok({ roomNo, guestName });
 }
 
+// 판매 1건은 재료를 소비한다(공짜 돈 방지). 스키마에 consumes가 없으면
+// 카테고리로 추정(요리→food, 주류→drink 1개)해 최소 원가를 강제한다.
+function saleConsumes(menu, state) {
+  const c = menu.consumes && Object.keys(menu.consumes).length ? menu.consumes : null;
+  if (c) return c;
+  const cat = String(menu.category || '');
+  const res = state.resources || {};
+  if (/주류|주점|술|drink|liquor/i.test(cat) && 'drink' in res) return { drink: 1 };
+  if (/요리|음식|식사|food|cuisine|dish|meal/i.test(cat) && 'food' in res) return { food: 1 };
+  return {};
+}
+
 function sale(schema, state, params, ok, fail) {
   const menu = findMenu(schema, params.menuName);
   const qty = normalizeInt(params.qty, 1);
   if (!menu) return fail('unknown_menu', params.menuName);
   if (qty <= 0) return fail('invalid_qty', qty);
   if (Number(menu.requiresKitchenLevel || 1) > Number((state.facilities && state.facilities.kitchen) || 1)) return fail('menu_locked', params.menuName);
-  for (const [resource, amount] of Object.entries(menu.consumes || {})) {
+  const consumes = saleConsumes(menu, state);
+  for (const [resource, amount] of Object.entries(consumes)) {
     if (Number((state.resources && state.resources[resource]) || 0) < Number(amount) * qty) {
       return fail('insufficient_stock', resource);
     }
   }
-  for (const [resource, amount] of Object.entries(menu.consumes || {})) {
-    state.resources[resource] -= Number(amount) * qty;
+  const consumed = {};
+  for (const [resource, amount] of Object.entries(consumes)) {
+    const used = Number(amount) * qty;
+    state.resources[resource] -= used;
+    consumed[resource] = used;
   }
   const goldDelta = Number(menu.price || 0) * qty;
   state.gold += goldDelta;
-  return ok({ menuName: menu.name, qty, goldDelta });
+  return ok({ menuName: menu.name, qty, goldDelta, consumed });
 }
 
 function purchase(schema, state, params, ok, fail) {

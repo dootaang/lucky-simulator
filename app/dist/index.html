@@ -5425,23 +5425,36 @@ select:focus { border-color: var(--amber-line); }
         else delete state2.rooms[roomNo];
         return ok({ roomNo, guestName });
       }
+      function saleConsumes(menu, state2) {
+        const c = menu.consumes && Object.keys(menu.consumes).length ? menu.consumes : null;
+        if (c) return c;
+        const cat = String(menu.category || "");
+        const res = state2.resources || {};
+        if (/주류|주점|술|drink|liquor/i.test(cat) && "drink" in res) return { drink: 1 };
+        if (/요리|음식|식사|food|cuisine|dish|meal/i.test(cat) && "food" in res) return { food: 1 };
+        return {};
+      }
       function sale(schema2, state2, params, ok, fail) {
         const menu = findMenu(schema2, params.menuName);
         const qty = normalizeInt(params.qty, 1);
         if (!menu) return fail("unknown_menu", params.menuName);
         if (qty <= 0) return fail("invalid_qty", qty);
         if (Number(menu.requiresKitchenLevel || 1) > Number(state2.facilities && state2.facilities.kitchen || 1)) return fail("menu_locked", params.menuName);
-        for (const [resource, amount] of Object.entries(menu.consumes || {})) {
+        const consumes = saleConsumes(menu, state2);
+        for (const [resource, amount] of Object.entries(consumes)) {
           if (Number(state2.resources && state2.resources[resource] || 0) < Number(amount) * qty) {
             return fail("insufficient_stock", resource);
           }
         }
-        for (const [resource, amount] of Object.entries(menu.consumes || {})) {
-          state2.resources[resource] -= Number(amount) * qty;
+        const consumed = {};
+        for (const [resource, amount] of Object.entries(consumes)) {
+          const used = Number(amount) * qty;
+          state2.resources[resource] -= used;
+          consumed[resource] = used;
         }
         const goldDelta2 = Number(menu.price || 0) * qty;
         state2.gold += goldDelta2;
-        return ok({ menuName: menu.name, qty, goldDelta: goldDelta2 });
+        return ok({ menuName: menu.name, qty, goldDelta: goldDelta2, consumed });
       }
       function purchase(schema2, state2, params, ok, fail) {
         const resource = params.resource || params.resourceId;
@@ -5531,7 +5544,7 @@ select:focus { border-color: var(--amber-line); }
 [\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uC0AC\uAC74 (id / params)]
 - sale {menuName, qty} \u2014 \uBA54\uB274 \uD310\uB9E4\uAC00 \uC644\uACB0\uB410\uC744 \uB54C\uB9CC
 - purchase {resource:"food"|"drink", qty} \u2014 \uC7AC\uB8CC \uAD6C\uB9E4
-- checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName}
+- checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName} \u2014 roomNo\uB294 [\uAC1D\uC2E4 \uBAA9\uB85D]\uC758 \uC2E4\uC81C \uD638\uC218(\uC608: 101)\uB97C \uC4F4\uB2E4
 - hire {npcId, dailyWage} \u2014 \uC784\uAE08 \uD569\uC758\uAC00 \uB300\uD654\uB85C \uC644\uB8CC\uB41C \uACBD\uC6B0\uB9CC / fire {npcId}
 - scale_delta {scale:"affinity", target:npcId, direction:"+"|"-", size:"S"|"M"|"L"|"XL", reason} \u2014 S=\uC0AC\uC18C\uD55C \uBC30\uB824, M=\uAC70\uB9AC \uC881\uD798, L=\uAE4A\uC740 \uC720\uB300, XL=\uAD00\uACC4 \uC804\uD658\uC810. \uD55C NPC\uB2F9 \uD558\uB8E8 1\uD68C\uB9CC \uC758\uBBF8 \uC788\uC74C.
 - rep_event {axis, category, reason} \u2014 \uD3C9\uD310 \uBCC0\uB3D9. axis\uC640 category\uB294 [\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC \uC120\uD0DD.
@@ -5541,8 +5554,10 @@ select:focus { border-color: var(--amber-line); }
 
 [\uC0AC\uAC74 \uADDC\uCE59]
 - \uC2E4\uC81C\uB85C \uC644\uACB0\uB41C \uC77C\uB9CC. \uC9C4\uD589 \uC911\xB7\uACC4\uD68D\uC740 \uC0AC\uAC74\uC774 \uC544\uB2C8\uB2E4.
+- \u2605\uC0AC\uAC74\uC744 \uBD80\uD480\uB9AC\uC9C0 \uB9C8\uB77C. \uC720\uC800\uAC00 \uC9C0\uC2DC\uD588\uAC70\uB098 \uC7A5\uBA74\uC5D0\uC11C \uC2E4\uC81C\uB85C \uC644\uACB0\uB41C \uAC70\uB798 1\uAC74\uB2F9 \uC0AC\uAC74 1\uAC1C\uB9CC. \uC190\uB2D8 \uC218\xB7\uC8FC\uBB38\uB7C9\uC744 \uC784\uC758\uB85C \uB298\uB824 sale\uC744 \uC5EC\uB7EC \uAC1C \uB9CC\uB4E4\uC9C0 \uB9C8\uB77C. \uC720\uC800\uAC00 "\uD558\uB098 \uD314\uC790"\uBA74 sale 1\uAC1C, "\uB354 \uD314\uC790"\uCC98\uB7FC \uBAA8\uD638\uD558\uBA74 \uC7A5\uBA74\uC5D0 \uC2E4\uC81C \uB4F1\uC7A5\uD574 \uC644\uACB0\uB41C \uD310\uB9E4\uB9CC \uC13C\uB2E4.
+- \uD310\uB9E4\uB294 \uC7AC\uB8CC\uB97C \uC18C\uBE44\uD558\uACE0 \uD314\uB9B0\uB2E4(\uC5D4\uC9C4\uC774 \uC2DD\uC790\uC7AC/\uC8FC\uB958\uB97C \uCC28\uAC10). \uC7AC\uACE0 \uC5C6\uC774 \uBB34\uD55C \uD310\uB9E4\uB294 \uC5C6\uB2E4.
 - npcId\uB294 [NPC \uBAA9\uB85D]\uC758 \uC601\uBB38 id\uB9CC \uC0AC\uC6A9.
-- sale\uC758 menuName\uC740 [\uBA54\uB274 \uBAA9\uB85D]\uC5D0 \uC788\uB294 \uC774\uB984\uC744 \uC815\uD655\uD788 \uADF8\uB300\uB85C \uC0AC\uC6A9\uD55C\uB2E4(\uBAA9\uB85D\uC5D0 \uC5C6\uB294 \uBA54\uB274\uB294 \uD310\uB9E4 \uBD88\uAC00).
+- sale\uC758 menuName\uC740 [\uBA54\uB274 \uBAA9\uB85D]\uC5D0 \uC788\uB294 \uC774\uB984\uC744, checkin\uC758 roomNo\uB294 [\uAC1D\uC2E4 \uBAA9\uB85D]\uC758 \uD638\uC218\uB97C \uC815\uD655\uD788 \uADF8\uB300\uB85C \uC0AC\uC6A9\uD55C\uB2E4(\uBAA9\uB85D\uC5D0 \uC5C6\uC73C\uBA74 \uBD88\uAC00).
 - \uD655\uC2E0\uC774 \uC5C6\uC73C\uBA74 \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C. \uBE48 \uBC30\uC5F4\uC774 \uC548\uC804\uD558\uB2E4.`;
       function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput }) {
         const stateText = summarize3(schema2, state2);
@@ -5551,6 +5566,7 @@ select:focus { border-color: var(--amber-line); }
         const repCats = reputationCategories(schema2);
         const npcList = npcListText(schema2);
         const menuList = menuListText(schema2, state2);
+        const roomList = roomListText(schema2);
         const loreText = loreContext(lore, recentMessages, userInput);
         const context = [
           "[\uC0C1\uD0DC]",
@@ -5564,6 +5580,7 @@ select:focus { border-color: var(--amber-line); }
           npcList,
           "",
           menuList ? "[\uBA54\uB274 \uBAA9\uB85D]\n" + menuList + "\n" : "",
+          roomList ? "[\uAC1D\uC2E4 \uBAA9\uB85D]\n" + roomList + "\n" : "",
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -5581,6 +5598,7 @@ select:focus { border-color: var(--amber-line); }
           repCats: estimateTokens2(repCats),
           npcList: estimateTokens2(npcList),
           menuList: estimateTokens2(menuList),
+          roomList: estimateTokens2(roomList),
           lore: estimateTokens2(loreText || "")
         };
         const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
@@ -5631,6 +5649,11 @@ select:focus { border-color: var(--amber-line); }
         const items = block && Array.isArray(block.instances) ? block.instances : [];
         const kitchen = Number(state2 && state2.facilities && state2.facilities.kitchen || 1);
         return items.filter((m) => Number(m.requiresKitchenLevel || 1) <= kitchen).map((m) => `${m.name}${m.category ? ` (${m.category})` : ""}${m.price != null ? ` ${Number(m.price).toLocaleString("ko-KR")}\uC6D0` : ""}`).join("\n");
+      }
+      function roomListText(schema2) {
+        const block = (schema2.entities || []).find((entry) => entry.type === "room");
+        const rooms = block && Array.isArray(block.instances) ? block.instances : [];
+        return rooms.map((r) => `${r.no}\uD638${r.kind ? ` (${r.kind})` : ""}${r.pricePerNight != null ? ` ${Number(r.pricePerNight).toLocaleString("ko-KR")}\uC6D0/\uBC15` : ""}`).join("\n");
       }
       function loreContext(lore, recentMessages, userInput) {
         if (!lore) return "";
@@ -7027,6 +7050,10 @@ ${Array.from(extras).join(" ")}` : text;
     if (type === "scale_delta") return entry.capped ? `${entry.target} capped \xB7 ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
     if (type === "rep_event") return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
     if (type === "day_end") return `\uD558\uB8E8 \uB9C8\uAC10 \xB7 ${entry.report.day}\uC77C\uCC28 \uC815\uC0B0`;
+    if (type === "sale") {
+      const cost = entry.consumed ? Object.entries(entry.consumed).map(([r, n]) => ` \xB7 ${r} -${n}`).join("") : "";
+      return `sale \xB7 ${entry.menuName || ""} \xB7 gold +${formatMoney3(entry.goldDelta)}${cost}`;
+    }
     if (entry.goldDelta != null) return `${type} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}`;
     return `${type} \uC2E4\uD589`;
   }
