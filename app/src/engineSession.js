@@ -70,7 +70,7 @@ export function runEvent(event) {
 }
 
 export function summarizeEvent(type, entry, formatMoney) {
-  if (entry.ok && type === 'reward') return `reward 쨌 ${entry.tier} 쨌 gold +${formatMoney(entry.goldDelta)}`;
+  if (entry.ok && type === 'reward') return `reward · ${entry.tier} · gold +${formatMoney(entry.goldDelta)}`;
   if (!entry.ok) return `${type} 실패: ${entry.reason || '알 수 없음'}${entry.detail ? ` (${entry.detail})` : ''}`;
   if (type === 'scale_delta') return entry.capped ? `${entry.target} capped · ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
   if (type === 'rep_event') return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;

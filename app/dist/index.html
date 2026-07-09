@@ -7118,7 +7118,7 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function summarizeEvent(type, entry, formatMoney3) {
-    if (entry.ok && type === "reward") return `reward \uCA0C ${entry.tier} \uCA0C gold +${formatMoney3(entry.goldDelta)}`;
+    if (entry.ok && type === "reward") return `reward \xB7 ${entry.tier} \xB7 gold +${formatMoney3(entry.goldDelta)}`;
     if (!entry.ok) return `${type} \uC2E4\uD328: ${entry.reason || "\uC54C \uC218 \uC5C6\uC74C"}${entry.detail ? ` (${entry.detail})` : ""}`;
     if (type === "scale_delta") return entry.capped ? `${entry.target} capped \xB7 ${entry.before} -> ${entry.after}` : `${entry.target} ${entry.before} -> ${entry.after}`;
     if (type === "rep_event") return `${entry.axis}/${entry.category} ${entry.before.rank}(${entry.before.exp}) -> ${entry.after.rank}(${entry.after.exp}), delta ${entry.delta}`;
@@ -7614,6 +7614,8 @@ ${Array.from(extras).join(" ")}` : text;
     const render2 = () => {
       root.replaceChildren();
       root.append(renderLayout(ctx, render2));
+      const list = root.querySelector(".play-message-list");
+      if (list) list.scrollTop = list.scrollHeight;
     };
     render2();
     return () => {

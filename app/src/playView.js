@@ -16,6 +16,9 @@ export function renderPlayView(container, ctx) {
   const render = () => {
     root.replaceChildren();
     root.append(renderLayout(ctx, render));
+    // 전체 재구축 시 스크롤이 top으로 튀는 것 방지: 채팅을 항상 최신(하단)으로.
+    const list = root.querySelector('.play-message-list');
+    if (list) list.scrollTop = list.scrollHeight;
   };
   render();
   return () => {};
