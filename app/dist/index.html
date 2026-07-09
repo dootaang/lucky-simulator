@@ -5951,8 +5951,11 @@ ${row3.content}`;
         schema2.scales.forEach((scale, index) => {
           const path = `scales[${index}]`;
           if (!isObject(scale)) return error(issues, path, "Scale must be an object.");
-          for (const key of ["id", "owner", "range", "default", "steps", "tiers", "actionMinimums"]) {
+          for (const key of ["id", "owner", "range", "default", "steps", "tiers"]) {
             requireField(scale, key, `${path}.${key}`, issues);
+          }
+          if (scale.actionMinimums != null && !isObject(scale.actionMinimums)) {
+            warn(issues, `${path}.actionMinimums`, "actionMinimums\uAC00 \uC788\uC73C\uBA74 \uAC1D\uCCB4\uC5EC\uC57C \uD569\uB2C8\uB2E4.");
           }
           duplicate(ids, scale.id, `${path}.id`, issues);
           validateRange(scale.range, `${path}.range`, issues, "error");
@@ -5989,8 +5992,9 @@ ${row3.content}`;
           requireField(ladder, "id", `${path}.id`, issues);
           duplicate(ids, ladder.id, `${path}.id`, issues);
           if (ladder.id === "player_level") {
-            for (const key of ["currency", "thresholds", "sources"]) requireField(ladder, key, `${path}.${key}`, issues);
-            requireArray(ladder.thresholds, `${path}.thresholds`, issues);
+            for (const key of ["currency", "sources"]) requireField(ladder, key, `${path}.${key}`, issues);
+            if (ladder.thresholds == null) warn(issues, `${path}.thresholds`, "\uB808\uBCA8\uC5C5 \uBB38\uD131\uC774 \uBBF8\uC815\uC785\uB2C8\uB2E4 \u2014 \uAC80\uC218\uC5D0\uC11C \uCC44\uC6B0\uAC70\uB098, \uBE44\uC6CC\uB450\uBA74 \uB808\uBCA8\uC5C5\uC774 \uBE44\uD65C\uC131\uB429\uB2C8\uB2E4.");
+            else requireArray(ladder.thresholds, `${path}.thresholds`, issues);
             if (!isObject(ladder.sources)) error(issues, `${path}.sources`, "sources must be an object.");
           }
           if (ladder.id === "reputation") {

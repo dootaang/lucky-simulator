@@ -76,8 +76,12 @@ function validateScales(schema, issues) {
   schema.scales.forEach((scale, index) => {
     const path = `scales[${index}]`;
     if (!isObject(scale)) return error(issues, path, 'Scale must be an object.');
-    for (const key of ['id', 'owner', 'range', 'default', 'steps', 'tiers', 'actionMinimums']) {
+    for (const key of ['id', 'owner', 'range', 'default', 'steps', 'tiers']) {
       requireField(scale, key, `${path}.${key}`, issues);
+    }
+    // actionMinimums는 선택 — 호감도류엔 있지만 인기도 등엔 없다. 있으면 객체여야.
+    if (scale.actionMinimums != null && !isObject(scale.actionMinimums)) {
+      warn(issues, `${path}.actionMinimums`, 'actionMinimums가 있으면 객체여야 합니다.');
     }
     duplicate(ids, scale.id, `${path}.id`, issues);
     validateRange(scale.range, `${path}.range`, issues, 'error');
@@ -115,8 +119,11 @@ function validateLadders(schema, issues) {
     requireField(ladder, 'id', `${path}.id`, issues);
     duplicate(ids, ladder.id, `${path}.id`, issues);
     if (ladder.id === 'player_level') {
-      for (const key of ['currency', 'thresholds', 'sources']) requireField(ladder, key, `${path}.${key}`, issues);
-      requireArray(ladder.thresholds, `${path}.thresholds`, issues);
+      for (const key of ['currency', 'sources']) requireField(ladder, key, `${path}.${key}`, issues);
+      // thresholds는 선택 — 룰북에 레벨 문턱이 없으면 null이 정상(엔진은 thresholds||[]로 처리).
+      // null/없으면 검수에서 채우도록 경고만, 있으면 배열이어야.
+      if (ladder.thresholds == null) warn(issues, `${path}.thresholds`, '레벨업 문턱이 미정입니다 — 검수에서 채우거나, 비워두면 레벨업이 비활성됩니다.');
+      else requireArray(ladder.thresholds, `${path}.thresholds`, issues);
       if (!isObject(ladder.sources)) error(issues, `${path}.sources`, 'sources must be an object.');
     }
     if (ladder.id === 'reputation') {
