@@ -5641,13 +5641,14 @@ select:focus { border-color: var(--amber-line); }
 - hire {npcId, dailyWage} \u2014 \uC784\uAE08 \uD569\uC758\uAC00 \uB300\uD654\uB85C \uC644\uB8CC\uB41C \uACBD\uC6B0\uB9CC. dailyWage\uB294 \uB300\uD654\uC5D0\uC11C \uD569\uC758\uB41C \uAC12 / fire {npcId}
 - scale_delta {scale:"affinity", target:npcId, direction:"+"|"-", size:"S"|"M"|"L"|"XL", reason} \u2014 \uD06C\uAE30\uB9CC \uBD84\uB958. S=\uC0AC\uC18C\uD55C \uBC30\uB824, M=\uAC70\uB9AC \uC881\uD798, L=\uAE4A\uC740 \uC720\uB300, XL=\uAD00\uACC4 \uC804\uD658\uC810. \uD55C NPC\uB2F9 \uD558\uB8E8 1\uD68C.
 - rep_event {axis, category, reason} \u2014 \uD3C9\uD310 \uBCC0\uB3D9. axis\xB7category\uB294 [\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC. (\uC5D4\uC9C4\uC774 \uBCC0\uB3D9\uAC12 \uACB0\uC815)
-- exp_gain {category, reason} \u2014 \uC758\uBBF8 \uC788\uB294 \uD589\uB3D9\uC5D0\uB9CC, \uB9E4 \uD134 \uAE08\uC9C0. category\uB294 \uBAA9\uB85D\uC5D0\uC11C\uB9CC. (\uC5D4\uC9C4\uC774 \uAC12 \uACB0\uC815)
+- exp_gain {category, reason} \u2014 \uC758\uBBF8 \uC788\uB294 \uD589\uB3D9\uC5D0\uB9CC, \uB9E4 \uD134 \uAE08\uC9C0. category\uB294 [\uACBD\uD5D8\uCE58 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC(\uBAA9\uB85D\uC5D0 \uC5C6\uC73C\uBA74 \uB0B4\uC9C0 \uB9C8\uB77C). (\uC5D4\uC9C4\uC774 \uAC12 \uACB0\uC815)
 - day_end {} \u2014 \uD50C\uB808\uC774\uC5B4\uAC00 \uD558\uB8E8\uB97C \uB9C8\uBB34\uB9AC\uD560 \uB54C ("\uC624\uB298\uC740 \uC5EC\uAE30\uAE4C\uC9C0", "\uC7A0\uC790\uB9AC\uC5D0 \uB4E0\uB2E4" \uB4F1). (\uC5D4\uC9C4: \uB9E4\uCD9C \uC815\uC0B0\xB7\uC784\uAE08\xB7\uCCB4\uD06C\uC544\uC6C3)
 
 [\uC0AC\uAC74 \uADDC\uCE59]
 - \uC2E4\uC81C\uB85C \uC644\uACB0\uB41C \uC77C\uB9CC. \uC9C4\uD589 \uC911\xB7\uACC4\uD68D\uC740 \uC0AC\uAC74\uC774 \uC544\uB2C8\uB2E4.
 - \u2605\uD55C \uD589\uB3D9 = \uC0AC\uAC74 1\uAC1C. purchase \uD55C \uAC74\uC5D0 gold \uBCC0\uB3D9\uC744 \uB367\uBD99\uC774\uC9C0 \uB9D0\uACE0(\uC5D4\uC9C4\uC774 \uC6D0\uAC00 \uCC28\uAC10), \uC190\uB2D8 \uC218\xB7\uC8FC\uBB38\uB7C9\uC744 \uC784\uC758\uB85C \uB298\uB824 sale\uC744 \uC5EC\uB7EC \uAC1C \uB9CC\uB4E4\uC9C0 \uB9C8\uB77C. \uC720\uC800\uAC00 "\uD558\uB098 \uD314\uC790"\uBA74 sale 1\uAC1C, "\uB354 \uD314\uC790"\uCC98\uB7FC \uBAA8\uD638\uD558\uBA74 \uC7A5\uBA74\uC5D0 \uC2E4\uC81C \uB4F1\uC7A5\uD574 \uC644\uACB0\uB41C \uD310\uB9E4\uB9CC \uC13C\uB2E4. \uC720\uC800\uAC00 \uC9C0\uC2DC\uD558\uC9C0 \uC54A\uC740 \uAC70\uB798(\uC720\uB839 \uAD6C\uB9E4/\uD310\uB9E4)\uB294 \uC808\uB300 \uB9CC\uB4E4\uC9C0 \uB9C8\uB77C.
 - \uD310\uB9E4\xB7\uAD6C\uB9E4\uB294 \uC7AC\uACE0\xB7\uACE8\uB4DC\uB97C \uC5D4\uC9C4\uC774 \uAC80\uC99D\uD55C\uB2E4. \uC7AC\uACE0\xB7\uACE8\uB4DC\uAC00 \uC5C6\uC73C\uBA74 \uADF8 \uD589\uB3D9\uC740 \uC2E4\uD328\uD55C\uB2E4(\uBB34\uD55C \uACF5\uC9DC \uC5C6\uC74C).
+- \u2605\uC11C\uC0AC \uBCF8\uBB38\uC5D0 \uB9AC\uC2A4\uC2DD \uB300\uAD04\uD638 \uD0DC\uADF8([ysp_gold::...], [YSP_QUEST_CLEAR::...], [rep_event::...] \uB4F1)\uB098 <img> \uD0DC\uADF8\uB97C \uC808\uB300 \uC4F0\uC9C0 \uB9C8\uB77C. \uC0C1\uD0DC \uBCC0\uACBD\uC740 \uC624\uC9C1 \uB9E8 \uB05D\uC758 JSON \uC0AC\uAC74\uC73C\uB85C\uB9CC \uD45C\uD604\uD55C\uB2E4(\uADF8 \uD0DC\uADF8\uB4E4\uC740 \uC6B0\uB9AC \uC5D4\uC9C4\uC5D0\uC11C \uBB34\uC758\uBBF8\uD558\uBA70 \uD654\uBA74\uC5D0 \uC9C0\uC800\uBD84\uD558\uAC8C \uB178\uCD9C\uB41C\uB2E4).
 - npcId\uB294 [NPC \uBAA9\uB85D]\uC758 \uC601\uBB38 id, menuName\uC740 [\uBA54\uB274 \uBAA9\uB85D], roomNo\uB294 [\uAC1D\uC2E4 \uBAA9\uB85D]\uC758 \uAC12\uC744 \uC815\uD655\uD788 \uADF8\uB300\uB85C \uC0AC\uC6A9(\uBAA9\uB85D\uC5D0 \uC5C6\uC73C\uBA74 \uBD88\uAC00).
 - \uD655\uC2E0\uC774 \uC5C6\uC73C\uBA74 \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C. \uBE48 \uBC30\uC5F4\uC774 \uC548\uC804\uD558\uB2E4.`;
       var REWARD_PROMPT_APPENDIX = `
@@ -5661,6 +5662,7 @@ select:focus { border-color: var(--amber-line); }
         const npcIds = relatedNpcIds(schema2, state2, recentMessages, userInput);
         const npcText = npcIds.map((id) => npcSummary3(schema2, state2, id)).filter(Boolean).join("\n");
         const repCats = reputationCategories(schema2);
+        const expCats = expCategories(schema2);
         const npcList = npcListText(schema2);
         const menuList = menuListText(schema2, state2);
         const roomList = roomListText(schema2);
@@ -5673,6 +5675,7 @@ select:focus { border-color: var(--amber-line); }
           "[\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC]",
           repCats,
           "",
+          expCats ? "[\uACBD\uD5D8\uCE58 \uCE74\uD14C\uACE0\uB9AC]\n" + expCats + "\n" : "",
           "[NPC \uBAA9\uB85D]",
           npcList,
           "",
@@ -5693,6 +5696,7 @@ select:focus { border-color: var(--amber-line); }
           state: estimateTokens2(stateText),
           npc: estimateTokens2(npcText),
           repCats: estimateTokens2(repCats),
+          expCats: estimateTokens2(expCats),
           npcList: estimateTokens2(npcList),
           menuList: estimateTokens2(menuList),
           roomList: estimateTokens2(roomList),
@@ -5722,8 +5726,11 @@ select:focus { border-color: var(--amber-line); }
             events = [];
           }
         }
-        const narrative = jsonBlock ? source.replace(blocks[blocks.length - 1][0], "").trim() : source.trim();
-        return { narrative, events };
+        const rawNarrative = jsonBlock ? source.replace(blocks[blocks.length - 1][0], "").trim() : source.trim();
+        return { narrative: stripRisuTags(rawNarrative), events };
+      }
+      function stripRisuTags(text) {
+        return String(text || "").replace(/\[[^\]\n]*::[^\]\n]*\]/g, "").replace(/<img\b[^>]*>/gi, "").replace(/\{\{[^}]*\}\}/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
       }
       function relatedNpcIds(schema2, state2, recentMessages, userInput) {
         const haystack = [...(recentMessages || []).map((m) => m.content || ""), userInput || ""].join("\n").toLowerCase();
@@ -5735,8 +5742,14 @@ select:focus { border-color: var(--amber-line); }
         }).map((npc) => npc.id);
       }
       function reputationCategories(schema2) {
-        const ladder = schema2.ladders.find((entry) => entry.id === "reputation");
-        return ladder.axes.map((axis) => `${axis}(${ladder.axisLabels[axis] || axis}): ${Object.keys(ladder.categories[axis]).join(", ")}`).join("\n");
+        const ladder = (schema2.ladders || []).find((entry) => entry.id === "reputation");
+        if (!ladder || !Array.isArray(ladder.axes)) return "";
+        return ladder.axes.map((axis) => `${axis}(${(ladder.axisLabels || {})[axis] || axis}): ${Object.keys((ladder.categories || {})[axis] || {}).join(", ")}`).join("\n");
+      }
+      function expCategories(schema2) {
+        const ladder = (schema2.ladders || []).find((entry) => entry.id === "player_level");
+        const sources = ladder && ladder.sources ? Object.keys(ladder.sources) : [];
+        return sources.join(", ");
       }
       function npcListText(schema2) {
         return npcEntities(schema2).map((npc) => `${npc.id}: ${npc.nameKo}${npc.class ? ` (${npc.class})` : ""}`).join("\n");
