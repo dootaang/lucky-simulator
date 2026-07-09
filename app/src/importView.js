@@ -67,7 +67,14 @@ function renderHeader(ctx, render) {
   compile.addEventListener('click', async () => {
     await runCompile(ctx, render);
   });
-  buttonRow.append(compile);
+  const revert = button('내장 스키마로 되돌리기', 'secondary-btn');
+  revert.disabled = busy;
+  revert.addEventListener('click', () => {
+    setActiveSchema(null); // 완성된 내장(손제작) 스키마로 복귀
+    addLog(ctx, '내장(기본) 스키마로 되돌렸습니다. 플레이 탭에서 매끄럽게 플레이할 수 있습니다.');
+    render();
+  });
+  buttonRow.append(compile, revert);
   header.append(title, buttonRow);
   return header;
 }
