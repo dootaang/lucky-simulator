@@ -84,7 +84,7 @@ function renderShell() {
           <div class="drop-title">카드를 여기에 드롭</div>
           <div class="drop-sub">.charx, .png, .jpg, .jpeg, .json, .risum</div>
           <button class="primary-btn" id="pickButton" type="button">파일 선택</button>
-          <input id="fileInput" type="file" accept=".charx,.png,.jpg,.jpeg,.json,.risum,application/json,image/png,image/jpeg" hidden>
+          <input id="fileInput" type="file" hidden>
         </div>
         <div class="message" id="message" role="status"></div>
       </section>

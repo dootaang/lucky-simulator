@@ -24,6 +24,17 @@ const [js, css] = await Promise.all([
   readFile(path.join(root, 'src', 'style.css'), 'utf8'),
 ]);
 
+// 재발 방지 가드: CSS 주석이 조기에 닫히면(주석 텍스트에 `*/`가 섞이면)
+// :root 토큰 블록까지 CSS 코드로 새어 테마 전체가 무너진다(2026-07-09 사고).
+// 주석을 제거한 뒤 남은 :root가 있는지 검사해 빌드를 실패시킨다.
+{
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const opens = (css.match(/\/\*/g) || []).length;
+  const closes = (css.match(/\*\//g) || []).length;
+  if (opens !== closes) throw new Error(`CSS 주석 짝 불일치: /* ${opens}개 vs */ ${closes}개 — 주석 텍스트에 '*/'가 섞였는지 확인`);
+  if (!/:root\s*{/.test(stripped)) throw new Error('CSS에서 :root 규칙이 주석 밖에서 감지되지 않음 — 주석이 조기 종료되어 :root를 삼켰을 수 있음');
+}
+
 const html = `<!doctype html>
 <html lang="ko">
 <head>
