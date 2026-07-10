@@ -70,6 +70,22 @@ test('C5 start_encounter freezes enemy roster', () => {
   assert.equal(r.state.combat.enemies[0].id, 'e1');
 });
 
+test('C5b start_encounter rejects player pools without hp', () => {
+  const state = createState(schema);
+  delete state.player.pools.hp;
+  const r = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 30 }] });
+  assert.equal(r.log[0].reason, 'player_hp_pool_missing');
+  assert.equal(r.log[0].detail, 'pools에 hp가 없어 전투를 시작할 수 없습니다');
+});
+
+test('C5c start_encounter rejects a player with no pools', () => {
+  const state = createState(schema);
+  delete state.player.pools;
+  const r = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 30 }] });
+  assert.equal(r.log[0].reason, 'player_hp_pool_missing');
+  assert.equal(r.log[0].detail, 'pools에 hp가 없어 전투를 시작할 수 없습니다');
+});
+
 test('C6 attack: engine computes hit and damage; crit doubles; kill marks dead', () => {
   let state = createState(schema);
   state = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 30, def: 2, evade: 10 }] }).state;

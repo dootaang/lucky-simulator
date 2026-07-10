@@ -59,6 +59,9 @@ function startEncounter(schema, state, params, rng, ok, fail) {
       dead: false,
     });
   }
+  if (!state.player || !state.player.pools || typeof state.player.pools !== 'object' || !state.player.pools.hp) {
+    return fail('player_hp_pool_missing', 'pools에 hp가 없어 전투를 시작할 수 없습니다');
+  }
   state.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false, intents: rollIntents(schema, enemies, rng) };
   return ok({ enemies: enemies.map(publicEnemy) });
 }

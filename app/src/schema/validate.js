@@ -16,6 +16,7 @@ function validateSchema(obj) {
 
   normalizeAliases(schema, issues);
   normalizePlayerPools(schema, issues);
+  normalizeCombatHpPool(schema, issues);
   validateTop(schema, issues);
   validateResources(schema, issues);
   validateScales(schema, issues);
@@ -68,6 +69,41 @@ function normalizePlayerPools(schema, issues) {
     }
   }
   warn(issues, 'pools', `player 자원 ${promoted.map((pool) => pool.id).join(', ')}을 scales에서 pools로 승격했습니다.`);
+}
+
+function normalizeCombatHpPool(schema, issues) {
+  if (!isObject(schema) || (schema.combat == null && schema.skills == null) || !Array.isArray(schema.pools)) return;
+  if (schema.pools.some((pool) => isObject(pool) && pool.id === 'hp')) return;
+
+  const candidates = schema.pools.filter((pool) => isObject(pool) && typeof pool.id === 'string' && pool.id.endsWith('_hp'));
+  if (candidates.length === 1) {
+    const oldId = candidates[0].id;
+    candidates[0].id = 'hp';
+    // 참조 일관성: 리네임을 스킬 소모 풀·소모품 효과 풀까지 따라가게 한다 — 안 하면 이후 검증이
+    // 옛 id를 무효 취급해 스킬 풀을 mp로 리셋하거나 포션 효과를 삭제한다(감사 지적: Critical).
+    for (const skill of Object.values(isObject(schema.skills) ? schema.skills : {})) {
+      if (isObject(skill) && skill.pool === oldId) skill.pool = 'hp';
+    }
+    for (const resource of Array.isArray(schema.resources) ? schema.resources : []) {
+      if (isObject(resource) && isObject(resource.effect) && resource.effect.pool === oldId) resource.effect.pool = 'hp';
+    }
+    // 초기 상태 이관: player.pools 경로가 없거나 옛 키가 없어도 hp 초기값을 보장한다(감사 지적: Major).
+    if (!isObject(schema.initialState)) schema.initialState = {};
+    if (!isObject(schema.initialState.player)) schema.initialState.player = {};
+    if (!isObject(schema.initialState.player.pools)) schema.initialState.player.pools = {};
+    const statePools = schema.initialState.player.pools;
+    if (Object.prototype.hasOwnProperty.call(statePools, oldId)) {
+      statePools.hp = statePools[oldId];
+      delete statePools[oldId];
+    } else if (!isObject(statePools.hp)) {
+      const max = Number(candidates[0].max);
+      if (Number.isFinite(max) && max > 0) statePools.hp = { cur: max, max };
+    }
+    warn(issues, 'pools', `플레이어 생명 풀 '${oldId}'를 'hp'로 정규화했습니다(엔진 전투는 hp id를 사용).`);
+    return;
+  }
+
+  warn(issues, 'pools', "pools에 'hp' 풀이 없습니다. 전투 시작이 거부됩니다 — 생명 풀 id를 'hp'로 바꾸세요(섹션 편집기에서 pools와 initialState.player.pools 수정).");
 }
 
 function validatePools(schema, issues) {

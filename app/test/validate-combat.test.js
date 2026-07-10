@@ -25,6 +25,40 @@ test('valid pools, combat, and skills produce zero errors', () => {
   assert.deepEqual(errors(result), []);
 });
 
+test('single _hp pool is normalized to hp with initial state key and warning', () => {
+  const result = validateSchema(base({
+    pools: [{ id: 'unit_hp', label: '유닛 체력', max: 30 }],
+    combat: {},
+    initialState: { player: { pools: { unit_hp: { cur: 20, max: 30 } } } },
+  }));
+  assert.deepEqual(result.schema.pools, [{ id: 'hp', label: '유닛 체력', max: 30 }]);
+  assert.deepEqual(result.schema.initialState.player.pools, { hp: { cur: 20, max: 30 } });
+  assert.ok(result.issues.some((issue) => issue.level === 'warn' && issue.msg === "플레이어 생명 풀 'unit_hp'를 'hp'로 정규화했습니다(엔진 전투는 hp id를 사용)."));
+});
+
+test('multiple _hp pools are not guessed and produce a strong warning', () => {
+  const result = validateSchema(base({
+    pools: [{ id: 'commander_hp', max: 3 }, { id: 'doll_hp', max: 5 }],
+    combat: {},
+    initialState: { player: { pools: { commander_hp: { cur: 3, max: 3 }, doll_hp: { cur: 5, max: 5 } } } },
+  }));
+  assert.deepEqual(result.schema.pools.map((pool) => pool.id), ['commander_hp', 'doll_hp']);
+  assert.equal(result.schema.initialState.player.pools.hp, undefined);
+  assert.ok(result.issues.some((issue) => issue.level === 'warn' && issue.msg.includes("전투 시작이 거부됩니다")));
+});
+
+test('existing hp pool is unchanged without hp contract warning', () => {
+  const input = base({
+    pools: [{ id: 'hp', label: '체력', max: 100 }],
+    combat: {},
+    initialState: { player: { pools: { hp: { cur: 75, max: 100 } } } },
+  });
+  const result = validateSchema(input);
+  assert.deepEqual(result.schema.pools, input.pools);
+  assert.deepEqual(result.schema.initialState, input.initialState);
+  assert.equal(result.issues.some((issue) => issue.path === 'pools' && /hp.*(정규화|없습니다)/.test(issue.msg)), false);
+});
+
 test('player hp/mp/sp scales are promoted and initialized', () => {
   const result = validateSchema(base({ scales: [
     { id: 'hp', owner: 'player', range: [0, 120], default: 100 },

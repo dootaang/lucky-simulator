@@ -17,6 +17,7 @@ const COMBAT_SCHEMA_APPENDIX = `
 
 [전투 변환 규칙]
 ★HP/MP/SP·스태미나처럼 소모·회복되는 자원은 scales가 아니라 pools다. max가 공식(예: CON×10)이면 초기 스탯으로 계산한 값을 pools.max에 넣고 공식은 formulas에 보존하며 계산 근거를 _assumptions에 기록한다.
+★풀 id 계약: 플레이어(전투 주체)의 생명/정신/기력 풀 id는 반드시 "hp"/"mp"/"sp"를 쓰고 한국어 표기는 label에 넣는다(예: {"id":"hp","label":"지휘관 체력","max":3}). 유닛·부대원·NPC 개별 수치(예: 인형별 체력·호감도)는 pools에 넣지 마라 — pools는 플레이어 전용이다. 그런 수치는 scales(owner:"npc")나 서술로 남기고 _assumptions에 기록하라.
 포션·회복약·엘릭서처럼 소모하면 HP/MP/SP를 회복하는 품목은 resources에 "effect":{"pool":"hp","amount":정수}를 붙여라. 회복량이 룰북에 없으면 해당 풀 최대치의 30% 수준으로 정하고 _assumptions에 기록하라.
 combat 판정값이 룰북에 없으면 엔진 기본값 d=20, minDamage=1, critMult=2, guardMult=0.5, fleeRate=50을 사용하고 _assumptions에 기록한다. 각 필드의 의미는 판정 주사위 면수, 최소 피해, 치명타 피해 배수, 방어 피해 배수, 도주 성공률이다. expTable과 lootGold는 몬스터/게이트 랭크별 경험치·전리품 골드 범위표이며, 룰북에 없으면 rewards.gold 규모에 맞춰 추정하고 기록한다.
 skills에는 룰북에 이름과 코스트·위력이 명시된 스킬만 넣는다. 없으면 빈 객체 또는 생략한다. "acc"는 명중률 %가 아니라 d20 굴림에 더하는 보정치다(-5~+5 권장, 최대 ±15). 명중률 개념은 넣지 마라.
