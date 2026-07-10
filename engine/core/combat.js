@@ -15,6 +15,9 @@ function combatConfig(schema) {
     critMult: numOr(c.critMult, 2),
     guardMult: numOr(c.guardMult, 0.5),
     fleeRate: intOr(c.fleeRate, 50),
+    heavyRate: intOr(c.heavyRate, 30),
+    heavyMult: numOr(c.heavyMult, 1.5),
+    heavyAcc: intOr(c.heavyAcc, -2),
     defeatReviveRatio: clamp(numOr(c.defeatReviveRatio, 0.2), 0, 1),
     expTable: c.expTable || {},
     lootGold: c.lootGold || {},
@@ -56,7 +59,7 @@ function startEncounter(schema, state, params, rng, ok, fail) {
       dead: false,
     });
   }
-  state.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false };
+  state.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false, intents: rollIntents(schema, enemies, rng) };
   return ok({ enemies: enemies.map(publicEnemy) });
 }
 
@@ -145,24 +148,32 @@ function enemyTurn(schema, state, params, rng, ok, fail) {
   const results = [];
   for (const enemy of combat.enemies || []) {
     if (enemy.dead || Number(enemy.hp && enemy.hp.cur) <= 0) continue;
-    const result = resolveEnemyAttack(schema, state, enemy, null, rng);
-    results.push({ enemyId: enemy.id, hit: result.hit, tier: result.tier, roll: result.roll, damage: result.damage });
+    const intent = combat.intents && combat.intents[enemy.id] === 'heavy' ? 'heavy' : 'attack';
+    const result = resolveEnemyAttack(schema, state, enemy, null, rng, intent);
+    results.push({ enemyId: enemy.id, intent, hit: result.hit, tier: result.tier, roll: result.roll, damage: result.damage });
     if (result.hit) combat.guard = false; // 첫 피격이 방어를 소모(반감은 1회만)
     if (result.playerDead) break;
   }
   // 방어는 이번 적 턴까지만 유효 — 전원이 빗나가도 다음 턴으로 이월되지 않는다(감사 지적: 영구 방어 악용 방지).
   combat.guard = false;
+  // 플레이어 사망이면 다음 턴이 없으므로 의도 재굴림을 생략 — 무의미한 rng 소비로 이후 이벤트의
+  // 난수 흐름이 어긋나는 것을 방지(감사 지적).
+  combat.intents = state.player.dead
+    ? {}
+    : rollIntents(schema, (combat.enemies || []).filter((enemy) => !enemy.dead && Number(enemy.hp && enemy.hp.cur) > 0), rng);
   return ok({ results, playerHp: normalizePool(state.player.pools && state.player.pools.hp), playerDead: !!state.player.dead });
 }
 
-function resolveEnemyAttack(schema, state, enemy, skill, rng) {
+function resolveEnemyAttack(schema, state, enemy, skill, rng, intent = 'attack') {
   const combat = state.combat;
   const cfg = combatConfig(schema);
   const pc = playerCombat(state);
-  const hit = resolveCheck(rng, { mode: 'dc', sides: cfg.d, dc: pc.evade, mod: enemy.acc + intOr(skill && skill.acc, 0) });
+  const heavy = intent === 'heavy';
+  const hit = resolveCheck(rng, { mode: 'dc', sides: cfg.d, dc: pc.evade, mod: enemy.acc + intOr(skill && skill.acc, 0) + (heavy ? cfg.heavyAcc : 0) });
   let damage = 0;
   if (hit.success) {
     damage = Math.max(cfg.minDamage, enemy.atk + intOr(skill && skill.power, 0) - pc.def);
+    if (heavy) damage = Math.round(damage * cfg.heavyMult);
     if (hit.tier === 'critical_success') damage = Math.round(damage * cfg.critMult);
     if (combat.guard) damage = Math.max(0, Math.floor(damage * cfg.guardMult));
     const hp = (state.player.pools && state.player.pools.hp) || { cur: 0, max: 0 };
@@ -171,6 +182,13 @@ function resolveEnemyAttack(schema, state, enemy, skill, rng) {
     if (isDead(state.player.pools.hp)) state.player.dead = true;
   }
   return { hit: hit.success, tier: hit.tier, roll: hit.rand, damage, playerHp: normalizePool(state.player.pools && state.player.pools.hp), playerDead: !!state.player.dead };
+}
+
+function rollIntents(schema, enemies, rng) {
+  const cfg = combatConfig(schema);
+  const intents = {};
+  for (const enemy of enemies) intents[enemy.id] = rng.int(1, 100) <= cfg.heavyRate ? 'heavy' : 'attack';
+  return intents;
 }
 
 function endEncounter(schema, state, params, rng, ok, fail) {

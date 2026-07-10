@@ -203,6 +203,7 @@ function buildNarrationPrompt({ schema, state, results, flavorText, recentMessag
   const resultText = (results || []).map((result) => typeof result === 'string' ? result : String((result && result.text) || '')).filter(Boolean).join('\n');
   const context = [
     '[확정된 전투 결과]',
+    (results || []).length > 8 ? '여러 턴의 전투 전체를 시간순으로 요약 서사화하라.' : '',
     resultText || '변화 없음',
     '',
     combatLine,

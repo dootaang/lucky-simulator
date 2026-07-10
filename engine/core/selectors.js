@@ -123,7 +123,7 @@ function summarize(schema, state) {
       const hp = enemy.hp || {};
       return enemy.dead || Number(hp.cur) <= 0
         ? `${enemy.id} ${enemy.name}(전투불능)`
-        : `${enemy.id} ${enemy.name}(HP ${hp.cur}/${hp.max})`;
+        : `${enemy.id} ${enemy.name}(HP ${hp.cur}/${hp.max}${combat.intents && combat.intents[enemy.id] === 'heavy' ? ' ⚠강공격' : ''})`;
     });
     lines.push(`[전투] ROUND ${combat.round} · ${enemies.join(' · ')}${combat.guard ? ' · 방어 중' : ''}`);
   }

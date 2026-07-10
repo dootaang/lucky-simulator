@@ -8,7 +8,7 @@ const { createState } = require('../core/createState.js');
 const { applyEvent } = require('../core/applyEvent.js');
 const { resolveCheck } = require('../core/resolveCheck.js');
 const { normalizePool, poolDamage, poolSpend, poolHeal, isDead } = require('../core/pools.js');
-const { availableActions } = require('../core/selectors.js');
+const { availableActions, summarize } = require('../core/selectors.js');
 
 // 굴림을 완전 통제하는 스크립트 rng: int()이 리스트 값을 순서대로 반환.
 function seqRng(values) {
@@ -293,4 +293,33 @@ test('C23 enemy_turn skips (not fails) when encounter already resolved even if p
   const r = step(state, seqRng([]), 'enemy_turn');
   assert.equal(r.log[0].ok, true);
   assert.deepEqual(r.log[0].results, []);
+});
+
+test('C24 start_encounter rolls one deterministic intent per enemy and summarize warns only for heavy', () => {
+  const start = step(createState(schema), seqRng([30, 31]), 'start_encounter', { enemies: [
+    { name: '강공', hp: 20 }, { name: '일반', hp: 20 },
+  ] });
+  assert.deepEqual(start.state.combat.intents, { e1: 'heavy', e2: 'attack' });
+  assert.match(summarize(schema, start.state), /e1 강공\(HP 20\/20 ⚠강공격\)/);
+  assert.doesNotMatch(summarize(schema, start.state), /e2 일반\(HP 20\/20 ⚠강공격\)/);
+});
+
+test('C25 heavy intent applies accuracy -2, rounded damage x1.5, and guard afterward', () => {
+  let state = step(createState(schema), seqRng([1]), 'start_encounter', { enemies: [{ name: '강공', hp: 20, atk: 15, acc: 0 }] }).state;
+  state = step(state, seqRng([]), 'combat_action', { action: 'defend' }).state;
+  const result = step(state, seqRng([13, 100]), 'enemy_turn'); // 13-2=11로 evade 11 명중
+  assert.deepEqual(result.log[0].results[0], { enemyId: 'e1', intent: 'heavy', hit: true, tier: 'success', roll: 13, damage: 7 });
+  assert.equal(result.state.player.pools.hp.cur, 83);
+  assert.equal(result.state.combat.intents.e1, 'attack');
+});
+
+test('C26 enemy_turn consumes attacks first, then rerolls intents for living roster only', () => {
+  let state = step(createState(schema), seqRng([100, 100, 100]), 'start_encounter', { enemies: [
+    { name: 'A', hp: 20, atk: 5 }, { name: 'B', hp: 20, atk: 5 }, { name: 'C', hp: 20, atk: 5 },
+  ] }).state;
+  state.combat.enemies[2].dead = true;
+  state.combat.enemies[2].hp.cur = 0;
+  const result = step(state, seqRng([11, 12, 80, 20]), 'enemy_turn');
+  assert.deepEqual(result.log[0].results.map((item) => item.roll), [11, 12]);
+  assert.deepEqual(result.state.combat.intents, { e1: 'attack', e2: 'heavy' });
 });

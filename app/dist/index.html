@@ -5260,7 +5260,7 @@ select:focus { border-color: var(--amber-line); }
         if (combat && combat.active) {
           const enemies = (combat.enemies || []).map((enemy) => {
             const hp = enemy.hp || {};
-            return enemy.dead || Number(hp.cur) <= 0 ? `${enemy.id} ${enemy.name}(\uC804\uD22C\uBD88\uB2A5)` : `${enemy.id} ${enemy.name}(HP ${hp.cur}/${hp.max})`;
+            return enemy.dead || Number(hp.cur) <= 0 ? `${enemy.id} ${enemy.name}(\uC804\uD22C\uBD88\uB2A5)` : `${enemy.id} ${enemy.name}(HP ${hp.cur}/${hp.max}${combat.intents && combat.intents[enemy.id] === "heavy" ? " \u26A0\uAC15\uACF5\uACA9" : ""})`;
           });
           lines.push(`[\uC804\uD22C] ROUND ${combat.round} \xB7 ${enemies.join(" \xB7 ")}${combat.guard ? " \xB7 \uBC29\uC5B4 \uC911" : ""}`);
         }
@@ -5464,6 +5464,9 @@ select:focus { border-color: var(--amber-line); }
           critMult: numOr(c.critMult, 2),
           guardMult: numOr(c.guardMult, 0.5),
           fleeRate: intOr(c.fleeRate, 50),
+          heavyRate: intOr(c.heavyRate, 30),
+          heavyMult: numOr(c.heavyMult, 1.5),
+          heavyAcc: intOr(c.heavyAcc, -2),
           defeatReviveRatio: clamp(numOr(c.defeatReviveRatio, 0.2), 0, 1),
           expTable: c.expTable || {},
           lootGold: c.lootGold || {}
@@ -5502,7 +5505,7 @@ select:focus { border-color: var(--amber-line); }
             dead: false
           });
         }
-        state2.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false };
+        state2.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false, intents: rollIntents(schema2, enemies, rng2) };
         return ok({ enemies: enemies.map(publicEnemy) });
       }
       function combatAction(schema2, state2, params, rng2, ok, fail) {
@@ -5590,22 +5593,26 @@ select:focus { border-color: var(--amber-line); }
         const results = [];
         for (const enemy of combat.enemies || []) {
           if (enemy.dead || Number(enemy.hp && enemy.hp.cur) <= 0) continue;
-          const result = resolveEnemyAttack(schema2, state2, enemy, null, rng2);
-          results.push({ enemyId: enemy.id, hit: result.hit, tier: result.tier, roll: result.roll, damage: result.damage });
+          const intent = combat.intents && combat.intents[enemy.id] === "heavy" ? "heavy" : "attack";
+          const result = resolveEnemyAttack(schema2, state2, enemy, null, rng2, intent);
+          results.push({ enemyId: enemy.id, intent, hit: result.hit, tier: result.tier, roll: result.roll, damage: result.damage });
           if (result.hit) combat.guard = false;
           if (result.playerDead) break;
         }
         combat.guard = false;
+        combat.intents = state2.player.dead ? {} : rollIntents(schema2, (combat.enemies || []).filter((enemy) => !enemy.dead && Number(enemy.hp && enemy.hp.cur) > 0), rng2);
         return ok({ results, playerHp: normalizePool(state2.player.pools && state2.player.pools.hp), playerDead: !!state2.player.dead });
       }
-      function resolveEnemyAttack(schema2, state2, enemy, skill, rng2) {
+      function resolveEnemyAttack(schema2, state2, enemy, skill, rng2, intent = "attack") {
         const combat = state2.combat;
         const cfg = combatConfig(schema2);
         const pc = playerCombat(state2);
-        const hit = resolveCheck(rng2, { mode: "dc", sides: cfg.d, dc: pc.evade, mod: enemy.acc + intOr(skill && skill.acc, 0) });
+        const heavy = intent === "heavy";
+        const hit = resolveCheck(rng2, { mode: "dc", sides: cfg.d, dc: pc.evade, mod: enemy.acc + intOr(skill && skill.acc, 0) + (heavy ? cfg.heavyAcc : 0) });
         let damage = 0;
         if (hit.success) {
           damage = Math.max(cfg.minDamage, enemy.atk + intOr(skill && skill.power, 0) - pc.def);
+          if (heavy) damage = Math.round(damage * cfg.heavyMult);
           if (hit.tier === "critical_success") damage = Math.round(damage * cfg.critMult);
           if (combat.guard) damage = Math.max(0, Math.floor(damage * cfg.guardMult));
           const hp = state2.player.pools && state2.player.pools.hp || { cur: 0, max: 0 };
@@ -5614,6 +5621,12 @@ select:focus { border-color: var(--amber-line); }
           if (isDead(state2.player.pools.hp)) state2.player.dead = true;
         }
         return { hit: hit.success, tier: hit.tier, roll: hit.rand, damage, playerHp: normalizePool(state2.player.pools && state2.player.pools.hp), playerDead: !!state2.player.dead };
+      }
+      function rollIntents(schema2, enemies, rng2) {
+        const cfg = combatConfig(schema2);
+        const intents = {};
+        for (const enemy of enemies) intents[enemy.id] = rng2.int(1, 100) <= cfg.heavyRate ? "heavy" : "attack";
+        return intents;
       }
       function endEncounter(schema2, state2, params, rng2, ok, fail) {
         const combat = state2.combat;
@@ -6335,6 +6348,7 @@ ${lines.join("\n")}`;
         const resultText = (results || []).map((result) => typeof result === "string" ? result : String(result && result.text || "")).filter(Boolean).join("\n");
         const context = [
           "[\uD655\uC815\uB41C \uC804\uD22C \uACB0\uACFC]",
+          (results || []).length > 8 ? "\uC5EC\uB7EC \uD134\uC758 \uC804\uD22C \uC804\uCCB4\uB97C \uC2DC\uAC04\uC21C\uC73C\uB85C \uC694\uC57D \uC11C\uC0AC\uD654\uD558\uB77C." : "",
           resultText || "\uBCC0\uD654 \uC5C6\uC74C",
           "",
           combatLine,
@@ -8797,8 +8811,8 @@ ${Array.from(extras).join(" ")}` : text;
     if (type === "start_encounter") return `\uC804\uD22C \uC2DC\uC791 \xB7 \uC801 ${(entry.enemies || []).length}`;
     if (type === "combat_action") {
       if (entry.action === "defend") return "\uBC29\uC5B4 \uD0DC\uC138";
-      if (entry.action === "flee") return `\uB3C4\uC8FC ${entry.fled ? "\uC131\uACF5" : "\uC2E4\uD328"}`;
-      return `${entry.skill || "\uACF5\uACA9"} \xB7 ${entry.target} ${entry.hit ? entry.tier === "critical_success" ? "\uD06C\uB9AC\uD2F0\uCEEC" : "\uBA85\uC911" : "\uBE57\uB098\uAC10"} \xB7 \uD53C\uD574 ${entry.damage}${entry.cleared ? " \xB7 \uC804\uBA78" : ""}`;
+      if (entry.action === "flee") return `\uB3C4\uC8FC ${entry.fled ? "\uC131\uACF5" : "\uC2E4\uD328"} \u{1F3B2}${entry.check.rand}`;
+      return `${entry.skill || "\uACF5\uACA9"} \xB7 ${entry.target} \u{1F3B2}${entry.roll} ${entry.hit ? entry.tier === "critical_success" ? "\uD06C\uB9AC\uD2F0\uCEEC" : "\uBA85\uC911" : "\uBE57\uB098\uAC10"} \xB7 \uD53C\uD574 ${entry.damage}${entry.cleared ? " \xB7 \uC804\uBA78" : ""}`;
     }
     if (type === "enemy_action") return `${entry.enemyId} \uBC18\uACA9 \xB7 ${entry.hit ? `\uD53C\uD574 ${entry.damage}` : "\uD68C\uD53C"}${entry.playerDead ? " \xB7 \uD50C\uB808\uC774\uC5B4 \uC804\uD22C\uBD88\uB2A5" : ""}`;
     if (type === "end_encounter") return `\uC804\uD22C \uC885\uB8CC(${entry.outcome}) \xB7 EXP +${entry.expGained} \xB7 \uACE8\uB4DC +${formatMoney3(entry.goldGained)}${entry.levelUps && entry.levelUps.length ? ` \xB7 Lv.${entry.levelUps.join(",")}` : ""}`;
@@ -9298,6 +9312,7 @@ ${Array.from(extras).join(" ")}` : text;
   var settings = loadSettings();
   var lastPrompt = null;
   var selectedTarget = null;
+  var fastCombatLog = [];
   function renderPlayView(container, ctx) {
     registerCustomOrigin(settings);
     const root = el2("div", "play-view");
@@ -9345,6 +9360,7 @@ ${Array.from(extras).join(" ")}` : text;
       if (busy) return;
       messages = [];
       lastPrompt = null;
+      fastCombatLog = [];
       render2();
     });
     const actions = el2("div", "engine-header-controls");
@@ -9416,7 +9432,8 @@ ${Array.from(extras).join(" ")}` : text;
     if (!combat || !combat.active) return null;
     const section = titled("\uC804\uD22C HUD");
     for (const enemy of combat.enemies || []) {
-      section.append(combatGauge(`${enemy.name}${enemy.rank ? ` \xB7 ${enemy.rank}` : ""}`, enemy.hp, enemy.dead ? "\uC804\uD22C\uBD88\uB2A5" : ""));
+      const intent = combat.intents && combat.intents[enemy.id] === "heavy" ? "\u26A0 \uAC15\uACF5\uACA9 \uC900\uBE44" : "";
+      section.append(combatGauge(`${enemy.name}${enemy.rank ? ` \xB7 ${enemy.rank}` : ""}`, enemy.hp, enemy.dead ? "\uC804\uD22C\uBD88\uB2A5" : intent));
     }
     const pools = state2.player && state2.player.pools || {};
     for (const id of ["hp", "mp", "sp"]) if (pools[id]) section.append(combatGauge(id.toUpperCase(), pools[id], ""));
@@ -9563,11 +9580,19 @@ ${Array.from(extras).join(" ")}` : text;
       localStorage.removeItem(keyName(settings.provider));
       render2();
     });
+    const fastCombat = namedInput2("fastCombat", "1", "checkbox");
+    fastCombat.checked = localStorage.getItem("simbot.play.fastCombat") === "1";
+    fastCombat.addEventListener("change", () => {
+      localStorage.setItem("simbot.play.fastCombat", fastCombat.checked ? "1" : "0");
+      if (!fastCombat.checked) fastCombatLog = [];
+      render2();
+    });
     details.append(
       field2("\uC81C\uACF5\uC790", provider),
       settings.provider === "custom" ? field2("Base URL", base) : hiddenBase(base),
       settings.provider === "vertex" ? field2("\uB9AC\uC804", location) : hiddenBase(location),
       field2("\uBAA8\uB378", model),
+      field2("\uBE60\uB978 \uC804\uD22C (\uC804\uD22C \uC11C\uC0AC\uB97C \uC885\uB8CC \uC2DC \uD55C \uBC88\uC5D0)", fastCombat),
       field2(settings.provider === "vertex" ? "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON" : "API \uD0A4", key),
       row(save, del),
       settings.provider === "vertex" ? notice("\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON\uC740 GCP \uC804\uCCB4 \uAD8C\uD55C\uC744 \uAC00\uC9C8 \uC218 \uC788\uB294 \uAC15\uB825\uD55C \uC790\uACA9\uC99D\uBA85\uC785\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C \uC800\uC7A5\uD558\uC9C0 \uB9D0\uACE0 \uC0AC\uC6A9 \uD6C4 \uC0AD\uC81C\uD558\uC138\uC694.") : notice("\uD0A4\uB294 \uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 localStorage\uC5D0\uB9CC \uC800\uC7A5\uB429\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C\uB294 \uC0AC\uC6A9 \uD6C4 \uBC18\uB4DC\uC2DC \uC0AD\uC81C\uD558\uC138\uC694."),
@@ -9645,14 +9670,26 @@ ${Array.from(extras).join(" ")}` : text;
     }
     const afterHp = poolSnapshot(getEngineState(), "hp");
     if (beforeHp && afterHp && beforeHp.cur !== afterHp.cur) resultTexts.push(`\uD50C\uB808\uC774\uC5B4 HP ${beforeHp.cur}\u2192${afterHp.cur}`);
+    const fastCombat = localStorage.getItem("simbot.play.fastCombat") === "1";
+    const combatAfter = getEngineState().combat;
+    const fastCombatEnded = event.id === "end_encounter" || event.id === "combat_action" && combatAfter && combatAfter.fled;
     const recentForNarration = messages.slice(-4);
     if (flavorText) messages.push({ role: "user", content: flavorText });
     const pending = { role: "assistant", content: "", chips };
     messages.push(pending);
     input2.value = "";
     render2();
+    if (fastCombat && !fastCombatEnded) {
+      fastCombatLog.push(...resultTexts);
+      pending.content = "\u26A1";
+      busy = false;
+      render2();
+      return;
+    }
     try {
-      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
+      const narrationResults = fastCombat ? [...fastCombatLog, ...resultTexts] : resultTexts;
+      if (fastCombat) fastCombatLog = [];
+      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
@@ -9671,7 +9708,7 @@ ${Array.from(extras).join(" ")}` : text;
     for (const entry of entries || []) {
       if (type === "enemy_turn" && entry.ok) {
         for (const result of entry.results || []) {
-          const text2 = `${result.enemyId} \uBC18\uACA9 \xB7 ${result.hit ? `${result.tier === "critical_success" ? "\uD06C\uB9AC\uD2F0\uCEEC \xB7 " : ""}\uD53C\uD574 ${result.damage}` : "\uBE57\uB098\uAC10"}`;
+          const text2 = `${result.enemyId} \uBC18\uACA9${result.intent === "heavy" ? "(\uAC15\uACF5\uACA9)" : ""} \u{1F3B2}${result.roll} \xB7 ${result.hit ? `${result.tier === "critical_success" ? "\uD06C\uB9AC\uD2F0\uCEEC \xB7 " : ""}\uD53C\uD574 ${result.damage}` : "\uBE57\uB098\uAC10"}`;
           chips.push({ ok: true, text: text2 });
           resultTexts.push(text2);
         }
@@ -9702,6 +9739,7 @@ ${Array.from(extras).join(" ")}` : text;
       } else {
         const result = runEvent(event);
         const entry = result.entries[0] || { ok: false, reason: "empty_log" };
+        if (entry.ok) fastCombatLog = [];
         const ignored = parsed.events.length - 1 + parsed.dropped;
         const chips = [{ ok: !!entry.ok, text: summarizeEvent("start_encounter", entry, formatMoney2) }];
         if (ignored > 0) chips.push({ ok: false, text: `\uB2E4\uB978 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
@@ -9732,7 +9770,10 @@ ${Array.from(extras).join(" ")}` : text;
         const result = runEvent(event);
         const first = result.entries[0] || { ok: false, reason: "empty_log" };
         chips.push({ ok: !!first.ok, text: summarizeEvent(event.id, first, formatMoney2) });
+        if (first.ok && (event.id === "start_encounter" || event.id === "end_encounter")) fastCombatLog = [];
       }
+      const combatNow = getEngineState().combat;
+      if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
       messages.push({ role: "assistant", content: parsed.narrative || raw, chips });
     } catch (err) {
       messages.push({ role: "assistant", content: safeError(err), chips: [{ ok: false, text: "API \uC624\uB958" }] });

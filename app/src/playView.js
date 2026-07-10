@@ -11,6 +11,7 @@ let busy = false;
 let settings = loadSettings();
 let lastPrompt = null;
 let selectedTarget = null;
+let fastCombatLog = [];
 
 export function renderPlayView(container, ctx) {
   registerCustomOrigin(settings);
@@ -56,6 +57,7 @@ function renderChat(ctx, render) {
     if (busy) return;
     messages = [];
     lastPrompt = null;
+    fastCombatLog = [];
     render();
   });
   const actions = el('div', 'engine-header-controls');
@@ -133,7 +135,8 @@ function renderCombatHud() {
   if (!combat || !combat.active) return null;
   const section = titled('전투 HUD');
   for (const enemy of combat.enemies || []) {
-    section.append(combatGauge(`${enemy.name}${enemy.rank ? ` · ${enemy.rank}` : ''}`, enemy.hp, enemy.dead ? '전투불능' : ''));
+    const intent = combat.intents && combat.intents[enemy.id] === 'heavy' ? '⚠ 강공격 준비' : '';
+    section.append(combatGauge(`${enemy.name}${enemy.rank ? ` · ${enemy.rank}` : ''}`, enemy.hp, enemy.dead ? '전투불능' : intent));
   }
   const pools = (state.player && state.player.pools) || {};
   for (const id of ['hp', 'mp', 'sp']) if (pools[id]) section.append(combatGauge(id.toUpperCase(), pools[id], ''));
@@ -292,11 +295,20 @@ function renderSettings(render) {
     render();
   });
 
+  const fastCombat = namedInput('fastCombat', '1', 'checkbox');
+  fastCombat.checked = localStorage.getItem('simbot.play.fastCombat') === '1';
+  fastCombat.addEventListener('change', () => {
+    localStorage.setItem('simbot.play.fastCombat', fastCombat.checked ? '1' : '0');
+    if (!fastCombat.checked) fastCombatLog = [];
+    render();
+  });
+
   details.append(
     field('제공자', provider),
     settings.provider === 'custom' ? field('Base URL', base) : hiddenBase(base),
     settings.provider === 'vertex' ? field('리전', location) : hiddenBase(location),
     field('모델', model),
+    field('빠른 전투 (전투 서사를 종료 시 한 번에)', fastCombat),
     field(settings.provider === 'vertex' ? '서비스 계정 JSON' : 'API 키', key),
     row(save, del),
     settings.provider === 'vertex'
@@ -390,6 +402,9 @@ async function runCombatTurn(event, input, ctx, render) {
   }
   const afterHp = poolSnapshot(getEngineState(), 'hp');
   if (beforeHp && afterHp && beforeHp.cur !== afterHp.cur) resultTexts.push(`플레이어 HP ${beforeHp.cur}→${afterHp.cur}`);
+  const fastCombat = localStorage.getItem('simbot.play.fastCombat') === '1';
+  const combatAfter = getEngineState().combat;
+  const fastCombatEnded = event.id === 'end_encounter' || (event.id === 'combat_action' && combatAfter && combatAfter.fled);
   // 연출 문장을 messages에 넣기 전에 잘라둔다 — 연출(user) 뒤에 서사화 프롬프트의 user 컨텍스트가
   // 붙으면 user→user 연속 롤이 되어 제공자(Vertex/Anthropic)가 거부한다(감사 지적).
   const recentForNarration = messages.slice(-4);
@@ -398,8 +413,17 @@ async function runCombatTurn(event, input, ctx, render) {
   messages.push(pending);
   input.value = '';
   render();
+  if (fastCombat && !fastCombatEnded) {
+    fastCombatLog.push(...resultTexts);
+    pending.content = '⚡';
+    busy = false;
+    render();
+    return;
+  }
   try {
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
+    const narrationResults = fastCombat ? [...fastCombatLog, ...resultTexts] : resultTexts;
+    if (fastCombat) fastCombatLog = [];
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
@@ -419,7 +443,7 @@ function appendEventChips(type, entries, chips, resultTexts) {
   for (const entry of entries || []) {
     if (type === 'enemy_turn' && entry.ok) {
       for (const result of entry.results || []) {
-        const text = `${result.enemyId} 반격 · ${result.hit ? `${result.tier === 'critical_success' ? '크리티컬 · ' : ''}피해 ${result.damage}` : '빗나감'}`;
+        const text = `${result.enemyId} 반격${result.intent === 'heavy' ? '(강공격)' : ''} 🎲${result.roll} · ${result.hit ? `${result.tier === 'critical_success' ? '크리티컬 · ' : ''}피해 ${result.damage}` : '빗나감'}`;
         chips.push({ ok: true, text });
         resultTexts.push(text);
       }
@@ -453,6 +477,7 @@ async function startCombat(ctx, render) {
     } else {
       const result = runEvent(event);
       const entry = result.entries[0] || { ok: false, reason: 'empty_log' };
+      if (entry.ok) fastCombatLog = []; // 새 전투 시작 = 이전 전투 버퍼 폐기(감사 지적: 세션·전투 간 오염 방지)
       const ignored = parsed.events.length - 1 + parsed.dropped;
       const chips = [{ ok: !!entry.ok, text: summarizeEvent('start_encounter', entry, formatMoney) }];
       if (ignored > 0) chips.push({ ok: false, text: `다른 사건 ${ignored}개 무시됨` });
@@ -484,7 +509,12 @@ async function submitTurn(text, ctx, render) {
       const result = runEvent(event);
       const first = result.entries[0] || { ok: false, reason: 'empty_log' };
       chips.push({ ok: !!first.ok, text: summarizeEvent(event.id, first, formatMoney) });
+      // 빠른 전투 버퍼 수명: 자유 텍스트 경로로 전투가 새로 시작되거나 끝나면 버퍼를 비운다
+      // (이전 전투 로그가 다음 전투 서사에 섞이는 오염 방지 — 감사 지적).
+      if (first.ok && (event.id === 'start_encounter' || event.id === 'end_encounter')) fastCombatLog = [];
     }
+    const combatNow = getEngineState().combat;
+    if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
     messages.push({ role: 'assistant', content: parsed.narrative || raw, chips });
   } catch (err) {
     messages.push({ role: 'assistant', content: safeError(err), chips: [{ ok: false, text: 'API 오류' }] });

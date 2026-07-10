@@ -89,8 +89,8 @@ export function summarizeEvent(type, entry, formatMoney) {
   if (type === 'start_encounter') return `전투 시작 · 적 ${(entry.enemies || []).length}`;
   if (type === 'combat_action') {
     if (entry.action === 'defend') return '방어 태세';
-    if (entry.action === 'flee') return `도주 ${entry.fled ? '성공' : '실패'}`;
-    return `${entry.skill || '공격'} · ${entry.target} ${entry.hit ? (entry.tier === 'critical_success' ? '크리티컬' : '명중') : '빗나감'} · 피해 ${entry.damage}${entry.cleared ? ' · 전멸' : ''}`;
+    if (entry.action === 'flee') return `도주 ${entry.fled ? '성공' : '실패'} 🎲${entry.check.rand}`;
+    return `${entry.skill || '공격'} · ${entry.target} 🎲${entry.roll} ${entry.hit ? (entry.tier === 'critical_success' ? '크리티컬' : '명중') : '빗나감'} · 피해 ${entry.damage}${entry.cleared ? ' · 전멸' : ''}`;
   }
   if (type === 'enemy_action') return `${entry.enemyId} 반격 · ${entry.hit ? `피해 ${entry.damage}` : '회피'}${entry.playerDead ? ' · 플레이어 전투불능' : ''}`;
   if (type === 'end_encounter') return `전투 종료(${entry.outcome}) · EXP +${entry.expGained} · 골드 +${formatMoney(entry.goldGained)}${entry.levelUps && entry.levelUps.length ? ` · Lv.${entry.levelUps.join(',')}` : ''}`;

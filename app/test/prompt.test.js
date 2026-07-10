@@ -80,6 +80,12 @@ test('buildNarrationPrompt fixes engine results and includes flavor text', () =>
   assert.match(prompt.messages.at(-1).content, /플레이어의 연출 의도: 낮게 파고든다/);
 });
 
+test('buildNarrationPrompt adds chronological whole-combat instruction only for long result lists', () => {
+  const base = { schema: hunterSchema, state: createState(hunterSchema), flavorText: '', recentMessages: [] };
+  assert.doesNotMatch(buildNarrationPrompt({ ...base, results: Array(8).fill('결과') }).messages.at(-1).content, /여러 턴의 전투 전체/);
+  assert.match(buildNarrationPrompt({ ...base, results: Array(9).fill('결과') }).messages.at(-1).content, /여러 턴의 전투 전체를 시간순으로 요약/);
+});
+
 test('consumables inject vocabulary and stocked item list while inn stays unchanged', () => {
   const state = createState(hunterSchema);
   const prompt = buildPrompt({ schema: hunterSchema, state, recentMessages: [], userInput: '포션을 쓴다' });
