@@ -206,6 +206,12 @@ function renderCombatConsole(input, ctx, render) {
     skill.addEventListener('click', () => runCombatTurn({ id: 'combat_action', params: { action: 'skill', target: selectedTarget, skill: action.skill } }, input, ctx, render));
     commands.append(skill);
   }
+  for (const action of descriptor.actions.filter((item) => item.type === 'item')) {
+    const item = button(`🧪 ${action.label} ×${action.count} (+${action.amount} ${action.pool.toUpperCase()})`, 'secondary-btn');
+    item.disabled = busy;
+    item.addEventListener('click', () => runCombatTurn({ id: 'use_item', params: { itemId: action.itemId } }, input, ctx, render));
+    commands.append(item);
+  }
   const defend = button('🛡 방어', 'secondary-btn');
   defend.disabled = busy;
   defend.addEventListener('click', () => runCombatTurn({ id: 'combat_action', params: { action: 'defend' } }, input, ctx, render));
@@ -378,7 +384,7 @@ async function runCombatTurn(event, input, ctx, render) {
   const actionResult = runEvent(event);
   appendEventChips(event.id, actionResult.entries, chips, resultTexts);
   const state = getEngineState();
-  if (event.id === 'combat_action' && state.combat && state.combat.active && !state.combat.cleared && !state.combat.fled) {
+  if ((event.id === 'combat_action' || event.id === 'use_item') && state.combat && state.combat.active && !state.combat.cleared && !state.combat.fled) {
     const enemyResult = runEvent({ id: 'enemy_turn', params: {} });
     appendEventChips('enemy_turn', enemyResult.entries, chips, resultTexts);
   }
@@ -420,6 +426,7 @@ function appendEventChips(type, entries, chips, resultTexts) {
       if (entry.playerDead) resultTexts.push('플레이어 전투불능');
       continue;
     }
+    // use_item 칩 포맷은 summarizeEvent(공통)가 담당 — 자유 텍스트·엔진 탭 경로와 표기 일치(감사 지적).
     const text = summarizeEvent(type, entry, formatMoney);
     chips.push({ ok: !!entry.ok, text });
     resultTexts.push(text);

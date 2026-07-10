@@ -9,6 +9,10 @@
     { "id": "mp", "label": "마나", "max": 150 },
     { "id": "sp", "label": "스태미나", "max": 100 }
   ],
+  "resources": [
+    { "id": "health_potion", "label": "체력 포션", "unit": "개", "min": 0, "basePrice": 10000, "effect": { "pool": "hp", "amount": 40 } },
+    { "id": "mana_potion", "label": "마나 포션", "unit": "개", "min": 0, "basePrice": 15000, "effect": { "pool": "mp", "amount": 50 } }
+  ],
   "scales": [
     { "id": "strength", "owner": "player", "range": [1, 99], "default": 12 },
     { "id": "constitution", "owner": "player", "range": [1, 99], "default": 13 },
@@ -34,6 +38,7 @@
   },
   "initialState": {
     "gold": 0,
+    "resources": { "health_potion": 3, "mana_potion": 2 },
     "player": {
       "level": 8,
       "exp": 450,

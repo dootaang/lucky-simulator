@@ -24,6 +24,7 @@ const EVENT_PROMPTS = {
   reputation: `- rep_event {axis, category, reason} — 평판 변동. axis·category는 [평판 카테고리] 목록에서만. (엔진이 변동값 결정)`,
   experience: `- exp_gain {category, reason} — 의미 있는 행동에만, 매 턴 금지. category는 [경험치 카테고리] 목록에서만(목록에 없으면 내지 마라). (엔진이 값 결정)`,
   dayEnd: `- day_end {} — 플레이어가 하루를 마무리할 때 ("오늘은 여기까지", "잠자리에 든다" 등). (엔진: 매출 정산·임금·체크아웃)`,
+  item: `- use_item {itemId} — 소모품 사용. itemId는 [소모품 목록]의 id만. (엔진: 재고 차감 + 회복. 회복량·수치는 쓰지 마라)`,
 };
 
 const EVENT_RULES_HEADER = `[사건 규칙]
@@ -93,12 +94,17 @@ function eventSections(schema) {
   if (ladders.some((ladder) => ladder.id === 'reputation')) sections.push(EVENT_PROMPTS.reputation);
   if (ladders.some((ladder) => ladder.id === 'player_level' && ladder.sources)) sections.push(EVENT_PROMPTS.experience);
   if ((schema.processes || []).some((process) => process.trigger === 'dayEnd')) sections.push(EVENT_PROMPTS.dayEnd);
+  if (hasConsumables(schema)) sections.push(EVENT_PROMPTS.item);
   return sections;
+}
+
+function hasConsumables(schema) {
+  return (schema.resources || []).some((resource) => resource && resource.effect);
 }
 
 function hasSaleCapability(schema) {
   return (schema.entities || []).some((entry) => entry.type === 'menuItem')
-    || (schema.resources || []).some((resource) => resource.basePrice != null);
+    || (schema.resources || []).some((resource) => resource.basePrice != null && !resource.effect);
 }
 
 // 여관형 = 숙박(room)과 메뉴 판매(menuItem)를 둘 다 갖춘 스키마.
@@ -135,6 +141,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   const menuList = menuListText(schema, state);
   const roomList = roomListText(schema);
   const skillList = combatCapable ? skillListText(schema) : '';
+  const itemList = consumableListText(schema, state);
   const loreText = loreContext(lore, recentMessages, userInput);
   const verdictText = formatEngineVerdicts(lastVerdicts);
 
@@ -151,6 +158,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     menuList ? '[메뉴 목록]\n' + menuList + '\n' : '',
     roomList ? '[객실 목록]\n' + roomList + '\n' : '',
     combatCapable && skillList ? '[스킬 목록]\n' + skillList + '\n' : '',
+    itemList ? '[소모품 목록]\n' + itemList + '\n' : '',
     '[세계 정보]',
     loreText || (lore ? '없음' : '카드를 드롭하면 세계관 로어북이 자동 주입됩니다'),
     '',
@@ -172,6 +180,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     npcList: estimateTokens(npcList),
     menuList: estimateTokens(menuList),
     roomList: estimateTokens(roomList),
+    items: estimateTokens(itemList),
     lore: estimateTokens(loreText || ''),
   };
   if (verdictText) injectedParts.verdicts = estimateTokens(verdictText);
@@ -184,7 +193,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     injectedTokens,
     injectedParts,
     relatedNpcIds: npcIds,
-    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, lore: loreText },
+    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, lore: loreText },
   };
 }
 
@@ -274,6 +283,13 @@ function expCategories(schema) {
 
 function npcListText(schema) {
   return npcEntities(schema).map((npc) => `${npc.id}: ${npc.nameKo}${npc.class ? ` (${npc.class})` : ''}`).join('\n');
+}
+
+function consumableListText(schema, state) {
+  return (schema.resources || []).filter((resource) => resource && resource.effect && Number((state.resources && state.resources[resource.id]) || 0) >= 1).map((resource) => {
+    const count = Number(state.resources[resource.id]);
+    return `${resource.id}: ${resource.label || resource.id} ×${count} (+${resource.effect.amount} ${String(resource.effect.pool).toUpperCase()})`;
+  }).join('\n');
 }
 
 // 현재 주방 레벨에서 팔 수 있는 메뉴 이름을 LLM에 정확히 알려준다(sale 이름 불일치 방지).

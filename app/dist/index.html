@@ -5204,7 +5204,17 @@ select:focus { border-color: var(--amber-line); }
           return { type: "skill", skill: id, name: skill.name || id, pool, cost, power: Number(skill.power || 0), affordable: Number(pools[pool] && pools[pool].cur || 0) >= cost };
         });
         const fleeRate = schema2 && schema2.combat && schema2.combat.fleeRate;
-        return { active: true, actions: [{ type: "attack", targets }, ...skills, { type: "defend" }, { type: "flee", rate: fleeRate == null ? 50 : Number(fleeRate) }] };
+        const items = usableItems(schema2, state2).map((item) => ({ type: "item", itemId: item.id, label: item.label, pool: item.pool, amount: item.amount, count: item.count }));
+        return { active: true, actions: [{ type: "attack", targets }, ...skills, ...items, { type: "defend" }, { type: "flee", rate: fleeRate == null ? 50 : Number(fleeRate) }] };
+      }
+      function usableItems(schema2, state2) {
+        return (schema2 && schema2.resources || []).filter((resource) => resource && resource.effect && Number(state2.resources && state2.resources[resource.id] || 0) >= 1).map((resource) => ({
+          id: resource.id,
+          label: resource.label || resource.id,
+          pool: resource.effect.pool,
+          amount: Number(resource.effect.amount),
+          count: Number(state2.resources[resource.id])
+        }));
       }
       function summarize3(schema2, state2) {
         const labels = reputationLabels(schema2);
@@ -5279,7 +5289,7 @@ select:focus { border-color: var(--amber-line); }
       function formatNumber(n) {
         return Number(n || 0).toLocaleString("ko-KR");
       }
-      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, roomStatus: roomStatus2, tierOf, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
+      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, roomStatus: roomStatus2, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
     }
   });
 
@@ -5685,6 +5695,7 @@ select:focus { border-color: var(--amber-line); }
       var { runDayEnd } = require_dayEnd();
       var { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require_combat();
       var { staffMax: staffMax2, tierOf } = require_selectors();
+      var { poolHeal } = require_pools();
       var {
         clone,
         clamp,
@@ -5721,6 +5732,8 @@ select:focus { border-color: var(--amber-line); }
             return gainResource(schema2, next, params, rng2, ok, fail);
           case "resource_delta":
             return resourceDelta(next, params, ok, fail);
+          case "use_item":
+            return useItem(schema2, next, params, ok, fail);
           case "scale_delta":
             return scaleDelta(schema2, next, params, ok, fail);
           case "rep_event":
@@ -5752,6 +5765,23 @@ select:focus { border-color: var(--amber-line); }
           default:
             return fail("unknown_event", `Unknown event id: ${type}`);
         }
+      }
+      function useItem(schema2, state2, params, ok, fail) {
+        if (Object.entries(params).some(([key, value]) => key !== "itemId" && (["amount", "heal", "hp", "mp", "sp"].includes(key) || value !== "" && Number.isFinite(Number(value))))) return fail("item_number_not_allowed");
+        const itemId = params.itemId;
+        const item = (schema2.resources || []).find((resource) => resource.id === itemId && resource.effect);
+        if (!item) return fail("unknown_item", itemId);
+        const count2 = Number(state2.resources && state2.resources[itemId] || 0);
+        if (count2 < 1) return fail("out_of_stock", itemId);
+        if (state2.player && state2.player.dead) return fail("player_dead");
+        const pool = state2.player && state2.player.pools && state2.player.pools[item.effect.pool];
+        if (!pool) return fail("no_pool", item.effect.pool);
+        const before = Number(pool.cur);
+        if (before >= Number(pool.max)) return fail("pool_full", item.effect.pool);
+        const healed = poolHeal(pool, item.effect.amount);
+        state2.player.pools[item.effect.pool] = healed;
+        state2.resources[itemId] = count2 - 1;
+        return ok({ itemId, pool: item.effect.pool, amount: healed.cur - before, before, after: healed.cur, remaining: state2.resources[itemId] });
       }
       function goldDelta(state2, params, ok) {
         const amount = normalizeInt(params.amount);
@@ -6150,7 +6180,8 @@ select:focus { border-color: var(--amber-line); }
         scale: `- scale_delta {scale:"affinity", target:npcId, direction:"+"|"-", size:"S"|"M"|"L"|"XL", reason} \u2014 \uD06C\uAE30\uB9CC \uBD84\uB958. S=\uC0AC\uC18C\uD55C \uBC30\uB824, M=\uAC70\uB9AC \uC881\uD798, L=\uAE4A\uC740 \uC720\uB300, XL=\uAD00\uACC4 \uC804\uD658\uC810. \uD55C NPC\uB2F9 \uD558\uB8E8 1\uD68C.`,
         reputation: `- rep_event {axis, category, reason} \u2014 \uD3C9\uD310 \uBCC0\uB3D9. axis\xB7category\uB294 [\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC. (\uC5D4\uC9C4\uC774 \uBCC0\uB3D9\uAC12 \uACB0\uC815)`,
         experience: `- exp_gain {category, reason} \u2014 \uC758\uBBF8 \uC788\uB294 \uD589\uB3D9\uC5D0\uB9CC, \uB9E4 \uD134 \uAE08\uC9C0. category\uB294 [\uACBD\uD5D8\uCE58 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC(\uBAA9\uB85D\uC5D0 \uC5C6\uC73C\uBA74 \uB0B4\uC9C0 \uB9C8\uB77C). (\uC5D4\uC9C4\uC774 \uAC12 \uACB0\uC815)`,
-        dayEnd: `- day_end {} \u2014 \uD50C\uB808\uC774\uC5B4\uAC00 \uD558\uB8E8\uB97C \uB9C8\uBB34\uB9AC\uD560 \uB54C ("\uC624\uB298\uC740 \uC5EC\uAE30\uAE4C\uC9C0", "\uC7A0\uC790\uB9AC\uC5D0 \uB4E0\uB2E4" \uB4F1). (\uC5D4\uC9C4: \uB9E4\uCD9C \uC815\uC0B0\xB7\uC784\uAE08\xB7\uCCB4\uD06C\uC544\uC6C3)`
+        dayEnd: `- day_end {} \u2014 \uD50C\uB808\uC774\uC5B4\uAC00 \uD558\uB8E8\uB97C \uB9C8\uBB34\uB9AC\uD560 \uB54C ("\uC624\uB298\uC740 \uC5EC\uAE30\uAE4C\uC9C0", "\uC7A0\uC790\uB9AC\uC5D0 \uB4E0\uB2E4" \uB4F1). (\uC5D4\uC9C4: \uB9E4\uCD9C \uC815\uC0B0\xB7\uC784\uAE08\xB7\uCCB4\uD06C\uC544\uC6C3)`,
+        item: `- use_item {itemId} \u2014 \uC18C\uBAA8\uD488 \uC0AC\uC6A9. itemId\uB294 [\uC18C\uBAA8\uD488 \uBAA9\uB85D]\uC758 id\uB9CC. (\uC5D4\uC9C4: \uC7AC\uACE0 \uCC28\uAC10 + \uD68C\uBCF5. \uD68C\uBCF5\uB7C9\xB7\uC218\uCE58\uB294 \uC4F0\uC9C0 \uB9C8\uB77C)`
       };
       var EVENT_RULES_HEADER = `[\uC0AC\uAC74 \uADDC\uCE59]
 - \uC2E4\uC81C\uB85C \uC644\uACB0\uB41C \uC77C\uB9CC. \uC9C4\uD589 \uC911\xB7\uACC4\uD68D\uC740 \uC0AC\uAC74\uC774 \uC544\uB2C8\uB2E4.
@@ -6211,10 +6242,14 @@ select:focus { border-color: var(--amber-line); }
         if (ladders.some((ladder) => ladder.id === "reputation")) sections.push(EVENT_PROMPTS.reputation);
         if (ladders.some((ladder) => ladder.id === "player_level" && ladder.sources)) sections.push(EVENT_PROMPTS.experience);
         if ((schema2.processes || []).some((process) => process.trigger === "dayEnd")) sections.push(EVENT_PROMPTS.dayEnd);
+        if (hasConsumables(schema2)) sections.push(EVENT_PROMPTS.item);
         return sections;
       }
+      function hasConsumables(schema2) {
+        return (schema2.resources || []).some((resource) => resource && resource.effect);
+      }
       function hasSaleCapability(schema2) {
-        return (schema2.entities || []).some((entry) => entry.type === "menuItem") || (schema2.resources || []).some((resource) => resource.basePrice != null);
+        return (schema2.entities || []).some((entry) => entry.type === "menuItem") || (schema2.resources || []).some((resource) => resource.basePrice != null && !resource.effect);
       }
       function isInnLike(schema2) {
         const types = new Set((schema2.entities || []).map((entry) => entry.type));
@@ -6243,6 +6278,7 @@ ${lines.join("\n")}`;
         const menuList = menuListText(schema2, state2);
         const roomList = roomListText(schema2);
         const skillList = combatCapable ? skillListText(schema2) : "";
+        const itemList = consumableListText(schema2, state2);
         const loreText = loreContext(lore, recentMessages, userInput);
         const verdictText = formatEngineVerdicts(lastVerdicts);
         const context = [
@@ -6258,6 +6294,7 @@ ${lines.join("\n")}`;
           menuList ? "[\uBA54\uB274 \uBAA9\uB85D]\n" + menuList + "\n" : "",
           roomList ? "[\uAC1D\uC2E4 \uBAA9\uB85D]\n" + roomList + "\n" : "",
           combatCapable && skillList ? "[\uC2A4\uD0AC \uBAA9\uB85D]\n" + skillList + "\n" : "",
+          itemList ? "[\uC18C\uBAA8\uD488 \uBAA9\uB85D]\n" + itemList + "\n" : "",
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -6277,6 +6314,7 @@ ${lines.join("\n")}`;
           npcList: estimateTokens2(npcList),
           menuList: estimateTokens2(menuList),
           roomList: estimateTokens2(roomList),
+          items: estimateTokens2(itemList),
           lore: estimateTokens2(loreText || "")
         };
         if (verdictText) injectedParts.verdicts = estimateTokens2(verdictText);
@@ -6288,7 +6326,7 @@ ${lines.join("\n")}`;
           injectedTokens,
           injectedParts,
           relatedNpcIds: npcIds,
-          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, lore: loreText }
+          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, lore: loreText }
         };
       }
       function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages }) {
@@ -6360,6 +6398,12 @@ ${lines.join("\n")}`;
       }
       function npcListText(schema2) {
         return npcEntities(schema2).map((npc) => `${npc.id}: ${npc.nameKo}${npc.class ? ` (${npc.class})` : ""}`).join("\n");
+      }
+      function consumableListText(schema2, state2) {
+        return (schema2.resources || []).filter((resource) => resource && resource.effect && Number(state2.resources && state2.resources[resource.id] || 0) >= 1).map((resource) => {
+          const count2 = Number(state2.resources[resource.id]);
+          return `${resource.id}: ${resource.label || resource.id} \xD7${count2} (+${resource.effect.amount} ${String(resource.effect.pool).toUpperCase()})`;
+        }).join("\n");
       }
       function menuListText(schema2, state2) {
         const block = (schema2.entities || []).find((entry) => entry.type === "menuItem");
@@ -6838,6 +6882,7 @@ ${row3.entry.content}`).join("\n\n");
 
 [\uC804\uD22C \uBCC0\uD658 \uADDC\uCE59]
 \u2605HP/MP/SP\xB7\uC2A4\uD0DC\uBBF8\uB098\uCC98\uB7FC \uC18C\uBAA8\xB7\uD68C\uBCF5\uB418\uB294 \uC790\uC6D0\uC740 scales\uAC00 \uC544\uB2C8\uB77C pools\uB2E4. max\uAC00 \uACF5\uC2DD(\uC608: CON\xD710)\uC774\uBA74 \uCD08\uAE30 \uC2A4\uD0EF\uC73C\uB85C \uACC4\uC0B0\uD55C \uAC12\uC744 pools.max\uC5D0 \uB123\uACE0 \uACF5\uC2DD\uC740 formulas\uC5D0 \uBCF4\uC874\uD558\uBA70 \uACC4\uC0B0 \uADFC\uAC70\uB97C _assumptions\uC5D0 \uAE30\uB85D\uD55C\uB2E4.
+\uD3EC\uC158\xB7\uD68C\uBCF5\uC57D\xB7\uC5D8\uB9AD\uC11C\uCC98\uB7FC \uC18C\uBAA8\uD558\uBA74 HP/MP/SP\uB97C \uD68C\uBCF5\uD558\uB294 \uD488\uBAA9\uC740 resources\uC5D0 "effect":{"pool":"hp","amount":\uC815\uC218}\uB97C \uBD99\uC5EC\uB77C. \uD68C\uBCF5\uB7C9\uC774 \uB8F0\uBD81\uC5D0 \uC5C6\uC73C\uBA74 \uD574\uB2F9 \uD480 \uCD5C\uB300\uCE58\uC758 30% \uC218\uC900\uC73C\uB85C \uC815\uD558\uACE0 _assumptions\uC5D0 \uAE30\uB85D\uD558\uB77C.
 combat \uD310\uC815\uAC12\uC774 \uB8F0\uBD81\uC5D0 \uC5C6\uC73C\uBA74 \uC5D4\uC9C4 \uAE30\uBCF8\uAC12 d=20, minDamage=1, critMult=2, guardMult=0.5, fleeRate=50\uC744 \uC0AC\uC6A9\uD558\uACE0 _assumptions\uC5D0 \uAE30\uB85D\uD55C\uB2E4. \uAC01 \uD544\uB4DC\uC758 \uC758\uBBF8\uB294 \uD310\uC815 \uC8FC\uC0AC\uC704 \uBA74\uC218, \uCD5C\uC18C \uD53C\uD574, \uCE58\uBA85\uD0C0 \uD53C\uD574 \uBC30\uC218, \uBC29\uC5B4 \uD53C\uD574 \uBC30\uC218, \uB3C4\uC8FC \uC131\uACF5\uB960\uC774\uB2E4. expTable\uACFC lootGold\uB294 \uBAAC\uC2A4\uD130/\uAC8C\uC774\uD2B8 \uB7AD\uD06C\uBCC4 \uACBD\uD5D8\uCE58\xB7\uC804\uB9AC\uD488 \uACE8\uB4DC \uBC94\uC704\uD45C\uC774\uBA70, \uB8F0\uBD81\uC5D0 \uC5C6\uC73C\uBA74 rewards.gold \uADDC\uBAA8\uC5D0 \uB9DE\uCDB0 \uCD94\uC815\uD558\uACE0 \uAE30\uB85D\uD55C\uB2E4.
 skills\uC5D0\uB294 \uB8F0\uBD81\uC5D0 \uC774\uB984\uACFC \uCF54\uC2A4\uD2B8\xB7\uC704\uB825\uC774 \uBA85\uC2DC\uB41C \uC2A4\uD0AC\uB9CC \uB123\uB294\uB2E4. \uC5C6\uC73C\uBA74 \uBE48 \uAC1D\uCCB4 \uB610\uB294 \uC0DD\uB7B5\uD55C\uB2E4. "acc"\uB294 \uBA85\uC911\uB960 %\uAC00 \uC544\uB2C8\uB77C d20 \uAD74\uB9BC\uC5D0 \uB354\uD558\uB294 \uBCF4\uC815\uCE58\uB2E4(-5~+5 \uAD8C\uC7A5, \uCD5C\uB300 \xB115). \uBA85\uC911\uB960 \uAC1C\uB150\uC740 \uB123\uC9C0 \uB9C8\uB77C.
 \uC804\uD22C \uCE74\uB4DC\uC758 initialState.player\uC5D0\uB294 "pools":{"hp":{"cur":\uC815\uC218,"max":\uC815\uC218}} \uD615\uD0DC\uB85C \uAC01 \uC790\uC6D0\uC744 \uB123\uACE0 atk/def/evade/acc\uB97C \uB123\uB294\uB2E4. \uB8F0\uBD81 \uADFC\uAC70\uAC00 \uC5C6\uC73C\uBA74 \uAC01\uAC01 5/0/10/0\uC744 \uC0AC\uC6A9\uD558\uACE0 _assumptions\uC5D0 \uAE30\uB85D\uD55C\uB2E4.`;
@@ -7731,6 +7776,17 @@ ${row3.content}`;
           if (!isObject(resource)) return error(issues, path, "Resource must be an object.");
           for (const key of ["id", "unit", "min"]) requireField(resource, key, `${path}.${key}`, issues);
           duplicate(ids, resource.id, `${path}.id`, issues);
+          if (resource.effect != null) {
+            const effect = resource.effect;
+            const validPool = isObject(effect) && ["hp", "mp", "sp"].includes(effect.pool);
+            const amount = isObject(effect) ? Number(effect.amount) : NaN;
+            if (!validPool || !Number.isInteger(amount) || amount <= 0) {
+              warn(issues, `${path}.effect`, "Effect must have pool hp, mp, or sp and a positive integer amount; removed.");
+              delete resource.effect;
+            } else {
+              effect.amount = amount;
+            }
+          }
         });
       }
       function validateScales(schema2, issues) {
@@ -8029,6 +8085,10 @@ ${row3.content}`;
           { id: "mp", label: "\uB9C8\uB098", max: 150 },
           { id: "sp", label: "\uC2A4\uD0DC\uBBF8\uB098", max: 100 }
         ],
+        resources: [
+          { id: "health_potion", label: "\uCCB4\uB825 \uD3EC\uC158", unit: "\uAC1C", min: 0, basePrice: 1e4, effect: { pool: "hp", amount: 40 } },
+          { id: "mana_potion", label: "\uB9C8\uB098 \uD3EC\uC158", unit: "\uAC1C", min: 0, basePrice: 15e3, effect: { pool: "mp", amount: 50 } }
+        ],
         scales: [
           { id: "strength", owner: "player", range: [1, 99], default: 12 },
           { id: "constitution", owner: "player", range: [1, 99], default: 13 },
@@ -8054,6 +8114,7 @@ ${row3.content}`;
         },
         initialState: {
           gold: 0,
+          resources: { health_potion: 3, mana_potion: 2 },
           player: {
             level: 8,
             exp: 450,
@@ -8681,9 +8742,11 @@ ${Array.from(extras).join(" ")}` : text;
     "reward",
     "gold_delta",
     "resource_delta",
+    "use_item",
     "start_encounter",
     "combat_action",
     "enemy_action",
+    "enemy_turn",
     "end_encounter",
     "day_end"
   ];
@@ -8723,6 +8786,10 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function summarizeEvent(type, entry, formatMoney3) {
+    if (entry.ok && type === "use_item") {
+      const def = (activeSchema && activeSchema.resources || []).find((resource) => resource.id === entry.itemId);
+      return `\u{1F9EA} ${def && def.label || entry.itemId} \xB7 ${String(entry.pool).toUpperCase()} +${entry.amount} (\uB0A8\uC740 ${entry.remaining})`;
+    }
     if (entry.ok && type === "reward") return `reward \xB7 ${entry.tier} \xB7 gold +${formatMoney3(entry.goldDelta)}`;
     if (entry.ok && type === "upgrade") return `upgrade \xB7 ${entry.facility} Lv.${entry.level} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}`;
     if (entry.ok && type === "gain_resource") return `gain \xB7 ${entry.resource} +${entry.qty} (${entry.scale})`;
@@ -9423,6 +9490,12 @@ ${Array.from(extras).join(" ")}` : text;
       skill.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "skill", target: selectedTarget, skill: action.skill } }, input2, ctx, render2));
       commands.append(skill);
     }
+    for (const action of descriptor.actions.filter((item) => item.type === "item")) {
+      const item = button2(`\u{1F9EA} ${action.label} \xD7${action.count} (+${action.amount} ${action.pool.toUpperCase()})`, "secondary-btn");
+      item.disabled = busy;
+      item.addEventListener("click", () => runCombatTurn({ id: "use_item", params: { itemId: action.itemId } }, input2, ctx, render2));
+      commands.append(item);
+    }
     const defend = button2("\u{1F6E1} \uBC29\uC5B4", "secondary-btn");
     defend.disabled = busy;
     defend.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "defend" } }, input2, ctx, render2));
@@ -9566,7 +9639,7 @@ ${Array.from(extras).join(" ")}` : text;
     const actionResult = runEvent(event);
     appendEventChips(event.id, actionResult.entries, chips, resultTexts);
     const state2 = getEngineState();
-    if (event.id === "combat_action" && state2.combat && state2.combat.active && !state2.combat.cleared && !state2.combat.fled) {
+    if ((event.id === "combat_action" || event.id === "use_item") && state2.combat && state2.combat.active && !state2.combat.cleared && !state2.combat.fled) {
       const enemyResult = runEvent({ id: "enemy_turn", params: {} });
       appendEventChips("enemy_turn", enemyResult.entries, chips, resultTexts);
     }

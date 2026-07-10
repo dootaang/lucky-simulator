@@ -76,3 +76,15 @@ test('skill acc outside d20 modifier range resets to zero while valid acc stays'
   assert.equal(result.schema.skills.valid.acc, 5);
   assert.ok(result.issues.some((issue) => issue.level === 'warn' && issue.path === 'skills.percentLike.acc'));
 });
+
+test('resource effects normalize valid amounts and remove invalid effects', () => {
+  const result = validateSchema(base({ resources: [
+    { id: 'ok', unit: '개', min: 0, effect: { pool: 'hp', amount: '40' } },
+    { id: 'bad-pool', unit: '개', min: 0, effect: { pool: 'gold', amount: 10 } },
+    { id: 'bad-amount', unit: '개', min: 0, effect: { pool: 'mp', amount: 0 } },
+  ] }));
+  assert.deepEqual(result.schema.resources[0].effect, { pool: 'hp', amount: 40 });
+  assert.equal(result.schema.resources[1].effect, undefined);
+  assert.equal(result.schema.resources[2].effect, undefined);
+  assert.equal(result.issues.filter((issue) => issue.path.endsWith('.effect')).length, 2);
+});

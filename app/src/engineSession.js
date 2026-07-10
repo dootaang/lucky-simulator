@@ -25,9 +25,11 @@ export const eventTypes = [
   'reward',
   'gold_delta',
   'resource_delta',
+  'use_item',
   'start_encounter',
   'combat_action',
   'enemy_action',
+  'enemy_turn',
   'end_encounter',
   'day_end',
 ];
@@ -76,6 +78,10 @@ export function runEvent(event) {
 }
 
 export function summarizeEvent(type, entry, formatMoney) {
+  if (entry.ok && type === 'use_item') {
+    const def = ((activeSchema && activeSchema.resources) || []).find((resource) => resource.id === entry.itemId);
+    return `🧪 ${(def && def.label) || entry.itemId} · ${String(entry.pool).toUpperCase()} +${entry.amount} (남은 ${entry.remaining})`;
+  }
   if (entry.ok && type === 'reward') return `reward · ${entry.tier} · gold +${formatMoney(entry.goldDelta)}`;
   if (entry.ok && type === 'upgrade') return `upgrade · ${entry.facility} Lv.${entry.level} · gold ${entry.goldDelta >= 0 ? '+' : ''}${formatMoney(entry.goldDelta)}`;
   if (entry.ok && type === 'gain_resource') return `gain · ${entry.resource} +${entry.qty} (${entry.scale})`;

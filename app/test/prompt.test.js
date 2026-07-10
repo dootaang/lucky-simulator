@@ -79,3 +79,14 @@ test('buildNarrationPrompt fixes engine results and includes flavor text', () =>
   assert.match(prompt.messages.at(-1).content, /공격 · e1 명중 · 피해 12/);
   assert.match(prompt.messages.at(-1).content, /플레이어의 연출 의도: 낮게 파고든다/);
 });
+
+test('consumables inject vocabulary and stocked item list while inn stays unchanged', () => {
+  const state = createState(hunterSchema);
+  const prompt = buildPrompt({ schema: hunterSchema, state, recentMessages: [], userInput: '포션을 쓴다' });
+  assert.match(prompt.system, /use_item \{itemId\}/);
+  assert.match(prompt.messages.at(-1).content, /\[소모품 목록\]/);
+  assert.match(prompt.messages.at(-1).content, /health_potion: 체력 포션 ×3 \(\+40 HP\)/);
+  assert.ok(prompt.injectedParts.items > 0);
+  assert.doesNotMatch(buildSystemPrompt(innSchema), /use_item/);
+  assert.doesNotMatch(buildPrompt({ schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '쉰다' }).messages.at(-1).content, /\[소모품 목록\]/);
+});

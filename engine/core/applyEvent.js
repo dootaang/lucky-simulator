@@ -3,6 +3,7 @@
 const { runDayEnd } = require('./dayEnd.js');
 const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require('./combat.js');
 const { staffMax, tierOf } = require('./selectors.js');
+const { poolHeal } = require('./pools.js');
 const {
   clone,
   clamp,
@@ -42,6 +43,8 @@ function applyEvent(schema, state, event, rng) {
       return gainResource(schema, next, params, rng, ok, fail);
     case 'resource_delta':
       return resourceDelta(next, params, ok, fail);
+    case 'use_item':
+      return useItem(schema, next, params, ok, fail);
     case 'scale_delta':
       return scaleDelta(schema, next, params, ok, fail);
     case 'rep_event':
@@ -73,6 +76,24 @@ function applyEvent(schema, state, event, rng) {
     default:
       return fail('unknown_event', `Unknown event id: ${type}`);
   }
+}
+
+function useItem(schema, state, params, ok, fail) {
+  if (Object.entries(params).some(([key, value]) => key !== 'itemId' && (['amount', 'heal', 'hp', 'mp', 'sp'].includes(key) || (value !== '' && Number.isFinite(Number(value)))))) return fail('item_number_not_allowed');
+  const itemId = params.itemId;
+  const item = (schema.resources || []).find((resource) => resource.id === itemId && resource.effect);
+  if (!item) return fail('unknown_item', itemId);
+  const count = Number((state.resources && state.resources[itemId]) || 0);
+  if (count < 1) return fail('out_of_stock', itemId);
+  if (state.player && state.player.dead) return fail('player_dead');
+  const pool = state.player && state.player.pools && state.player.pools[item.effect.pool];
+  if (!pool) return fail('no_pool', item.effect.pool);
+  const before = Number(pool.cur);
+  if (before >= Number(pool.max)) return fail('pool_full', item.effect.pool);
+  const healed = poolHeal(pool, item.effect.amount);
+  state.player.pools[item.effect.pool] = healed;
+  state.resources[itemId] = count - 1;
+  return ok({ itemId, pool: item.effect.pool, amount: healed.cur - before, before, after: healed.cur, remaining: state.resources[itemId] });
 }
 
 function goldDelta(state, params, ok) {

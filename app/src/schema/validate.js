@@ -213,6 +213,17 @@ function validateResources(schema, issues) {
     if (!isObject(resource)) return error(issues, path, 'Resource must be an object.');
     for (const key of ['id', 'unit', 'min']) requireField(resource, key, `${path}.${key}`, issues);
     duplicate(ids, resource.id, `${path}.id`, issues);
+    if (resource.effect != null) {
+      const effect = resource.effect;
+      const validPool = isObject(effect) && ['hp', 'mp', 'sp'].includes(effect.pool);
+      const amount = isObject(effect) ? Number(effect.amount) : NaN;
+      if (!validPool || !Number.isInteger(amount) || amount <= 0) {
+        warn(issues, `${path}.effect`, 'Effect must have pool hp, mp, or sp and a positive integer amount; removed.');
+        delete resource.effect;
+      } else {
+        effect.amount = amount;
+      }
+    }
   });
 }
 

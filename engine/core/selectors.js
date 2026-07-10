@@ -56,7 +56,18 @@ function availableActions(schema, state) {
     return { type: 'skill', skill: id, name: skill.name || id, pool, cost, power: Number(skill.power || 0), affordable: Number((pools[pool] && pools[pool].cur) || 0) >= cost };
   });
   const fleeRate = schema && schema.combat && schema.combat.fleeRate;
-  return { active: true, actions: [{ type: 'attack', targets }, ...skills, { type: 'defend' }, { type: 'flee', rate: fleeRate == null ? 50 : Number(fleeRate) }] };
+  const items = usableItems(schema, state).map((item) => ({ type: 'item', itemId: item.id, label: item.label, pool: item.pool, amount: item.amount, count: item.count }));
+  return { active: true, actions: [{ type: 'attack', targets }, ...skills, ...items, { type: 'defend' }, { type: 'flee', rate: fleeRate == null ? 50 : Number(fleeRate) }] };
+}
+
+function usableItems(schema, state) {
+  return ((schema && schema.resources) || []).filter((resource) => resource && resource.effect && Number((state.resources && state.resources[resource.id]) || 0) >= 1).map((resource) => ({
+    id: resource.id,
+    label: resource.label || resource.id,
+    pool: resource.effect.pool,
+    amount: Number(resource.effect.amount),
+    count: Number(state.resources[resource.id]),
+  }));
 }
 
 function summarize(schema, state) {
@@ -147,4 +158,4 @@ function formatNumber(n) {
   return Number(n || 0).toLocaleString('ko-KR');
 }
 
-module.exports = { staffMax, availableMenu, roomStatus, tierOf, availableActions, summarize, npcSummary, rankWeight };
+module.exports = { staffMax, availableMenu, roomStatus, tierOf, usableItems, availableActions, summarize, npcSummary, rankWeight };
