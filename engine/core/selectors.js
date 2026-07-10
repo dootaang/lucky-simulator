@@ -45,22 +45,29 @@ function summarize(schema, state) {
   const facilities = state.facilities || {};
   const resources = state.resources || {};
   const lines = [];
-  lines.push(`[여관] ${state.day}일차 · 골드 ${formatNumber(state.gold)}원 · 식자재 ${resources.food || 0}인분 · 주류 ${resources.drink || 0}잔 · 시설 주점${facilities.tavern || 0}/주방${facilities.kitchen || 0}/객실${facilities.room || 0}/숙소${facilities.quarters || 0}`);
+  const innLike = (schema.entities || []).some((entry) => entry.type === 'menuItem' || entry.type === 'room');
+  if (innLike) {
+    lines.push(`[여관] ${state.day}일차 · 골드 ${formatNumber(state.gold)}원 · 식자재 ${resources.food || 0}인분 · 주류 ${resources.drink || 0}잔 · 시설 주점${facilities.tavern || 0}/주방${facilities.kitchen || 0}/객실${facilities.room || 0}/숙소${facilities.quarters || 0}`);
 
-  const staff = (state.staff || []).map((item) => {
-    const npc = entityList(schema, 'npc').find((entry) => entry.id === item.npcId);
-    return `${(npc && npc.nameKo) || item.npcId}(일급 ${formatNumber(item.dailyWage)})`;
-  });
-  lines.push(`[직원] ${staff.length ? staff.join(', ') : '없음'}`);
+    const staff = (state.staff || []).map((item) => {
+      const npc = entityList(schema, 'npc').find((entry) => entry.id === item.npcId);
+      return `${(npc && npc.nameKo) || item.npcId}(일급 ${formatNumber(item.dailyWage)})`;
+    });
+    lines.push(`[직원] ${staff.length ? staff.join(', ') : '없음'}`);
 
-  const occupied = [];
-  for (const status of roomStatus(schema, state)) {
-    for (const guest of status.occupants) occupied.push(`${status.no}호 ${guest.guestName}(${guest.nightsLeft}박 남음)`);
+    const occupied = [];
+    for (const status of roomStatus(schema, state)) {
+      for (const guest of status.occupants) occupied.push(`${status.no}호 ${guest.guestName}(${guest.nightsLeft}박 남음)`);
+    }
+    lines.push(`[객실] ${occupied.length ? occupied.join(' · ') + ' · 나머지 공실' : '전 객실 공실'}`);
+  } else if (Number(state.gold || 0) !== 0 || Object.keys(resources).length > 0) {
+    lines.push(`[자원] 골드 ${formatNumber(state.gold)}원`);
   }
-  lines.push(`[객실] ${occupied.length ? occupied.join(' · ') + ' · 나머지 공실' : '전 객실 공실'}`);
 
-  const repParts = Object.entries(state.reputation || {}).map(([axis, rep]) => `${labels[axis] || axis} ${rep.rank}(${rep.exp})`);
-  lines.push(`[평판] ${repParts.join(' · ')}`);
+  if (ladderById(schema, 'reputation')) {
+    const repParts = Object.entries(state.reputation || {}).map(([axis, rep]) => `${labels[axis] || axis} ${rep.rank}(${rep.exp})`);
+    lines.push(`[평판] ${repParts.join(' · ')}`);
+  }
 
   const player = state.player || {};
   if (player.pools) {

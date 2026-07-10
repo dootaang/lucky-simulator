@@ -278,7 +278,8 @@ async function submitTurn(text, ctx, render) {
   render();
   try {
     const schema = getSchema();
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text });
+    const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === 'assistant');
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
