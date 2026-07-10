@@ -124,29 +124,47 @@ function enemyAction(schema, state, params, rng, ok, fail) {
   if (!enemy) return fail('unknown_enemy', params.enemyId);
   if (enemy.dead) return fail('enemy_dead', enemy.id);
 
+  const skill = params.skill ? (schema.skills || {})[params.skill] : null;
+  const result = resolveEnemyAttack(schema, state, enemy, skill, rng);
+  combat.guard = false; // 기존 enemy_action 의미: 시도 1회에 소모
+  return ok(Object.assign({
+    enemyId: enemy.id, action: params.action || 'attack', skill: params.skill || null,
+  }, result));
+}
+
+function enemyTurn(schema, state, params, rng, ok, fail) {
+  const combat = state.combat;
+  if (!combat) return fail('no_encounter');
+  if (combat.cleared || combat.fled) return ok({ results: [], playerHp: normalizePool(state.player.pools && state.player.pools.hp), playerDead: !!state.player.dead });
+  if (!combat.active) return fail('no_encounter');
+  const results = [];
+  for (const enemy of combat.enemies || []) {
+    if (enemy.dead || Number(enemy.hp && enemy.hp.cur) <= 0) continue;
+    const result = resolveEnemyAttack(schema, state, enemy, null, rng);
+    results.push({ enemyId: enemy.id, hit: result.hit, tier: result.tier, roll: result.roll, damage: result.damage });
+    if (result.hit) combat.guard = false; // 첫 피격이 방어를 소모(반감은 1회만)
+    if (result.playerDead) break;
+  }
+  // 방어는 이번 적 턴까지만 유효 — 전원이 빗나가도 다음 턴으로 이월되지 않는다(감사 지적: 영구 방어 악용 방지).
+  combat.guard = false;
+  return ok({ results, playerHp: normalizePool(state.player.pools && state.player.pools.hp), playerDead: !!state.player.dead });
+}
+
+function resolveEnemyAttack(schema, state, enemy, skill, rng) {
+  const combat = state.combat;
   const cfg = combatConfig(schema);
   const pc = playerCombat(state);
-  const skill = params.skill ? (schema.skills || {})[params.skill] : null;
-  const skillPower = intOr(skill && skill.power, 0);
-  const skillAcc = intOr(skill && skill.acc, 0);
-
-  const hit = resolveCheck(rng, { mode: 'dc', sides: cfg.d, dc: pc.evade, mod: enemy.acc + skillAcc });
-  let dmg = 0;
+  const hit = resolveCheck(rng, { mode: 'dc', sides: cfg.d, dc: pc.evade, mod: enemy.acc + intOr(skill && skill.acc, 0) });
+  let damage = 0;
   if (hit.success) {
-    dmg = Math.max(cfg.minDamage, enemy.atk + skillPower - pc.def);
-    if (hit.tier === 'critical_success') dmg = Math.round(dmg * cfg.critMult);
-    if (combat.guard) dmg = Math.max(0, Math.floor(dmg * cfg.guardMult));
+    damage = Math.max(cfg.minDamage, enemy.atk + intOr(skill && skill.power, 0) - pc.def);
+    if (hit.tier === 'critical_success') damage = Math.round(damage * cfg.critMult);
+    if (combat.guard) damage = Math.max(0, Math.floor(damage * cfg.guardMult));
     const hp = (state.player.pools && state.player.pools.hp) || { cur: 0, max: 0 };
-    state.player.pools.hp = poolDamage(hp, dmg);
+    state.player.pools.hp = poolDamage(hp, damage);
     if (isDead(state.player.pools.hp)) state.player.dead = true;
   }
-  combat.guard = false; // 방어는 1회 소모
-
-  return ok({
-    enemyId: enemy.id, action: params.action || 'attack', skill: params.skill || null,
-    hit: hit.success, tier: hit.tier, roll: hit.rand, damage: dmg,
-    playerHp: normalizePool(state.player.pools && state.player.pools.hp), playerDead: !!state.player.dead,
-  });
+  return { hit: hit.success, tier: hit.tier, roll: hit.rand, damage, playerHp: normalizePool(state.player.pools && state.player.pools.hp), playerDead: !!state.player.dead };
 }
 
 function endEncounter(schema, state, params, rng, ok, fail) {
@@ -216,4 +234,4 @@ function numOr(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-module.exports = { startEncounter, combatAction, enemyAction, endEncounter };
+module.exports = { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter };

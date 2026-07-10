@@ -188,6 +188,33 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   };
 }
 
+function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages }) {
+  const stateText = summarize(schema, state);
+  const combatLine = stateText.split('\n').find((line) => line.startsWith('[전투]')) || '[전투] 종료됨';
+  const resultText = (results || []).map((result) => typeof result === 'string' ? result : String((result && result.text) || '')).filter(Boolean).join('\n');
+  const context = [
+    '[확정된 전투 결과]',
+    resultText || '변화 없음',
+    '',
+    combatLine,
+    flavorText ? `플레이어의 연출 의도: ${flavorText}` : '',
+  ].filter(Boolean).join('\n');
+  const messages = (recentMessages || []).slice(-4).map((message) => ({
+    role: message.role === 'assistant' ? 'assistant' : 'user',
+    content: String(message.content || ''),
+  }));
+  messages.push({ role: 'user', content: context });
+  const injectedParts = { state: estimateTokens(combatLine), results: estimateTokens(resultText), flavor: estimateTokens(flavorText || '') };
+  return {
+    system: buildSystemPrompt(schema).split('\n\n[절대 규칙]')[0] + '\n\n아래 [확정된 전투 결과]는 엔진이 이미 계산·반영한 사실이다. 이 수치·생사를 그대로 따라 한국어로 짧게(250자 내외) 서사화하라. 결과를 바꾸거나 새 사건 JSON을 내지 마라.',
+    messages,
+    injectedTokens: Object.values(injectedParts).reduce((sum, value) => sum + value, 0),
+    injectedParts,
+    relatedNpcIds: [],
+    injectedText: { state: combatLine, results: resultText, flavorText: flavorText || '' },
+  };
+}
+
 function parseAssistantResponse(text) {
   const source = String(text || '');
   const blocks = Array.from(source.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
@@ -307,4 +334,4 @@ function npcEntities(schema) {
   return block && Array.isArray(block.instances) ? block.instances : [];
 }
 
-module.exports = { SYSTEM_PROMPT, buildSystemPrompt, formatEngineVerdicts, buildPrompt, parseAssistantResponse };
+module.exports = { SYSTEM_PROMPT, buildSystemPrompt, formatEngineVerdicts, buildPrompt, buildNarrationPrompt, parseAssistantResponse };

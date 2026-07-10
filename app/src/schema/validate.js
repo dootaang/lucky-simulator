@@ -162,6 +162,10 @@ function validateSkills(schema, issues) {
         skill[key] = 0;
       } else skill[key] = value;
     }
+    if (Math.abs(skill.acc) > 15) {
+      warn(issues, `${path}.acc`, 'acc는 d20 보정(-15~+15)이어야 함. %로 보임 → 0으로 재설정');
+      skill.acc = 0;
+    }
     if (!['mp', 'sp', 'hp'].includes(skill.pool)) {
       warn(issues, `${path}.pool`, 'Skill pool must be mp, sp, or hp; defaulted to mp.');
       skill.pool = 'mp';
@@ -285,7 +289,17 @@ function validateLadders(schema, issues) {
       // thresholds는 선택 — 룰북에 레벨 문턱이 없으면 null이 정상(엔진은 thresholds||[]로 처리).
       // null/없으면 검수에서 채우도록 경고만, 있으면 배열이어야.
       if (ladder.thresholds == null) warn(issues, `${path}.thresholds`, '레벨업 문턱이 미정입니다 — 검수에서 채우거나, 비워두면 레벨업이 비활성됩니다.');
-      else requireArray(ladder.thresholds, `${path}.thresholds`, issues);
+      else if (requireArray(ladder.thresholds, `${path}.thresholds`, issues)) {
+        const normalized = [];
+        for (const value of ladder.thresholds) {
+          const n = Number(value);
+          if (Number.isFinite(n) && n > 0 && (!normalized.length || n > normalized[normalized.length - 1])) normalized.push(n);
+        }
+        if (normalized.length !== ladder.thresholds.length || normalized.some((value, i) => value !== ladder.thresholds[i])) {
+          warn(issues, `${path}.thresholds`, '0 이하·비정상·비증가 레벨 문턱을 제거했습니다.');
+          ladder.thresholds = normalized;
+        }
+      }
       if (!isObject(ladder.sources)) error(issues, `${path}.sources`, 'sources must be an object.');
     }
     if (ladder.id === 'reputation') {

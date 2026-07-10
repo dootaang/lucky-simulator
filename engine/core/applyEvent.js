@@ -1,7 +1,7 @@
 'use strict';
 
 const { runDayEnd } = require('./dayEnd.js');
-const { startEncounter, combatAction, enemyAction, endEncounter } = require('./combat.js');
+const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require('./combat.js');
 const { staffMax, tierOf } = require('./selectors.js');
 const {
   clone,
@@ -66,6 +66,8 @@ function applyEvent(schema, state, event, rng) {
       return combatAction(schema, next, params, rng, ok, fail);
     case 'enemy_action':
       return enemyAction(schema, next, params, rng, ok, fail);
+    case 'enemy_turn':
+      return enemyTurn(schema, next, params, rng, ok, fail);
     case 'end_encounter':
       return endEncounter(schema, next, params, rng, ok, fail);
     default:

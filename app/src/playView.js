@@ -1,6 +1,6 @@
-const { summarize, npcSummary } = require('../../engine/core/selectors.js');
+const { summarize, npcSummary, availableActions } = require('../../engine/core/selectors.js');
 const { estimateTokens, estimateLorebookTokens } = require('../core/lorebook/tokens.js');
-const { buildPrompt, parseAssistantResponse } = require('./llm/prompt.js');
+const { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('./llm/prompt.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
 const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
@@ -10,6 +10,7 @@ let messages = [];
 let busy = false;
 let settings = loadSettings();
 let lastPrompt = null;
+let selectedTarget = null;
 
 export function renderPlayView(container, ctx) {
   registerCustomOrigin(settings);
@@ -50,7 +51,9 @@ function renderChat(ctx, render) {
     else fallbackCopy(text, done);
   });
   const clear = button('대화 초기화', 'secondary-btn');
+  clear.disabled = busy; // 비동기 응답 대기 중 초기화하면 pending 참조가 끊긴다(감사 지적)
   clear.addEventListener('click', () => {
+    if (busy) return;
     messages = [];
     lastPrompt = null;
     render();
@@ -95,7 +98,7 @@ function renderChat(ctx, render) {
     await submitTurn(text, ctx, render);
   });
 
-  panel.append(header, list, form);
+  panel.append(header, list, renderCombatConsole(input, ctx, render), form);
   return panel;
 }
 
@@ -118,8 +121,94 @@ function renderMessage(message) {
 
 function renderSide(ctx, render) {
   const side = el('aside', 'play-side-panel');
+  const hud = renderCombatHud();
+  if (hud) side.append(hud);
   side.append(renderSettings(render), renderStateBox(), renderTokenBox(ctx));
   return side;
+}
+
+function renderCombatHud() {
+  const state = getEngineState();
+  const combat = state.combat;
+  if (!combat || !combat.active) return null;
+  const section = titled('전투 HUD');
+  for (const enemy of combat.enemies || []) {
+    section.append(combatGauge(`${enemy.name}${enemy.rank ? ` · ${enemy.rank}` : ''}`, enemy.hp, enemy.dead ? '전투불능' : ''));
+  }
+  const pools = (state.player && state.player.pools) || {};
+  for (const id of ['hp', 'mp', 'sp']) if (pools[id]) section.append(combatGauge(id.toUpperCase(), pools[id], ''));
+  return section;
+}
+
+function combatGauge(label, pool, status) {
+  const wrap = el('div', 'combat-gauge');
+  const head = el('div', 'combat-gauge-head');
+  head.textContent = `${label} · ${pool.cur}/${pool.max}${status ? ` · ${status}` : ''}`;
+  const track = el('div', 'combat-gauge-track');
+  const fill = el('div', 'combat-gauge-fill');
+  const pct = Number(pool.max) > 0 ? Math.max(0, Math.min(100, Math.round(Number(pool.cur) / Number(pool.max) * 100))) : 0;
+  fill.style.setProperty('--pct', `${pct}%`);
+  track.append(fill);
+  wrap.append(head, track);
+  return wrap;
+}
+
+function renderCombatConsole(input, ctx, render) {
+  const schema = getSchema();
+  const state = getEngineState();
+  const descriptor = availableActions(schema, state);
+  const consoleBox = el('div', 'combat-console');
+  if (state.combat && (state.combat.cleared || state.combat.fled)) {
+    const end = button('전투 종료', 'primary-btn');
+    end.disabled = busy;
+    end.addEventListener('click', () => runCombatTurn({ id: 'end_encounter', params: {} }, input, ctx, render));
+    consoleBox.append(end);
+    return consoleBox;
+  }
+  if (!descriptor.active) {
+    if (schema.combat || schema.pools) {
+      const start = button('⚔ 전투 개시', 'secondary-btn');
+      start.disabled = busy;
+      start.addEventListener('click', () => startCombat(ctx, render));
+      consoleBox.append(start);
+    }
+    return consoleBox;
+  }
+  const attack = descriptor.actions.find((action) => action.type === 'attack');
+  const targets = attack ? attack.targets : [];
+  if (!targets.some((target) => target.id === selectedTarget)) selectedTarget = targets.length ? targets[0].id : null;
+  const targetRow = el('div', 'combat-command-row');
+  const targetLabel = el('span', 'combat-command-label');
+  targetLabel.textContent = '대상';
+  targetRow.append(targetLabel);
+  for (const target of targets) {
+    const choose = button(`${target.name} ${target.hp.cur}/${target.hp.max}`, selectedTarget === target.id ? 'primary-btn' : 'secondary-btn');
+    choose.type = 'button';
+    choose.disabled = busy;
+    choose.addEventListener('click', () => { selectedTarget = target.id; render(); });
+    targetRow.append(choose);
+  }
+  const commands = el('div', 'combat-command-row');
+  const attackButton = button('⚔ 공격', 'secondary-btn');
+  attackButton.disabled = busy || !selectedTarget;
+  attackButton.addEventListener('click', () => runCombatTurn({ id: 'combat_action', params: { action: 'attack', target: selectedTarget } }, input, ctx, render));
+  commands.append(attackButton);
+  for (const action of descriptor.actions.filter((item) => item.type === 'skill')) {
+    const skill = button(`${action.name} (${action.pool.toUpperCase()} ${action.cost})`, 'secondary-btn');
+    skill.disabled = busy || !action.affordable || !selectedTarget;
+    skill.addEventListener('click', () => runCombatTurn({ id: 'combat_action', params: { action: 'skill', target: selectedTarget, skill: action.skill } }, input, ctx, render));
+    commands.append(skill);
+  }
+  const defend = button('🛡 방어', 'secondary-btn');
+  defend.disabled = busy;
+  defend.addEventListener('click', () => runCombatTurn({ id: 'combat_action', params: { action: 'defend' } }, input, ctx, render));
+  const flee = descriptor.actions.find((action) => action.type === 'flee');
+  const fleeButton = button(`🏃 도주 ${flee.rate}%`, 'secondary-btn');
+  fleeButton.disabled = busy;
+  fleeButton.addEventListener('click', () => runCombatTurn({ id: 'combat_action', params: { action: 'flee' } }, input, ctx, render));
+  commands.append(defend, fleeButton);
+  consoleBox.append(targetRow, commands);
+  return consoleBox;
 }
 
 function renderSettings(render) {
@@ -272,7 +361,99 @@ function tokenGauge(current, baseline) {
   return wrap;
 }
 
+async function runCombatTurn(event, input, ctx, render) {
+  if (busy) return;
+  busy = true;
+  const flavorText = input.value.trim();
+  const chips = [];
+  const resultTexts = [];
+  const beforeHp = poolSnapshot(getEngineState(), 'hp');
+  const actionResult = runEvent(event);
+  appendEventChips(event.id, actionResult.entries, chips, resultTexts);
+  const state = getEngineState();
+  if (event.id === 'combat_action' && state.combat && state.combat.active && !state.combat.cleared && !state.combat.fled) {
+    const enemyResult = runEvent({ id: 'enemy_turn', params: {} });
+    appendEventChips('enemy_turn', enemyResult.entries, chips, resultTexts);
+  }
+  const afterHp = poolSnapshot(getEngineState(), 'hp');
+  if (beforeHp && afterHp && beforeHp.cur !== afterHp.cur) resultTexts.push(`플레이어 HP ${beforeHp.cur}→${afterHp.cur}`);
+  // 연출 문장을 messages에 넣기 전에 잘라둔다 — 연출(user) 뒤에 서사화 프롬프트의 user 컨텍스트가
+  // 붙으면 user→user 연속 롤이 되어 제공자(Vertex/Anthropic)가 거부한다(감사 지적).
+  const recentForNarration = messages.slice(-4);
+  if (flavorText) messages.push({ role: 'user', content: flavorText });
+  const pending = { role: 'assistant', content: '', chips };
+  messages.push(pending);
+  input.value = '';
+  render();
+  try {
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
+    lastPrompt = prompt;
+    const raw = await callProvider(providerConfig(settings), prompt);
+    const parsed = parseAssistantResponse(raw);
+    const ignored = parsed.events.length + parsed.dropped;
+    if (ignored) chips.push({ ok: false, text: `서사화 사건 ${ignored}개 무시됨` });
+    pending.content = parsed.narrative || '전투 결과가 반영되었습니다.';
+  } catch (_) {
+    chips.push({ ok: false, text: '서사화 API 오류 · 엔진 결과 유지' });
+    pending.content = '전투 결과가 반영되었습니다.';
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+function appendEventChips(type, entries, chips, resultTexts) {
+  for (const entry of entries || []) {
+    if (type === 'enemy_turn' && entry.ok) {
+      for (const result of entry.results || []) {
+        const text = `${result.enemyId} 반격 · ${result.hit ? `${result.tier === 'critical_success' ? '크리티컬 · ' : ''}피해 ${result.damage}` : '빗나감'}`;
+        chips.push({ ok: true, text });
+        resultTexts.push(text);
+      }
+      if (entry.playerDead) resultTexts.push('플레이어 전투불능');
+      continue;
+    }
+    const text = summarizeEvent(type, entry, formatMoney);
+    chips.push({ ok: !!entry.ok, text });
+    resultTexts.push(text);
+  }
+}
+
+function poolSnapshot(state, id) {
+  const pool = state.player && state.player.pools && state.player.pools[id];
+  return pool ? { cur: Number(pool.cur), max: Number(pool.max) } : null;
+}
+
+async function startCombat(ctx, render) {
+  if (busy) return;
+  busy = true;
+  render();
+  try {
+    const instruction = '이번 장면에 어울리는 적 명부로 start_encounter 사건 하나만 JSON으로 내라. 서사는 1~2문장만 허용한다.';
+    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction });
+    lastPrompt = prompt;
+    const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+    const event = parsed.events.find((item) => item.id === 'start_encounter');
+    if (!event) {
+      messages.push({ role: 'assistant', content: parsed.narrative || '', chips: [{ ok: false, text: '적 정보를 만들지 못했습니다' }] });
+    } else {
+      const result = runEvent(event);
+      const entry = result.entries[0] || { ok: false, reason: 'empty_log' };
+      const ignored = parsed.events.length - 1 + parsed.dropped;
+      const chips = [{ ok: !!entry.ok, text: summarizeEvent('start_encounter', entry, formatMoney) }];
+      if (ignored > 0) chips.push({ ok: false, text: `다른 사건 ${ignored}개 무시됨` });
+      messages.push({ role: 'assistant', content: parsed.narrative, chips });
+    }
+  } catch (_) {
+    messages.push({ role: 'assistant', content: '', chips: [{ ok: false, text: '적 정보를 만들지 못했습니다' }] });
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
 async function submitTurn(text, ctx, render) {
+  if (busy) return;
   busy = true;
   messages.push({ role: 'user', content: text });
   render();

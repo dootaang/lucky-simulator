@@ -946,3 +946,23 @@ select:focus { border-color: var(--amber-line); }
 }
 
 .offscreen { position: fixed; left: -9999px; top: 0; opacity: 0; }
+
+.combat-console {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.combat-console:empty { display: none; }
+.combat-command-row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.combat-command-row .primary-btn,
+.combat-command-row .secondary-btn,
+.combat-console > .primary-btn,
+.combat-console > .secondary-btn { margin-top: 0; padding: 7px 10px; }
+.combat-command-label { color: var(--ink-dim); font-family: var(--font-mono); font-size: 12px; }
+.combat-gauge { margin-bottom: 11px; }
+.combat-gauge-head { margin-bottom: 5px; color: var(--ink-mid); font-family: var(--font-mono); font-size: 12px; }
+.combat-gauge-track { height: 8px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--inset); }
+.combat-gauge-fill { width: var(--pct); height: 100%; background: var(--amber); transition: width 140ms ease; }

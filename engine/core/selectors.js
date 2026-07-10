@@ -40,6 +40,25 @@ function tierOf(schema, scaleId, value) {
   return (scale.tiers || []).find((tier) => n >= tier.range[0] && n <= tier.range[1]) || null;
 }
 
+function availableActions(schema, state) {
+  const combat = state && state.combat;
+  if (!combat || !combat.active || combat.cleared || combat.fled) return { active: false };
+  const targets = (combat.enemies || []).filter((enemy) => !enemy.dead && Number(enemy.hp && enemy.hp.cur) > 0).map((enemy) => ({
+    id: enemy.id,
+    name: enemy.name,
+    hp: { cur: Number(enemy.hp.cur), max: Number(enemy.hp.max) },
+    dead: !!enemy.dead,
+  }));
+  const pools = (state.player && state.player.pools) || {};
+  const skills = Object.entries((schema && schema.skills) || {}).map(([id, skill]) => {
+    const pool = skill.pool || 'mp';
+    const cost = Number(skill.cost || 0);
+    return { type: 'skill', skill: id, name: skill.name || id, pool, cost, power: Number(skill.power || 0), affordable: Number((pools[pool] && pools[pool].cur) || 0) >= cost };
+  });
+  const fleeRate = schema && schema.combat && schema.combat.fleeRate;
+  return { active: true, actions: [{ type: 'attack', targets }, ...skills, { type: 'defend' }, { type: 'flee', rate: fleeRate == null ? 50 : Number(fleeRate) }] };
+}
+
 function summarize(schema, state) {
   const labels = reputationLabels(schema);
   const facilities = state.facilities || {};
@@ -128,4 +147,4 @@ function formatNumber(n) {
   return Number(n || 0).toLocaleString('ko-KR');
 }
 
-module.exports = { staffMax, availableMenu, roomStatus, tierOf, summarize, npcSummary, rankWeight };
+module.exports = { staffMax, availableMenu, roomStatus, tierOf, availableActions, summarize, npcSummary, rankWeight };

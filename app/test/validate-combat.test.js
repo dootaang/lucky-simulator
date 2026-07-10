@@ -59,3 +59,20 @@ test('invalid combat values are warnings and are removed for engine defaults', (
   assert.deepEqual(result.schema.combat.expTable, { C: [1, 3] });
   assert.ok(result.issues.filter((issue) => issue.level === 'warn').length >= 3);
 });
+
+test('player level thresholds remove leading zero and non-increasing values', () => {
+  const result = validateSchema(base({ ladders: [{ id: 'player_level', currency: 'exp', sources: {}, thresholds: [0, 100, 100, 200, 'bad'] }] }));
+  assert.deepEqual(result.schema.ladders[0].thresholds, [100, 200]);
+  assert.ok(result.issues.some((issue) => issue.level === 'warn' && issue.path.endsWith('.thresholds')));
+});
+
+test('skill acc outside d20 modifier range resets to zero while valid acc stays', () => {
+  const result = validateSchema(base({ skills: {
+    percentLike: { cost: 2, pool: 'mp', power: 9, acc: 100 },
+    valid: { cost: 3, pool: 'sp', power: 7, acc: 5 },
+  } }));
+  assert.equal(result.schema.skills.percentLike.acc, 0);
+  assert.equal(result.schema.skills.percentLike.power, 9);
+  assert.equal(result.schema.skills.valid.acc, 5);
+  assert.ok(result.issues.some((issue) => issue.level === 'warn' && issue.path === 'skills.percentLike.acc'));
+});

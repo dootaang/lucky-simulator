@@ -8,6 +8,7 @@ const { createState } = require('../core/createState.js');
 const { applyEvent } = require('../core/applyEvent.js');
 const { resolveCheck } = require('../core/resolveCheck.js');
 const { normalizePool, poolDamage, poolSpend, poolHeal, isDead } = require('../core/pools.js');
+const { availableActions } = require('../core/selectors.js');
 
 // 굴림을 완전 통제하는 스크립트 rng: int()이 리스트 값을 순서대로 반환.
 function seqRng(values) {
@@ -178,4 +179,57 @@ test('C15 encounter does not regress inn intents (pure applyEvent)', () => {
   const r = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 30 }] });
   assert.equal(JSON.stringify(state), frozen); // 입력 state 불변
   assert.notEqual(r.state, state);
+});
+
+test('C16 availableActions exposes living targets, affordability, and flee rate', () => {
+  let state = createState(schema);
+  state.player.pools.mp.cur = 10;
+  state = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '생존', hp: 20 }, { name: '사망', hp: 5 }] }).state;
+  state.combat.enemies[1].hp.cur = 0;
+  state.combat.enemies[1].dead = true;
+  const result = availableActions(schema, state);
+  assert.deepEqual(result.actions[0].targets.map((target) => target.id), ['e1']);
+  assert.equal(result.actions.find((action) => action.skill === 'power_strike').affordable, false);
+  assert.equal(result.actions.find((action) => action.type === 'flee').rate, schema.combat.fleeRate);
+  assert.deepEqual(availableActions(schema, createState(schema)), { active: false });
+});
+
+test('C17 enemy_turn resolves living roster in order and guard is consumed by first hit', () => {
+  let state = createState(schema);
+  state = step(state, createRng(1), 'start_encounter', { enemies: [
+    { name: '첫째', hp: 20, atk: 15, acc: 0 },
+    { name: '둘째', hp: 20, atk: 15, acc: 0 },
+    { name: '죽은 적', hp: 20, atk: 99, acc: 99 },
+  ] }).state;
+  state.combat.enemies[2].dead = true;
+  state.combat.enemies[2].hp.cur = 0;
+  state = step(state, seqRng([]), 'combat_action', { action: 'defend' }).state;
+  const result = step(state, seqRng([11, 11]), 'enemy_turn');
+  assert.deepEqual(result.log[0].results.map((entry) => entry.enemyId), ['e1', 'e2']);
+  assert.deepEqual(result.log[0].results.map((entry) => entry.damage), [5, 10]);
+  assert.equal(result.state.player.pools.hp.cur, 75);
+  assert.equal(result.state.combat.guard, false);
+});
+
+test('C17b guard does not carry over when every enemy misses (audit fix)', () => {
+  let state = createState(schema);
+  state = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 20, atk: 15, acc: 0 }] }).state;
+  state = step(state, seqRng([]), 'combat_action', { action: 'defend' }).state;
+  const result = step(state, seqRng([1]), 'enemy_turn'); // nat 1 — 빗나감
+  assert.equal(result.log[0].results[0].hit, false);
+  assert.equal(result.state.combat.guard, false); // 전원 빗나가도 방어는 턴 종료와 함께 해제
+});
+
+test('C18 enemy_turn stops when the player dies and is deterministic', () => {
+  function run() {
+    let state = createState(schema);
+    state.player.pools.hp.cur = 8;
+    const rng = createRng('enemy-turn');
+    state = step(state, rng, 'start_encounter', { enemies: [{ name: 'A', hp: 20, atk: 30, acc: 20 }, { name: 'B', hp: 20, atk: 30, acc: 20 }] }).state;
+    return step(state, rng, 'enemy_turn');
+  }
+  const first = run();
+  assert.equal(first.log[0].results.length, 1);
+  assert.equal(first.log[0].playerDead, true);
+  assert.deepEqual(first, run());
 });

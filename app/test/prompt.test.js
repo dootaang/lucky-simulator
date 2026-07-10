@@ -6,7 +6,7 @@ const innSchema = require('../../schema/yongsa-inn.v0.json');
 const hunterSchema = require('../../schema/hunters-combat.v0.json');
 const { createState } = require('../../engine/core/createState.js');
 const { summarize } = require('../../engine/core/selectors.js');
-const { buildSystemPrompt, formatEngineVerdicts, buildPrompt, parseAssistantResponse } = require('../src/llm/prompt.js');
+const { buildSystemPrompt, formatEngineVerdicts, buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('../src/llm/prompt.js');
 const { validateSchema } = require('../src/schema/validate.js');
 
 test('inn system prompt keeps its identity and all inn event vocabulary', () => {
@@ -70,4 +70,12 @@ test('buildPrompt enables all combat vocabulary after scales are promoted', () =
   const schema = validateSchema(source).schema;
   const prompt = buildPrompt({ schema, state: createState(schema), recentMessages: [], userInput: '싸운다' });
   for (const id of ['start_encounter', 'combat_action', 'enemy_action', 'end_encounter']) assert.match(prompt.system, new RegExp(id));
+});
+
+test('buildNarrationPrompt fixes engine results and includes flavor text', () => {
+  const prompt = buildNarrationPrompt({ schema: hunterSchema, state: createState(hunterSchema), results: ['공격 · e1 명중 · 피해 12'], flavorText: '낮게 파고든다', recentMessages: [] });
+  assert.match(prompt.system, /새 사건 JSON을 내지 마라/);
+  assert.match(prompt.messages.at(-1).content, /\[확정된 전투 결과\]/);
+  assert.match(prompt.messages.at(-1).content, /공격 · e1 명중 · 피해 12/);
+  assert.match(prompt.messages.at(-1).content, /플레이어의 연출 의도: 낮게 파고든다/);
 });
