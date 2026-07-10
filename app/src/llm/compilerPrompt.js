@@ -114,17 +114,49 @@ function formatEntry(row) {
 }
 
 function formatMinedRules(mined) {
-  if (!mined || mined.archetype !== 'lua-rich') return '';
+  if (!mined) return '';
+  const blocks = [];
+  const defaultNumbers = mined.defaultVars && mined.defaultVars.numbers;
+  const defaultNames = defaultNumbers ? Object.keys(defaultNumbers).sort() : [];
+  if (defaultNames.length) {
+    const includedNames = defaultNames.slice(0, 200);
+    blocks.push([
+      '[카드 기본 변수 — 카드에 내장된 초기값/규칙 수치. ★initialState(초기 자금·자원·수치)와 규칙 값은 산문 추정 대신 이 값을 우선 사용하라.]',
+      ...includedNames.map((name) => `${name} = ${defaultNumbers[name]}`),
+    ].join('\n'));
+    if (defaultNames.length > includedNames.length && typeof console !== 'undefined' && console.info) {
+      console.info('[simbot] default variables trimmed', {
+        included: includedNames.length,
+        omitted: defaultNames.length - includedNames.length,
+      });
+    }
+  }
+
+  if (mined.archetype !== 'lua-rich') return blocks.join('\n\n');
   const payload = {};
   if (mined.tables && Object.keys(mined.tables).length) payload.tables = sortObject(mined.tables);
   if (mined.constants && Object.keys(mined.constants).length) payload.constants = sortObject(mined.constants);
-  if (!Object.keys(payload).length) return '';
-  return [
-    '[채굴된 규칙 값 - 카드 Lua에서 정확 추출]',
-    '이 블록의 숫자는 카드에 내장된 Lua 테이블 리터럴을 정적 파싱한 authoritative 값이다.',
-    '룰북 prose와 충돌하면 채굴된 값을 우선하고, 이름을 스키마 필드에 자연스럽게 매핑하라.',
-    JSON.stringify(payload, null, 2),
-  ].join('\n');
+  if (Object.keys(payload).length) {
+    // 예산 가드: 채굴 블록이 비대하면 룰북 산문이 통째로 밀려난다(감사 지적).
+    // 100K 초과 시 규칙성 이름(ruleTableNames) 테이블만 남긴다.
+    let json = JSON.stringify(payload, null, 2);
+    let scopeNote = '';
+    if (json.length > 100000 && Array.isArray(mined.ruleTableNames) && mined.ruleTableNames.length) {
+      const slim = {};
+      for (const name of mined.ruleTableNames) if (payload.tables && name in payload.tables) slim[name] = payload.tables[name];
+      payload.tables = slim;
+      json = JSON.stringify(payload, null, 2);
+      scopeNote = ' (용량 초과로 규칙성 테이블만 포함)';
+      if (typeof console !== 'undefined' && console.info) console.info('[simbot] mined block trimmed to rule tables', { size: json.length });
+    }
+    blocks.push([
+      `[채굴된 규칙 값 - 카드 Lua에서 정확 추출${scopeNote}]`,
+      '이 블록의 숫자는 카드에 내장된 Lua 테이블 리터럴을 정적 파싱한 authoritative 값이다.',
+      '룰북 prose와 충돌하면 채굴된 값을 우선하고, 이름을 스키마 필드에 자연스럽게 매핑하라.',
+      json,
+    ].join('\n'));
+  }
+  return blocks.join('\n\n');
 }
 
 function sortObject(value) {
@@ -147,4 +179,4 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-module.exports = { SYSTEM_PROMPT, buildCompilerInput, parseCompilerOutput, mockCompilerOutput };
+module.exports = { SYSTEM_PROMPT, buildCompilerInput, parseCompilerOutput, mockCompilerOutput, formatMinedRules };

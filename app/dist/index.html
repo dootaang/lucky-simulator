@@ -6985,17 +6985,46 @@ skills\uC5D0\uB294 \uB8F0\uBD81\uC5D0 \uC774\uB984\uACFC \uCF54\uC2A4\uD2B8\xB7\
 ${row3.content}`;
       }
       function formatMinedRules(mined) {
-        if (!mined || mined.archetype !== "lua-rich") return "";
+        if (!mined) return "";
+        const blocks = [];
+        const defaultNumbers = mined.defaultVars && mined.defaultVars.numbers;
+        const defaultNames = defaultNumbers ? Object.keys(defaultNumbers).sort() : [];
+        if (defaultNames.length) {
+          const includedNames = defaultNames.slice(0, 200);
+          blocks.push([
+            "[\uCE74\uB4DC \uAE30\uBCF8 \uBCC0\uC218 \u2014 \uCE74\uB4DC\uC5D0 \uB0B4\uC7A5\uB41C \uCD08\uAE30\uAC12/\uADDC\uCE59 \uC218\uCE58. \u2605initialState(\uCD08\uAE30 \uC790\uAE08\xB7\uC790\uC6D0\xB7\uC218\uCE58)\uC640 \uADDC\uCE59 \uAC12\uC740 \uC0B0\uBB38 \uCD94\uC815 \uB300\uC2E0 \uC774 \uAC12\uC744 \uC6B0\uC120 \uC0AC\uC6A9\uD558\uB77C.]",
+            ...includedNames.map((name) => `${name} = ${defaultNumbers[name]}`)
+          ].join("\n"));
+          if (defaultNames.length > includedNames.length && typeof console !== "undefined" && console.info) {
+            console.info("[simbot] default variables trimmed", {
+              included: includedNames.length,
+              omitted: defaultNames.length - includedNames.length
+            });
+          }
+        }
+        if (mined.archetype !== "lua-rich") return blocks.join("\n\n");
         const payload = {};
         if (mined.tables && Object.keys(mined.tables).length) payload.tables = sortObject(mined.tables);
         if (mined.constants && Object.keys(mined.constants).length) payload.constants = sortObject(mined.constants);
-        if (!Object.keys(payload).length) return "";
-        return [
-          "[\uCC44\uAD74\uB41C \uADDC\uCE59 \uAC12 - \uCE74\uB4DC Lua\uC5D0\uC11C \uC815\uD655 \uCD94\uCD9C]",
-          "\uC774 \uBE14\uB85D\uC758 \uC22B\uC790\uB294 \uCE74\uB4DC\uC5D0 \uB0B4\uC7A5\uB41C Lua \uD14C\uC774\uBE14 \uB9AC\uD130\uB7F4\uC744 \uC815\uC801 \uD30C\uC2F1\uD55C authoritative \uAC12\uC774\uB2E4.",
-          "\uB8F0\uBD81 prose\uC640 \uCDA9\uB3CC\uD558\uBA74 \uCC44\uAD74\uB41C \uAC12\uC744 \uC6B0\uC120\uD558\uACE0, \uC774\uB984\uC744 \uC2A4\uD0A4\uB9C8 \uD544\uB4DC\uC5D0 \uC790\uC5F0\uC2A4\uB7FD\uAC8C \uB9E4\uD551\uD558\uB77C.",
-          JSON.stringify(payload, null, 2)
-        ].join("\n");
+        if (Object.keys(payload).length) {
+          let json = JSON.stringify(payload, null, 2);
+          let scopeNote = "";
+          if (json.length > 1e5 && Array.isArray(mined.ruleTableNames) && mined.ruleTableNames.length) {
+            const slim = {};
+            for (const name of mined.ruleTableNames) if (payload.tables && name in payload.tables) slim[name] = payload.tables[name];
+            payload.tables = slim;
+            json = JSON.stringify(payload, null, 2);
+            scopeNote = " (\uC6A9\uB7C9 \uCD08\uACFC\uB85C \uADDC\uCE59\uC131 \uD14C\uC774\uBE14\uB9CC \uD3EC\uD568)";
+            if (typeof console !== "undefined" && console.info) console.info("[simbot] mined block trimmed to rule tables", { size: json.length });
+          }
+          blocks.push([
+            `[\uCC44\uAD74\uB41C \uADDC\uCE59 \uAC12 - \uCE74\uB4DC Lua\uC5D0\uC11C \uC815\uD655 \uCD94\uCD9C${scopeNote}]`,
+            "\uC774 \uBE14\uB85D\uC758 \uC22B\uC790\uB294 \uCE74\uB4DC\uC5D0 \uB0B4\uC7A5\uB41C Lua \uD14C\uC774\uBE14 \uB9AC\uD130\uB7F4\uC744 \uC815\uC801 \uD30C\uC2F1\uD55C authoritative \uAC12\uC774\uB2E4.",
+            "\uB8F0\uBD81 prose\uC640 \uCDA9\uB3CC\uD558\uBA74 \uCC44\uAD74\uB41C \uAC12\uC744 \uC6B0\uC120\uD558\uACE0, \uC774\uB984\uC744 \uC2A4\uD0A4\uB9C8 \uD544\uB4DC\uC5D0 \uC790\uC5F0\uC2A4\uB7FD\uAC8C \uB9E4\uD551\uD558\uB77C.",
+            json
+          ].join("\n"));
+        }
+        return blocks.join("\n\n");
       }
       function sortObject(value) {
         if (Array.isArray(value)) return value.map(sortObject);
@@ -7013,7 +7042,7 @@ ${row3.content}`;
       function clone(value) {
         return JSON.parse(JSON.stringify(value));
       }
-      module.exports = { SYSTEM_PROMPT, buildCompilerInput: buildCompilerInput2, parseCompilerOutput: parseCompilerOutput2, mockCompilerOutput: mockCompilerOutput2 };
+      module.exports = { SYSTEM_PROMPT, buildCompilerInput: buildCompilerInput2, parseCompilerOutput: parseCompilerOutput2, mockCompilerOutput: mockCompilerOutput2, formatMinedRules };
     }
   });
 
@@ -7028,27 +7057,36 @@ ${row3.content}`;
       function mineCard2(parsed) {
         try {
           const moduleBytes = extractModuleRisum(parsed);
-          if (!moduleBytes) return fallback("module.risum not found");
-          const decoded = parseRisum(moduleBytes);
-          const root = decoded && decoded.module;
-          const moduleRoot = root && root.module ? root.module : root;
-          const luaParts = collectLuaCode(moduleRoot);
-          const lua = luaParts.join("\n\n");
-          const tables = parseLuaTables(lua);
+          const cardScripts = collectCardScripts(parsed);
+          if (!moduleBytes && !cardScripts.luaParts.length && !cardScripts.defaultVars.numericCount) return fallback("module.risum not found");
+          let moduleRoot = null;
+          let moduleLua = "";
+          if (moduleBytes) {
+            const decoded = parseRisum(moduleBytes);
+            const root = decoded && decoded.module;
+            moduleRoot = root && root.module ? root.module : root;
+            moduleLua = collectLuaCode(moduleRoot).join("\n\n");
+          }
+          const cardLua = cardScripts.luaParts.join("\n\n");
+          const tables = Object.assign({}, parseLuaTables(cardLua), parseLuaTables(moduleLua));
           normalizeRanges(tables);
-          const constants = parseLuaConstants(lua);
+          const constants = Object.assign({}, parseLuaConstants(cardLua), parseLuaConstants(moduleLua));
           const tableNames = Object.keys(tables);
           const ruleTableNames = tableNames.filter((name) => RULE_TABLE_RE.test(name) && numericSignal(tables[name]));
-          const setVarCount = countMatches(lua, /\b(?:setChatVar|setvar)\s*\(/gi);
-          const archetype = ruleTableNames.length >= 3 ? "lua-rich" : "prose";
+          const allLua = [moduleLua, cardLua].filter(Boolean).join("\n\n");
+          const setVarCount = countMatches(allLua, /\b(?:setChatVar|setvar)\s*\(/gi);
+          const cardDefaultsSignal = cardScripts.defaultVars.numericCount >= 20;
+          const archetype = ruleTableNames.length >= 3 || cardDefaultsSignal ? "lua-rich" : "prose";
           const result = {
-            hasModule: true,
+            hasModule: !!moduleBytes,
             archetype,
             tables,
             constants,
             moduleLoreCount: Array.isArray(moduleRoot && moduleRoot.lorebook) ? moduleRoot.lorebook.length : 0,
-            luaSize: lua.length,
-            luaPurpose: summarizePurpose(lua),
+            luaSize: moduleLua.length,
+            cardLuaSize: cardLua.length,
+            luaPurpose: summarizePurpose(moduleLua || cardLua),
+            defaultVars: cardScripts.defaultVars,
             tableCount: tableNames.length,
             ruleTableCount: ruleTableNames.length,
             ruleTableNames,
@@ -7059,6 +7097,36 @@ ${row3.content}`;
         } catch (err) {
           return fallback(err && err.message ? err.message : String(err || "mining failed"));
         }
+      }
+      function collectCardScripts(parsed) {
+        const risuai = parsed && parsed.card && parsed.card.data && parsed.card.data.extensions && parsed.card.data.extensions.risuai;
+        const luaParts = [];
+        const triggers = Array.isArray(risuai && risuai.triggerscript) ? risuai.triggerscript : [];
+        for (const trigger of triggers) {
+          const effects = Array.isArray(trigger && trigger.effect) ? trigger.effect : [];
+          for (const effect of effects) {
+            if (effect && typeof effect.code === "string") luaParts.push(effect.code);
+          }
+        }
+        const defaultVars = parseDefaultVariables(typeof (risuai && risuai.defaultVariables) === "string" ? risuai.defaultVariables : "");
+        return { luaParts, defaultVars };
+      }
+      function parseDefaultVariables(text) {
+        const numbers = {};
+        let totalLines = 0;
+        for (const rawLine of String(text || "").split(/\r?\n/)) {
+          const equalsAt = rawLine.indexOf("=");
+          if (equalsAt < 0) continue;
+          const key = rawLine.slice(0, equalsAt).trim();
+          const value = rawLine.slice(equalsAt + 1).replace(/--.*$/, "").trim();
+          if (!key || /\s/.test(key)) continue;
+          totalLines++;
+          if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) continue;
+          const number = Number(value);
+          if (!Number.isFinite(number)) continue;
+          numbers[key] = number;
+        }
+        return { numbers, numericCount: Object.keys(numbers).length, totalLines };
       }
       function extractModuleRisum(parsed) {
         const bytes = parsed && parsed._bytes;
@@ -7356,7 +7424,9 @@ ${row3.content}`;
           constants: {},
           moduleLoreCount: 0,
           luaSize: 0,
+          cardLuaSize: 0,
           luaPurpose: "",
+          defaultVars: { numbers: {}, numericCount: 0, totalLines: 0 },
           tableCount: 0,
           ruleTableCount: 0,
           ruleTableNames: [],
@@ -7372,7 +7442,9 @@ ${row3.content}`;
             archetype: result.archetype,
             tables: result.tableCount,
             ruleTables: result.ruleTableCount,
-            luaSize: result.luaSize
+            luaSize: result.luaSize,
+            cardLuaSize: result.cardLuaSize,
+            defaultVars: result.defaultVars.numericCount
           });
         }
       }
@@ -7404,6 +7476,8 @@ ${row3.content}`;
       }
       module.exports = {
         mineCard: mineCard2,
+        collectCardScripts,
+        parseDefaultVariables,
         parseLuaTables,
         parseLuaConstants,
         parseValue,

@@ -9,28 +9,39 @@ const CONSTANT_RE = /(cost|threshold|reward|price|rank|cap|capacity|room|max|upg
 function mineCard(parsed) {
   try {
     const moduleBytes = extractModuleRisum(parsed);
-    if (!moduleBytes) return fallback('module.risum not found');
+    const cardScripts = collectCardScripts(parsed);
+    // defaultVariables만 있는 카드도 채굴 대상(감사 지적: 조기 차단 금지).
+    if (!moduleBytes && !cardScripts.luaParts.length && !cardScripts.defaultVars.numericCount) return fallback('module.risum not found');
 
-    const decoded = parseRisum(moduleBytes);
-    const root = decoded && decoded.module;
-    const moduleRoot = root && root.module ? root.module : root;
-    const luaParts = collectLuaCode(moduleRoot);
-    const lua = luaParts.join('\n\n');
-    const tables = parseLuaTables(lua);
+    let moduleRoot = null;
+    let moduleLua = '';
+    if (moduleBytes) {
+      const decoded = parseRisum(moduleBytes);
+      const root = decoded && decoded.module;
+      moduleRoot = root && root.module ? root.module : root;
+      moduleLua = collectLuaCode(moduleRoot).join('\n\n');
+    }
+    const cardLua = cardScripts.luaParts.join('\n\n');
+    // Parse sources independently so module.risum remains authoritative on name collisions.
+    const tables = Object.assign({}, parseLuaTables(cardLua), parseLuaTables(moduleLua));
     normalizeRanges(tables);
-    const constants = parseLuaConstants(lua);
+    const constants = Object.assign({}, parseLuaConstants(cardLua), parseLuaConstants(moduleLua));
     const tableNames = Object.keys(tables);
     const ruleTableNames = tableNames.filter((name) => RULE_TABLE_RE.test(name) && numericSignal(tables[name]));
-    const setVarCount = countMatches(lua, /\b(?:setChatVar|setvar)\s*\(/gi);
-    const archetype = ruleTableNames.length >= 3 ? 'lua-rich' : 'prose';
+    const allLua = [moduleLua, cardLua].filter(Boolean).join('\n\n');
+    const setVarCount = countMatches(allLua, /\b(?:setChatVar|setvar)\s*\(/gi);
+    const cardDefaultsSignal = cardScripts.defaultVars.numericCount >= 20; // Lua 없이 변수만 많은 카드도 신호(감사 지적)
+    const archetype = ruleTableNames.length >= 3 || cardDefaultsSignal ? 'lua-rich' : 'prose';
     const result = {
-      hasModule: true,
+      hasModule: !!moduleBytes,
       archetype,
       tables,
       constants,
       moduleLoreCount: Array.isArray(moduleRoot && moduleRoot.lorebook) ? moduleRoot.lorebook.length : 0,
-      luaSize: lua.length,
-      luaPurpose: summarizePurpose(lua),
+      luaSize: moduleLua.length,
+      cardLuaSize: cardLua.length,
+      luaPurpose: summarizePurpose(moduleLua || cardLua),
+      defaultVars: cardScripts.defaultVars,
       tableCount: tableNames.length,
       ruleTableCount: ruleTableNames.length,
       ruleTableNames,
@@ -41,6 +52,42 @@ function mineCard(parsed) {
   } catch (err) {
     return fallback(err && err.message ? err.message : String(err || 'mining failed'));
   }
+}
+
+function collectCardScripts(parsed) {
+  const risuai = parsed && parsed.card && parsed.card.data && parsed.card.data.extensions
+    && parsed.card.data.extensions.risuai;
+  const luaParts = [];
+  const triggers = Array.isArray(risuai && risuai.triggerscript) ? risuai.triggerscript : [];
+  for (const trigger of triggers) {
+    const effects = Array.isArray(trigger && trigger.effect) ? trigger.effect : [];
+    for (const effect of effects) {
+      if (effect && typeof effect.code === 'string') luaParts.push(effect.code);
+    }
+  }
+  const defaultVars = parseDefaultVariables(typeof (risuai && risuai.defaultVariables) === 'string'
+    ? risuai.defaultVariables : '');
+  return { luaParts, defaultVars };
+}
+
+function parseDefaultVariables(text) {
+  const numbers = {};
+  let totalLines = 0;
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const equalsAt = rawLine.indexOf('=');
+    if (equalsAt < 0) continue;
+    const key = rawLine.slice(0, equalsAt).trim();
+    // 인라인 주석("A_gold = 5000 -- 메모") 제거 후 판정(감사 지적: 주석 때문에 수치 라인이 통째로 스킵됨).
+    const value = rawLine.slice(equalsAt + 1).replace(/--.*$/, '').trim();
+    if (!key || /\s/.test(key)) continue; // 공백 낀 키는 유효 식별자가 아니다(감사 지적)
+    totalLines++;
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) continue;
+    const number = Number(value);
+    if (!Number.isFinite(number)) continue;
+    numbers[key] = number;
+  }
+  // 중복 키는 마지막 값이 이기고, 개수는 고유 키 기준(감사 지적: 대입 횟수 누적으로 아키타입 오판 가능).
+  return { numbers, numericCount: Object.keys(numbers).length, totalLines };
 }
 
 function extractModuleRisum(parsed) {
@@ -341,7 +388,9 @@ function fallback(reason) {
     constants: {},
     moduleLoreCount: 0,
     luaSize: 0,
+    cardLuaSize: 0,
     luaPurpose: '',
+    defaultVars: { numbers: {}, numericCount: 0, totalLines: 0 },
     tableCount: 0,
     ruleTableCount: 0,
     ruleTableNames: [],
@@ -359,6 +408,8 @@ function logMine(result) {
       tables: result.tableCount,
       ruleTables: result.ruleTableCount,
       luaSize: result.luaSize,
+      cardLuaSize: result.cardLuaSize,
+      defaultVars: result.defaultVars.numericCount,
     });
   }
 }
@@ -398,6 +449,8 @@ function textDecoder() {
 
 module.exports = {
   mineCard,
+  collectCardScripts,
+  parseDefaultVariables,
   parseLuaTables,
   parseLuaConstants,
   parseValue,
