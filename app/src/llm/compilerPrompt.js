@@ -6,10 +6,25 @@ const SYSTEM_PROMPT = "당신은 RisuAI 시뮬봇 카드의 \"룰북 산문\"을
 
 const MAX_RULEBOOK_CHARS = 200000;
 
+const COMBAT_SCHEMA_APPENDIX = `
+
+[전투 카드 전용 출력 형식 — 전투 규칙이 있는 카드만 추가하고, 없으면 생략한 이유를 _assumptions에 기록]
+"pools": [ { "id": "hp|mp|sp", "label": "체력 등", "max": 정수 } ],
+"combat": { "d": 20, "minDamage": 1, "critMult": 2, "guardMult": 0.5, "fleeRate": 50,
+  "expTable": { "E": [min,max], "default": [min,max] },
+  "lootGold": { "E": [min,max], "default": [min,max] } },
+"skills": { "skill_id": { "name": "표기명", "cost": 정수, "pool": "mp|sp", "power": 정수, "acc": 정수 } }
+
+[전투 변환 규칙]
+★HP/MP/SP·스태미나처럼 소모·회복되는 자원은 scales가 아니라 pools다. max가 공식(예: CON×10)이면 초기 스탯으로 계산한 값을 pools.max에 넣고 공식은 formulas에 보존하며 계산 근거를 _assumptions에 기록한다.
+combat 판정값이 룰북에 없으면 엔진 기본값 d=20, minDamage=1, critMult=2, guardMult=0.5, fleeRate=50을 사용하고 _assumptions에 기록한다. 각 필드의 의미는 판정 주사위 면수, 최소 피해, 치명타 피해 배수, 방어 피해 배수, 도주 성공률이다. expTable과 lootGold는 몬스터/게이트 랭크별 경험치·전리품 골드 범위표이며, 룰북에 없으면 rewards.gold 규모에 맞춰 추정하고 기록한다.
+skills에는 룰북에 이름과 코스트·위력이 명시된 스킬만 넣는다. 없으면 빈 객체 또는 생략한다.
+전투 카드의 initialState.player에는 "pools":{"hp":{"cur":정수,"max":정수}} 형태로 각 자원을 넣고 atk/def/evade/acc를 넣는다. 룰북 근거가 없으면 각각 5/0/10/0을 사용하고 _assumptions에 기록한다.`;
+
 const REWARD_SCHEMA_APPENDIX = "\n\n[rewards/upgrades/gather table rules]\nOutput JSON must include \"rewards\": { \"gold\": { \"E\":[min,max], \"D\":[min,max], \"C\":[min,max], \"B\":[min,max], \"A\":[min,max], \"S\":[min,max] } }. Quest/manual/request reward gold belongs only in this engine table, not in individual event params.\n\n★ Reward gold source priority: if the mined rules block has a per-rank table with a pay/reward range (e.g. a questPay or reward field already given as [min,max] numbers), copy those numbers EXACTLY into rewards.gold for the matching rank. Do NOT scale, round up, multiply, or inflate them — the mined numbers are the authoritative amounts. Only invent ranges for ranks that are ABSENT from the mined table, and keep those consistent in magnitude with the nearest mined rank (a lower rank must not exceed a higher rank). Sanity bound: unless a mined value explicitly says so, no rewards.gold max should exceed roughly 3x the most expensive facility upgrade cost — if your inferred number blows past that, you are hallucinating; pull it back down. If the rulebook gives no reward amounts at all, infer sensible tier ranges from menu prices and upgrade costs, then record the reason in _assumptions as temporary reward values.\n\nEach facility instance should include \"upgradeCosts\": { \"2\": cost, \"3\": cost, \"4\": cost } for the next-level expansion costs. Upgrade costs are engine-owned table values; never place costs, gold deltas, or target levels in individual upgrade events. If the rulebook does not provide exact costs, infer them from the economy scale and record the temporary assumption in _assumptions.\n\nOutput top-level \"gather\": { \"small\":[min,max], \"large\":[min,max], \"bulk\":[min,max], \"note\":\"...\" } for self-supply yields such as hunting, gathering, and monster byproducts. Gather quantities are engine-owned table values; never place qty or amount in individual gain_resource events.";
 
 function promptTemplate() {
-  return SYSTEM_PROMPT + REWARD_SCHEMA_APPENDIX;
+  return SYSTEM_PROMPT + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX;
 }
 
 function buildCompilerInput(lore, mined) {

@@ -15,9 +15,13 @@ function validateSchema(obj) {
   const schema = clone(obj || {});
 
   normalizeAliases(schema, issues);
+  normalizePlayerPools(schema, issues);
   validateTop(schema, issues);
   validateResources(schema, issues);
   validateScales(schema, issues);
+  validatePools(schema, issues);
+  validateCombat(schema, issues);
+  validateSkills(schema, issues);
   validateLadders(schema, issues);
   validateEntities(schema, issues);
   validateFormulas(schema, issues);
@@ -27,6 +31,142 @@ function validateSchema(obj) {
   validateEvents(schema, issues);
 
   return { schema, issues };
+}
+
+const POOL_ALIASES = { hp: 'hp', mp: 'mp', sp: 'sp', stamina: 'sp', mana: 'mp' };
+
+function normalizePlayerPools(schema, issues) {
+  if (!isObject(schema) || schema.pools != null || !Array.isArray(schema.scales)) return;
+  const promoted = [];
+  const remaining = [];
+  for (const scale of schema.scales) {
+    const alias = isObject(scale) && scale.owner === 'player'
+      ? POOL_ALIASES[String(scale.id || '').toLowerCase()]
+      : null;
+    if (!alias) {
+      remaining.push(scale);
+      continue;
+    }
+    const fallback = isRange(scale.range) ? Number(scale.range[1]) : NaN;
+    const preferred = Number(scale.default);
+    const max = Number.isFinite(preferred) && preferred > 0 ? preferred : fallback;
+    if (!Number.isFinite(max) || max <= 0) {
+      remaining.push(scale);
+      continue;
+    }
+    promoted.push({ id: alias, label: String(scale.label || alias.toUpperCase()), max: Math.trunc(max) });
+  }
+  if (!promoted.length) return;
+  schema.pools = promoted;
+  schema.scales = remaining;
+  if (!isObject(schema.initialState)) schema.initialState = {};
+  if (!isObject(schema.initialState.player)) schema.initialState.player = {};
+  if (!isObject(schema.initialState.player.pools)) schema.initialState.player.pools = {};
+  for (const pool of promoted) {
+    if (!isObject(schema.initialState.player.pools[pool.id])) {
+      schema.initialState.player.pools[pool.id] = { cur: pool.max, max: pool.max };
+    }
+  }
+  warn(issues, 'pools', `player 자원 ${promoted.map((pool) => pool.id).join(', ')}을 scales에서 pools로 승격했습니다.`);
+}
+
+function validatePools(schema, issues) {
+  if (schema.pools == null) return;
+  if (!Array.isArray(schema.pools)) return error(issues, 'pools', 'pools must be an array.');
+  const ids = new Set();
+  schema.pools.forEach((pool, index) => {
+    const path = `pools[${index}]`;
+    if (!isObject(pool)) return error(issues, path, 'Pool must be an object.');
+    if (typeof pool.id !== 'string' || !pool.id.trim()) error(issues, `${path}.id`, 'Pool id must be a non-empty string.');
+    else duplicate(ids, pool.id, `${path}.id`, issues);
+    if (!Number.isInteger(Number(pool.max)) || Number(pool.max) <= 0) error(issues, `${path}.max`, 'Pool max must be a positive integer.');
+  });
+  const statePools = schema.initialState && schema.initialState.player && schema.initialState.player.pools;
+  if (!isObject(statePools)) return;
+  for (const pool of schema.pools) {
+    if (!isObject(pool) || !isObject(statePools[pool.id])) continue;
+    const statePool = statePools[pool.id];
+    const declaredMax = Number(pool.max);
+    let max = Number(statePool.max);
+    let cur = Number(statePool.cur);
+    if (!Number.isFinite(max) || max <= 0) max = declaredMax;
+    if (!Number.isFinite(cur)) cur = max;
+    const nextMax = Math.max(0, max);
+    const nextCur = Math.min(nextMax, Math.max(0, cur));
+    if (nextMax !== Number(statePool.max) || nextCur !== Number(statePool.cur)) {
+      warn(issues, `initialState.player.pools.${pool.id}`, 'Pool cur/max was clamped to a valid range.');
+    }
+    statePool.max = nextMax;
+    statePool.cur = nextCur;
+  }
+}
+
+function validateCombat(schema, issues) {
+  if (schema.combat == null) return;
+  if (!isObject(schema.combat)) {
+    warn(issues, 'combat', 'combat must be an object; removed.');
+    delete schema.combat;
+    return;
+  }
+  const integerFields = ['d', 'minDamage', 'fleeRate'];
+  const numberFields = ['critMult', 'guardMult'];
+  for (const key of integerFields.concat(numberFields)) {
+    if (schema.combat[key] == null) continue;
+    const value = Number(schema.combat[key]);
+    const valid = Number.isFinite(value) && value > 0 && (!integerFields.includes(key) || Number.isInteger(value));
+    if (!valid) {
+      warn(issues, `combat.${key}`, 'Invalid combat value removed; engine default will apply.');
+      delete schema.combat[key];
+    } else {
+      schema.combat[key] = value;
+    }
+  }
+  for (const tableName of ['expTable', 'lootGold']) {
+    const table = schema.combat[tableName];
+    if (table == null) continue;
+    if (!isObject(table)) {
+      warn(issues, `combat.${tableName}`, 'Combat reward table must be an object; removed.');
+      delete schema.combat[tableName];
+      continue;
+    }
+    for (const [key, range] of Object.entries(table)) {
+      const valid = isRange(range) && range.every((value) => Number.isInteger(Number(value))) && Number(range[0]) <= Number(range[1]);
+      if (!valid) {
+        warn(issues, `combat.${tableName}.${key}`, 'Invalid integer [min,max] pair removed.');
+        delete table[key];
+      } else {
+        table[key] = range.map(Number);
+      }
+    }
+  }
+}
+
+function validateSkills(schema, issues) {
+  if (schema.skills == null) return;
+  if (!isObject(schema.skills)) {
+    warn(issues, 'skills', 'skills must be an object; normalized to {}.');
+    schema.skills = {};
+    return;
+  }
+  for (const [id, skillValue] of Object.entries(schema.skills)) {
+    const path = `skills.${id}`;
+    if (!isObject(skillValue)) {
+      warn(issues, path, 'Skill must be an object; normalized.');
+      schema.skills[id] = {};
+    }
+    const skill = schema.skills[id];
+    for (const key of ['cost', 'power', 'acc']) {
+      const value = Number(skill[key]);
+      if (!Number.isInteger(value)) {
+        warn(issues, `${path}.${key}`, 'Skill value must be an integer; defaulted to 0.');
+        skill[key] = 0;
+      } else skill[key] = value;
+    }
+    if (!['mp', 'sp', 'hp'].includes(skill.pool)) {
+      warn(issues, `${path}.pool`, 'Skill pool must be mp, sp, or hp; defaulted to mp.');
+      skill.pool = 'mp';
+    }
+  }
 }
 
 function normalizeAliases(schema, issues) {

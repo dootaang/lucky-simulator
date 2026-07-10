@@ -284,6 +284,7 @@ async function submitTurn(text, ctx, render) {
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     const chips = [];
+    if (parsed.dropped > 0) chips.push({ ok: false, text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
     for (const event of parsed.events) {
       const result = runEvent(event);
       const first = result.entries[0] || { ok: false, reason: 'empty_log' };

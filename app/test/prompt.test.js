@@ -6,7 +6,8 @@ const innSchema = require('../../schema/yongsa-inn.v0.json');
 const hunterSchema = require('../../schema/hunters-combat.v0.json');
 const { createState } = require('../../engine/core/createState.js');
 const { summarize } = require('../../engine/core/selectors.js');
-const { buildSystemPrompt, formatEngineVerdicts, buildPrompt } = require('../src/llm/prompt.js');
+const { buildSystemPrompt, formatEngineVerdicts, buildPrompt, parseAssistantResponse } = require('../src/llm/prompt.js');
+const { validateSchema } = require('../src/schema/validate.js');
 
 test('inn system prompt keeps its identity and all inn event vocabulary', () => {
   const system = buildSystemPrompt(innSchema);
@@ -53,4 +54,20 @@ test('summarize omits inn lines for hunter and preserves inn golden bytes', () =
     '[객실] 전 객실 공실',
     '[평판] 마을 E(0) · 모험가 길드 E(0) · 마법사 길드 E(0) · 귀족·왕실 E(0) · 뒷세계 E(0) · 상인 조합 E(0)',
   ].join('\n'));
+});
+
+test('parseAssistantResponse drops events without a non-empty string id', () => {
+  const parsed = parseAssistantResponse('서사\n```json\n{"events":[{"params":{}},{"id":"","params":{}},{"id":"combat_action","params":{"action":"attack"}}]}\n```');
+  assert.equal(parsed.dropped, 2);
+  assert.deepEqual(parsed.events, [{ id: 'combat_action', params: { action: 'attack' } }]);
+});
+
+test('buildPrompt enables all combat vocabulary after scales are promoted', () => {
+  const source = {
+    meta: { id: 'promoted', title: '승격 전투', schemaVersion: '0.1' }, resources: [],
+    scales: [{ id: 'HP', owner: 'player', range: [0, 100], default: 80 }], ladders: [], entities: [], events: [],
+  };
+  const schema = validateSchema(source).schema;
+  const prompt = buildPrompt({ schema, state: createState(schema), recentMessages: [], userInput: '싸운다' });
+  for (const id of ['start_encounter', 'combat_action', 'enemy_action', 'end_encounter']) assert.match(prompt.system, new RegExp(id));
 });

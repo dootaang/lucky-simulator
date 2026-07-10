@@ -27,7 +27,8 @@ const EVENT_PROMPTS = {
 };
 
 const EVENT_RULES_HEADER = `[사건 규칙]
-- 실제로 완결된 일만. 진행 중·계획은 사건이 아니다.`;
+- 실제로 완결된 일만. 진행 중·계획은 사건이 아니다.
+- 사건은 반드시 {"id":"사건이름","params":{...}} 형식. id는 [사용 가능한 사건] 목록의 이름만. 목록에 없는 사건·형식을 지어내지 마라.`;
 const INN_EVENT_RULES = `- ★한 행동 = 사건 1개. purchase 한 건에 gold 변동을 덧붙이지 말고(엔진이 원가 차감), 손님 수·주문량을 임의로 늘려 sale을 여러 개 만들지 마라. 유저가 "하나 팔자"면 sale 1개, "더 팔자"처럼 모호하면 장면에 실제 등장해 완결된 판매만 센다. 유저가 지시하지 않은 거래(유령 구매/판매)는 절대 만들지 마라.
 - 판매·구매는 재고·골드를 엔진이 검증한다. 재고·골드가 없으면 그 행동은 실패한다(무한 공짜 없음).
 - ★서사 본문에 리스식 대괄호 태그([ysp_gold::...], [YSP_QUEST_CLEAR::...], [rep_event::...] 등)나 <img> 태그를 절대 쓰지 마라. 상태 변경은 오직 맨 끝의 JSON 사건으로만 표현한다(그 태그들은 우리 엔진에서 무의미하며 화면에 지저분하게 노출된다).
@@ -201,10 +202,12 @@ function parseAssistantResponse(text) {
       events = [];
     }
   }
+  const validEvents = events.filter((event) => event && typeof event.id === 'string' && event.id.trim());
+  const dropped = events.length - validEvents.length;
   const rawNarrative = jsonBlock
     ? source.replace(blocks[blocks.length - 1][0], '').trim()
     : source.trim();
-  return { narrative: stripRisuTags(rawNarrative), events };
+  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped };
 }
 
 // 카드 DNA에 밴 리스식 태그를 서사 표시에서 제거한다(우리 엔진의 상태 기제는 JSON
