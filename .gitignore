@@ -3,3 +3,6 @@ node_modules/
 firebase-debug.log
 *.charx
 *.risum
+
+# 내부 작업 문서 (공개 안 함)
+BACKLOG.md
