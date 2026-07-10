@@ -233,3 +233,64 @@ test('C18 enemy_turn stops when the player dies and is deterministic', () => {
   assert.equal(first.log[0].playerDead, true);
   assert.deepEqual(first, run());
 });
+
+test('C19 dead player cannot take combat actions or an enemy turn', () => {
+  let state = createState(schema);
+  state = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 30 }] }).state;
+  state.player.dead = true;
+  state.player.pools.hp.cur = 0;
+  assert.equal(step(state, seqRng([]), 'combat_action', { action: 'attack', target: 'e1' }).log[0].reason, 'player_dead');
+  assert.equal(step(state, seqRng([]), 'enemy_action', { enemyId: 'e1', action: 'attack' }).log[0].reason, 'player_dead');
+  assert.equal(step(state, seqRng([]), 'enemy_turn').log[0].reason, 'player_dead');
+});
+
+test('C20 defeat ends combat with no rewards and revives at the default ratio', () => {
+  let state = createState(schema);
+  state = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 30 }] }).state;
+  state.player.dead = true;
+  state.player.pools.hp.cur = 0;
+  const maxHp = state.player.pools.hp.max;
+  const result = step(state, seqRng([]), 'end_encounter');
+  assert.equal(result.log[0].ok, true);
+  assert.equal(result.log[0].outcome, 'defeat');
+  assert.equal(result.log[0].expGained, 0);
+  assert.equal(result.log[0].goldGained, 0);
+  assert.equal(result.log[0].revivedHp, Math.max(1, Math.floor(maxHp * 0.2)));
+  assert.equal(result.state.player.dead, false);
+  assert.equal(result.state.player.pools.hp.cur, Math.max(1, Math.floor(maxHp * 0.2)));
+  assert.equal(result.state.combat, null);
+});
+
+test('C21 defeat uses the schema revive ratio', () => {
+  const customSchema = JSON.parse(JSON.stringify(schema));
+  customSchema.combat.defeatReviveRatio = 0.5;
+  let state = createState(customSchema);
+  state = applyEvent(customSchema, state, { id: 'start_encounter', params: { enemies: [{ name: '고블린', hp: 30 }] } }, createRng(1)).state;
+  state.player.dead = true;
+  state.player.pools.hp.cur = 0;
+  const maxHp = state.player.pools.hp.max;
+  const result = applyEvent(customSchema, state, { id: 'end_encounter', params: {} }, seqRng([]));
+  assert.equal(result.state.player.pools.hp.cur, Math.floor(maxHp * 0.5));
+});
+
+test('C22 encounter end always revives a dead player regardless of outcome (audit fix)', () => {
+  let state = createState(schema);
+  state = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 6, def: 0, evade: 5, rank: 'E' }] }).state;
+  state = step(state, seqRng([15]), 'combat_action', { action: 'attack', target: 'e1' }).state; // cleared
+  state.player.dead = true; // 예외 상태 강제: 승리와 사망이 겹침
+  state.player.pools.hp = { cur: 0, max: 130 };
+  const r = step(state, seqRng([18, 5]), 'end_encounter');
+  assert.equal(r.log[0].outcome, 'victory'); // outcome 우선순위는 유지
+  assert.equal(r.state.player.dead, false); // 그러나 사망 잠금은 절대 남지 않는다
+  assert.equal(r.state.player.pools.hp.cur, 26);
+});
+
+test('C23 enemy_turn skips (not fails) when encounter already resolved even if player died', () => {
+  let state = createState(schema);
+  state = step(state, createRng(1), 'start_encounter', { enemies: [{ name: '고블린', hp: 6, def: 0, evade: 5 }] }).state;
+  state = step(state, seqRng([15]), 'combat_action', { action: 'attack', target: 'e1' }).state; // cleared
+  state.player.dead = true;
+  const r = step(state, seqRng([]), 'enemy_turn');
+  assert.equal(r.log[0].ok, true);
+  assert.deepEqual(r.log[0].results, []);
+});

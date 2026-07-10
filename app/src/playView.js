@@ -158,6 +158,13 @@ function renderCombatConsole(input, ctx, render) {
   const state = getEngineState();
   const descriptor = availableActions(schema, state);
   const consoleBox = el('div', 'combat-console');
+  if (state.combat && state.combat.active && state.player.dead) {
+    const end = button('전투 종료 (패배)', 'primary-btn');
+    end.disabled = busy;
+    end.addEventListener('click', () => runCombatTurn({ id: 'end_encounter', params: {} }, input, ctx, render));
+    consoleBox.append(end);
+    return consoleBox;
+  }
   if (state.combat && (state.combat.cleared || state.combat.fled)) {
     const end = button('전투 종료', 'primary-btn');
     end.disabled = busy;

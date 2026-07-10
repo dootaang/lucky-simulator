@@ -15,6 +15,7 @@ function combatConfig(schema) {
     critMult: numOr(c.critMult, 2),
     guardMult: numOr(c.guardMult, 0.5),
     fleeRate: intOr(c.fleeRate, 50),
+    defeatReviveRatio: clamp(numOr(c.defeatReviveRatio, 0.2), 0, 1),
     expTable: c.expTable || {},
     lootGold: c.lootGold || {},
   };
@@ -62,6 +63,7 @@ function startEncounter(schema, state, params, rng, ok, fail) {
 function combatAction(schema, state, params, rng, ok, fail) {
   const combat = state.combat;
   if (!combat || !combat.active) return fail('no_encounter');
+  if (state.player.dead) return fail('player_dead');
   if (hasNumberParam(params)) return fail('combat_number_not_allowed');
   const action = params.action;
   if (action === 'defend') {
@@ -119,6 +121,7 @@ function combatAction(schema, state, params, rng, ok, fail) {
 function enemyAction(schema, state, params, rng, ok, fail) {
   const combat = state.combat;
   if (!combat || !combat.active) return fail('no_encounter');
+  if (state.player.dead) return fail('player_dead');
   if (hasNumberParam(params)) return fail('combat_number_not_allowed');
   const enemy = findEnemy(combat, params.enemyId);
   if (!enemy) return fail('unknown_enemy', params.enemyId);
@@ -135,7 +138,9 @@ function enemyAction(schema, state, params, rng, ok, fail) {
 function enemyTurn(schema, state, params, rng, ok, fail) {
   const combat = state.combat;
   if (!combat) return fail('no_encounter');
+  // 종료 상태(cleared/fled) 스킵을 사망 검사보다 먼저 — 종료+사망이 겹친 예외 상태에서도 턴이 잠기지 않게(감사 지적).
   if (combat.cleared || combat.fled) return ok({ results: [], playerHp: normalizePool(state.player.pools && state.player.pools.hp), playerDead: !!state.player.dead });
+  if (state.player.dead) return fail('player_dead');
   if (!combat.active) return fail('no_encounter');
   const results = [];
   for (const enemy of combat.enemies || []) {
@@ -161,6 +166,7 @@ function resolveEnemyAttack(schema, state, enemy, skill, rng) {
     if (hit.tier === 'critical_success') damage = Math.round(damage * cfg.critMult);
     if (combat.guard) damage = Math.max(0, Math.floor(damage * cfg.guardMult));
     const hp = (state.player.pools && state.player.pools.hp) || { cur: 0, max: 0 };
+    if (!state.player.pools) state.player.pools = {}; // pools 없는 스키마 방어(감사 지적과 동일 패턴)
     state.player.pools.hp = poolDamage(hp, damage);
     if (isDead(state.player.pools.hp)) state.player.dead = true;
   }
@@ -170,7 +176,7 @@ function resolveEnemyAttack(schema, state, enemy, skill, rng) {
 function endEncounter(schema, state, params, rng, ok, fail) {
   const combat = state.combat;
   if (!combat) return fail('no_encounter_to_end');
-  if (combat.active && !combat.cleared && !combat.fled) return fail('encounter_unresolved');
+  if (combat.active && !combat.cleared && !combat.fled && !state.player.dead) return fail('encounter_unresolved');
 
   const cfg = combatConfig(schema);
   let expGained = 0;
@@ -187,9 +193,20 @@ function endEncounter(schema, state, params, rng, ok, fail) {
     if (goldGained) state.gold = Number(state.gold || 0) + goldGained;
   }
 
-  const outcome = combat.cleared ? 'victory' : combat.fled ? 'fled' : 'ended';
+  const outcome = combat.cleared ? 'victory' : combat.fled ? 'fled' : state.player.dead ? 'defeat' : 'ended';
+  // 사망 상태면 outcome과 무관하게 부활 — 어떤 종료 경로로도 "전투 밖 영구 사망 잠금"이 남지 않게(감사 지적).
+  let revivedHp = null;
+  if (state.player.dead) {
+    const hp = normalizePool(state.player.pools && state.player.pools.hp);
+    revivedHp = Math.max(1, Math.floor(hp.max * cfg.defeatReviveRatio));
+    if (!state.player.pools) state.player.pools = {}; // pools 없는 스키마 방어(감사 지적)
+    state.player.pools.hp = { cur: revivedHp, max: hp.max };
+    state.player.dead = false;
+  }
   state.combat = null;
-  return ok({ outcome, expGained, goldGained, levelUps, player: clonePlayer(state.player) });
+  const result = { outcome, expGained, goldGained, levelUps, player: clonePlayer(state.player) };
+  if (revivedHp != null) result.revivedHp = revivedHp;
+  return ok(result);
 }
 
 // 기존 expGain의 레벨업 문턱 로직과 동일하게 처리(ladder.thresholds 소비).
@@ -232,6 +249,10 @@ function intOr(value, fallback) {
 function numOr(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 module.exports = { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter };

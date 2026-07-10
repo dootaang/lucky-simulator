@@ -5454,6 +5454,7 @@ select:focus { border-color: var(--amber-line); }
           critMult: numOr(c.critMult, 2),
           guardMult: numOr(c.guardMult, 0.5),
           fleeRate: intOr(c.fleeRate, 50),
+          defeatReviveRatio: clamp(numOr(c.defeatReviveRatio, 0.2), 0, 1),
           expTable: c.expTable || {},
           lootGold: c.lootGold || {}
         };
@@ -5497,6 +5498,7 @@ select:focus { border-color: var(--amber-line); }
       function combatAction(schema2, state2, params, rng2, ok, fail) {
         const combat = state2.combat;
         if (!combat || !combat.active) return fail("no_encounter");
+        if (state2.player.dead) return fail("player_dead");
         if (hasNumberParam(params)) return fail("combat_number_not_allowed");
         const action = params.action;
         if (action === "defend") {
@@ -5555,6 +5557,7 @@ select:focus { border-color: var(--amber-line); }
       function enemyAction(schema2, state2, params, rng2, ok, fail) {
         const combat = state2.combat;
         if (!combat || !combat.active) return fail("no_encounter");
+        if (state2.player.dead) return fail("player_dead");
         if (hasNumberParam(params)) return fail("combat_number_not_allowed");
         const enemy = findEnemy(combat, params.enemyId);
         if (!enemy) return fail("unknown_enemy", params.enemyId);
@@ -5572,6 +5575,7 @@ select:focus { border-color: var(--amber-line); }
         const combat = state2.combat;
         if (!combat) return fail("no_encounter");
         if (combat.cleared || combat.fled) return ok({ results: [], playerHp: normalizePool(state2.player.pools && state2.player.pools.hp), playerDead: !!state2.player.dead });
+        if (state2.player.dead) return fail("player_dead");
         if (!combat.active) return fail("no_encounter");
         const results = [];
         for (const enemy of combat.enemies || []) {
@@ -5595,6 +5599,7 @@ select:focus { border-color: var(--amber-line); }
           if (hit.tier === "critical_success") damage = Math.round(damage * cfg.critMult);
           if (combat.guard) damage = Math.max(0, Math.floor(damage * cfg.guardMult));
           const hp = state2.player.pools && state2.player.pools.hp || { cur: 0, max: 0 };
+          if (!state2.player.pools) state2.player.pools = {};
           state2.player.pools.hp = poolDamage(hp, damage);
           if (isDead(state2.player.pools.hp)) state2.player.dead = true;
         }
@@ -5603,7 +5608,7 @@ select:focus { border-color: var(--amber-line); }
       function endEncounter(schema2, state2, params, rng2, ok, fail) {
         const combat = state2.combat;
         if (!combat) return fail("no_encounter_to_end");
-        if (combat.active && !combat.cleared && !combat.fled) return fail("encounter_unresolved");
+        if (combat.active && !combat.cleared && !combat.fled && !state2.player.dead) return fail("encounter_unresolved");
         const cfg = combatConfig(schema2);
         let expGained = 0;
         let goldGained = 0;
@@ -5618,9 +5623,19 @@ select:focus { border-color: var(--amber-line); }
           if (expGained) applyExp(schema2, state2, expGained, levelUps);
           if (goldGained) state2.gold = Number(state2.gold || 0) + goldGained;
         }
-        const outcome = combat.cleared ? "victory" : combat.fled ? "fled" : "ended";
+        const outcome = combat.cleared ? "victory" : combat.fled ? "fled" : state2.player.dead ? "defeat" : "ended";
+        let revivedHp = null;
+        if (state2.player.dead) {
+          const hp = normalizePool(state2.player.pools && state2.player.pools.hp);
+          revivedHp = Math.max(1, Math.floor(hp.max * cfg.defeatReviveRatio));
+          if (!state2.player.pools) state2.player.pools = {};
+          state2.player.pools.hp = { cur: revivedHp, max: hp.max };
+          state2.player.dead = false;
+        }
         state2.combat = null;
-        return ok({ outcome, expGained, goldGained, levelUps, player: clonePlayer(state2.player) });
+        const result = { outcome, expGained, goldGained, levelUps, player: clonePlayer(state2.player) };
+        if (revivedHp != null) result.revivedHp = revivedHp;
+        return ok(result);
       }
       function applyExp(schema2, state2, amount, levelUps) {
         const ladder = ladderById(schema2, "player_level");
@@ -5655,6 +5670,9 @@ select:focus { border-color: var(--amber-line); }
       function numOr(value, fallback) {
         const n = Number(value);
         return Number.isFinite(n) ? n : fallback;
+      }
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
       }
       module.exports = { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter };
     }
@@ -9354,6 +9372,13 @@ ${Array.from(extras).join(" ")}` : text;
     const state2 = getEngineState();
     const descriptor = availableActions(schema2, state2);
     const consoleBox = el2("div", "combat-console");
+    if (state2.combat && state2.combat.active && state2.player.dead) {
+      const end = button2("\uC804\uD22C \uC885\uB8CC (\uD328\uBC30)", "primary-btn");
+      end.disabled = busy;
+      end.addEventListener("click", () => runCombatTurn({ id: "end_encounter", params: {} }, input2, ctx, render2));
+      consoleBox.append(end);
+      return consoleBox;
+    }
     if (state2.combat && (state2.combat.cleared || state2.combat.fled)) {
       const end = button2("\uC804\uD22C \uC885\uB8CC", "primary-btn");
       end.disabled = busy;
