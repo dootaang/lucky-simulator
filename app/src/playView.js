@@ -1,7 +1,9 @@
 const { summarize, npcSummary } = require('../../engine/core/selectors.js');
 const { estimateTokens, estimateLorebookTokens } = require('../core/lorebook/tokens.js');
 const { buildPrompt, parseAssistantResponse } = require('./llm/prompt.js');
-const { PROVIDERS, callProvider, providerDef } = require('./llm/providers.js');
+const { PROVIDERS, callProvider } = require('./llm/providers.js');
+const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
+const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
 import { getEngineState, getSchema, runEvent, summarizeEvent } from './engineSession.js';
 
 let messages = [];
@@ -10,7 +12,7 @@ let settings = loadSettings();
 let lastPrompt = null;
 
 export function renderPlayView(container, ctx) {
-  registerCustomOrigin();
+  registerCustomOrigin(settings);
   const root = el('div', 'play-view');
   container.append(root);
   const render = () => {
@@ -134,8 +136,8 @@ function renderSettings(render) {
   provider.addEventListener('change', () => {
     settings.provider = provider.value;
     settings.model = defaultModel(settings.provider);
-    saveSettings();
-    registerCustomOrigin();
+    saveSettings(settings);
+    registerCustomOrigin(settings);
     render();
   });
 
@@ -143,8 +145,8 @@ function renderSettings(render) {
   base.placeholder = 'https://openrouter.ai/api/v1';
   base.addEventListener('change', () => {
     settings.baseUrl = base.value.trim();
-    saveSettings();
-    registerCustomOrigin();
+    saveSettings(settings);
+    registerCustomOrigin(settings);
     render();
   });
 
@@ -152,7 +154,7 @@ function renderSettings(render) {
   location.placeholder = 'us-central1 또는 global';
   location.addEventListener('change', () => {
     settings.location = location.value.trim() || 'global';
-    saveSettings();
+    saveSettings(settings);
     render();
   });
 
@@ -160,7 +162,7 @@ function renderSettings(render) {
   model.disabled = settings.provider === 'mock';
   model.addEventListener('change', () => {
     settings.model = model.value.trim();
-    saveSettings();
+    saveSettings(settings);
     render();
   });
 
@@ -278,7 +280,7 @@ async function submitTurn(text, ctx, render) {
     const schema = getSchema();
     const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text });
     lastPrompt = prompt;
-    const raw = await callProvider(providerConfig(), prompt);
+    const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     const chips = [];
     for (const event of parsed.events) {
@@ -295,48 +297,6 @@ async function submitTurn(text, ctx, render) {
   }
 }
 
-function providerConfig() {
-  return {
-    provider: settings.provider,
-    model: settings.model || defaultModel(settings.provider),
-    baseUrl: settings.provider === 'custom' ? settings.baseUrl : '',
-    location: settings.provider === 'vertex' ? (settings.location || 'global') : '',
-    apiKey: settings.provider === 'mock' ? '' : readKey(settings.provider),
-  };
-}
-
-function loadSettings() {
-  return {
-    provider: localStorage.getItem('simbot.byok.provider') || 'mock',
-    model: localStorage.getItem('simbot.byok.model') || 'gemini-2.5-flash',
-    baseUrl: localStorage.getItem('simbot.byok.customBase') || '',
-    location: localStorage.getItem('simbot.byok.location') || 'global',
-  };
-}
-
-function saveSettings() {
-  localStorage.setItem('simbot.byok.provider', settings.provider);
-  localStorage.setItem('simbot.byok.model', settings.model || '');
-  localStorage.setItem('simbot.byok.customBase', settings.baseUrl || '');
-  localStorage.setItem('simbot.byok.location', settings.location || 'global');
-}
-
-function registerCustomOrigin() {
-  if (settings.provider !== 'custom' || !settings.baseUrl || !window.SIMBOT_NETWORK_POLICY) return;
-  try {
-    const url = new URL(settings.baseUrl);
-    if (url.protocol === 'https:') window.SIMBOT_NETWORK_POLICY.setAllowedCustomOrigin(url.origin);
-  } catch (_) {}
-}
-
-function readKey(provider) {
-  return localStorage.getItem(keyName(provider)) || '';
-}
-
-function keyName(provider) {
-  return `simbot.byok.${provider}`;
-}
-
 function maskedKey(provider) {
   if (provider === 'vertex') return '저장됨: 서비스 계정 JSON';
   const key = readKey(provider);
@@ -344,19 +304,9 @@ function maskedKey(provider) {
   return `저장됨: ****${key.slice(-4)}`;
 }
 
-function defaultModel(provider) {
-  return providerDef(provider).defModel || '';
-}
-
 function safeError(err) {
   const message = err && err.message ? err.message : String(err || '오류');
   return `요청 실패: ${message.replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]').replace(/https?:\/\/\S+/g, '[url]').slice(0, 360)}`;
-}
-
-function hiddenBase(node) {
-  const wrap = el('div', 'play-hidden');
-  wrap.append(node);
-  return wrap;
 }
 
 function titled(title) {
@@ -365,68 +315,6 @@ function titled(title) {
   h3.textContent = title;
   section.append(h3);
   return section;
-}
-
-function field(label, child) {
-  const wrap = el('label', 'field');
-  const span = el('span');
-  span.textContent = label;
-  wrap.append(span, child);
-  return wrap;
-}
-
-function row(...children) {
-  const wrap = el('div', 'play-button-row');
-  wrap.append(...children);
-  return wrap;
-}
-
-function notice(text) {
-  const p = el('p', 'muted-line play-notice');
-  p.textContent = text;
-  return p;
-}
-
-function namedInput(name, value, type = 'text') {
-  const node = el('input');
-  node.name = name;
-  node.type = type;
-  node.value = value;
-  return node;
-}
-
-function namedTextarea(name, value) {
-  const node = el('textarea');
-  node.name = name;
-  node.value = value;
-  return node;
-}
-
-function namedSelect(name) {
-  const node = el('select');
-  node.name = name;
-  return node;
-}
-
-function appendOption(select, value, label, disabled) {
-  const option = el('option');
-  option.value = String(value);
-  option.textContent = label;
-  option.disabled = !!disabled;
-  select.append(option);
-}
-
-function button(text, className) {
-  const node = el('button', className);
-  node.type = 'button';
-  node.textContent = text;
-  return node;
-}
-
-function el(tag, className = '') {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  return node;
 }
 
 function formatMoney(value) {
@@ -441,14 +329,4 @@ function transcriptText() {
     if (m.chips && m.chips.length) out.push(m.chips.map((c) => `[${c.text}]`).join(' '));
   }
   return out.join('\n\n');
-}
-
-function fallbackCopy(text, done) {
-  const ta = el('textarea', 'offscreen');
-  ta.value = text;
-  ta.setAttribute('readonly', '');
-  document.body.append(ta);
-  ta.select();
-  try { document.execCommand('copy'); if (done) done(); } catch (_) { /* ignore */ }
-  ta.remove();
 }

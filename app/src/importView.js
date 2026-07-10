@@ -1,7 +1,9 @@
 const { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require('./llm/compilerPrompt.js');
 const { mineCard } = require('./llm/luaMine.js');
 const { patchSchemaWithMined } = require('./llm/schemaPatch.js');
-const { PROVIDERS, callProvider, providerDef } = require('./llm/providers.js');
+const { PROVIDERS, callProvider } = require('./llm/providers.js');
+const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
+const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback } = require('./ui/dom.js');
 const { validateSchema } = require('./schema/validate.js');
 import { setActiveSchema } from './engineSession.js';
 
@@ -12,7 +14,7 @@ let busy = false;
 let settings = loadSettings();
 
 export function renderImportView(container, ctx) {
-  registerCustomOrigin();
+  registerCustomOrigin(settings);
   const root = el('div', 'import-view');
   container.append(root);
   const render = () => {
@@ -24,7 +26,7 @@ export function renderImportView(container, ctx) {
 }
 
 export async function compileSchemaForImport(ctx, config) {
-  const cfg = config || providerConfig();
+  const cfg = config || providerConfig(settings);
   const mined = cfg.provider === 'mock'
     ? null
     : Object.prototype.hasOwnProperty.call(cfg, 'mined')
@@ -163,8 +165,8 @@ function renderSettings(render) {
   provider.addEventListener('change', () => {
     settings.provider = provider.value;
     settings.model = defaultModel(settings.provider);
-    saveSettings();
-    registerCustomOrigin();
+    saveSettings(settings);
+    registerCustomOrigin(settings);
     render();
   });
 
@@ -172,8 +174,8 @@ function renderSettings(render) {
   base.placeholder = 'https://openrouter.ai/api/v1';
   base.addEventListener('change', () => {
     settings.baseUrl = base.value.trim();
-    saveSettings();
-    registerCustomOrigin();
+    saveSettings(settings);
+    registerCustomOrigin(settings);
     render();
   });
 
@@ -181,7 +183,7 @@ function renderSettings(render) {
   location.placeholder = 'us-central1 또는 global';
   location.addEventListener('change', () => {
     settings.location = location.value.trim() || 'global';
-    saveSettings();
+    saveSettings(settings);
     render();
   });
 
@@ -189,7 +191,7 @@ function renderSettings(render) {
   model.disabled = settings.provider === 'mock';
   model.addEventListener('change', () => {
     settings.model = model.value.trim();
-    saveSettings();
+    saveSettings(settings);
     render();
   });
 
@@ -269,16 +271,6 @@ function renderCopyBar(result) {
   });
   bar.append(copy);
   return bar;
-}
-
-function copyFallback(text, done) {
-  const ta = el('textarea', 'offscreen');
-  ta.value = text;
-  ta.setAttribute('readonly', '');
-  document.body.append(ta);
-  ta.select();
-  try { document.execCommand('copy'); if (done) done(); } catch (_) { /* ignore */ }
-  ta.remove();
 }
 
 function renderIssueSummary(result) {
@@ -429,7 +421,7 @@ function renderApproval(ctx, result, render) {
 async function runCompile(ctx, render) {
   busy = true;
   addLog(ctx, `컴파일 시작 (제공자 ${settings.provider}).`);
-  const cfg = providerConfig();
+  const cfg = providerConfig(settings);
   let mined = null;
   if (cfg.provider !== 'mock') {
     mined = mineCard(ctx && ctx.parsed);
@@ -518,56 +510,10 @@ function cardKey(ctx) {
   return file ? `${file.name}:${file.size}:${file.type}` : '__no_card__';
 }
 
-function providerConfig() {
-  return {
-    provider: settings.provider,
-    model: settings.model || defaultModel(settings.provider),
-    baseUrl: settings.provider === 'custom' ? settings.baseUrl : '',
-    location: settings.provider === 'vertex' ? (settings.location || 'global') : '',
-    apiKey: settings.provider === 'mock' ? '' : readKey(settings.provider),
-  };
-}
-
-function loadSettings() {
-  return {
-    provider: localStorage.getItem('simbot.byok.provider') || 'mock',
-    model: localStorage.getItem('simbot.byok.model') || 'gemini-2.5-flash',
-    baseUrl: localStorage.getItem('simbot.byok.customBase') || '',
-    location: localStorage.getItem('simbot.byok.location') || 'global',
-  };
-}
-
-function saveSettings() {
-  localStorage.setItem('simbot.byok.provider', settings.provider);
-  localStorage.setItem('simbot.byok.model', settings.model || '');
-  localStorage.setItem('simbot.byok.customBase', settings.baseUrl || '');
-  localStorage.setItem('simbot.byok.location', settings.location || 'global');
-}
-
-function registerCustomOrigin() {
-  if (settings.provider !== 'custom' || !settings.baseUrl || !window.SIMBOT_NETWORK_POLICY) return;
-  try {
-    const url = new URL(settings.baseUrl);
-    if (url.protocol === 'https:') window.SIMBOT_NETWORK_POLICY.setAllowedCustomOrigin(url.origin);
-  } catch (_) {}
-}
-
-function readKey(provider) {
-  return localStorage.getItem(keyName(provider)) || '';
-}
-
-function keyName(provider) {
-  return `simbot.byok.${provider}`;
-}
-
 function maskedKey(provider) {
   if (provider === 'vertex') return 'stored: service account JSON';
   const key = readKey(provider);
   return key ? `stored: ****${key.slice(-4)}` : '';
-}
-
-function defaultModel(provider) {
-  return providerDef(provider).defModel || '';
 }
 
 function issueCounts(issues) {
@@ -586,12 +532,6 @@ function safeError(err) {
   return message.replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]').replace(/https?:\/\/\S+/g, '[url]').slice(0, 360);
 }
 
-function hiddenBase(node) {
-  const wrap = el('div', 'play-hidden');
-  wrap.append(node);
-  return wrap;
-}
-
 function titled(title) {
   const section = el('section', 'play-side-section import-section');
   const h3 = el('h3');
@@ -608,66 +548,4 @@ function metric(label, value) {
   strong.textContent = String(value);
   card.append(span, strong);
   return card;
-}
-
-function field(label, child) {
-  const wrap = el('label', 'field');
-  const span = el('span');
-  span.textContent = label;
-  wrap.append(span, child);
-  return wrap;
-}
-
-function row(...children) {
-  const wrap = el('div', 'play-button-row');
-  wrap.append(...children);
-  return wrap;
-}
-
-function notice(text) {
-  const p = el('p', 'muted-line play-notice');
-  p.textContent = text;
-  return p;
-}
-
-function namedInput(name, value, type = 'text') {
-  const node = el('input');
-  node.name = name;
-  node.type = type;
-  node.value = value;
-  return node;
-}
-
-function namedTextarea(name, value) {
-  const node = el('textarea');
-  node.name = name;
-  node.value = value;
-  return node;
-}
-
-function namedSelect(name) {
-  const node = el('select');
-  node.name = name;
-  return node;
-}
-
-function appendOption(select, value, label, disabled) {
-  const option = el('option');
-  option.value = String(value);
-  option.textContent = label;
-  option.disabled = !!disabled;
-  select.append(option);
-}
-
-function button(text, className) {
-  const node = el('button', className);
-  node.type = 'button';
-  node.textContent = text;
-  return node;
-}
-
-function el(tag, className = '') {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  return node;
 }

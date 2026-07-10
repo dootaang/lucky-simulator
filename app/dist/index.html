@@ -5955,6 +5955,96 @@ select:focus { border-color: var(--amber-line); }
     }
   });
 
+  // src/ui/dom.js
+  var require_dom = __commonJS({
+    "src/ui/dom.js"(exports, module) {
+      function hiddenBase3(node) {
+        const wrap = el4("div", "play-hidden");
+        wrap.append(node);
+        return wrap;
+      }
+      function field4(label, child) {
+        const wrap = el4("label", "field");
+        const span = el4("span");
+        span.textContent = label;
+        wrap.append(span, child);
+        return wrap;
+      }
+      function row3(...children) {
+        const wrap = el4("div", "play-button-row");
+        wrap.append(...children);
+        return wrap;
+      }
+      function notice3(text) {
+        const p = el4("p", "muted-line play-notice");
+        p.textContent = text;
+        return p;
+      }
+      function namedInput4(name, value, type = "text") {
+        const node = el4("input");
+        node.name = name;
+        node.type = type;
+        node.value = value;
+        return node;
+      }
+      function namedTextarea3(name, value) {
+        const node = el4("textarea");
+        node.name = name;
+        node.value = value;
+        return node;
+      }
+      function namedSelect4(name) {
+        const node = el4("select");
+        node.name = name;
+        return node;
+      }
+      function appendOption4(select, value, label, disabled) {
+        const option = el4("option");
+        option.value = String(value);
+        option.textContent = label;
+        option.disabled = !!disabled;
+        select.append(option);
+      }
+      function button4(text, className) {
+        const node = el4("button", className);
+        node.type = "button";
+        node.textContent = text;
+        return node;
+      }
+      function el4(tag, className = "") {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        return node;
+      }
+      function copyFallback2(text, done) {
+        const ta = el4("textarea", "offscreen");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        document.body.append(ta);
+        ta.select();
+        try {
+          document.execCommand("copy");
+          if (done) done();
+        } catch (_) {
+        }
+        ta.remove();
+      }
+      module.exports = {
+        el: el4,
+        button: button4,
+        field: field4,
+        row: row3,
+        notice: notice3,
+        hiddenBase: hiddenBase3,
+        namedInput: namedInput4,
+        namedTextarea: namedTextarea3,
+        namedSelect: namedSelect4,
+        appendOption: appendOption4,
+        copyFallback: copyFallback2
+      };
+    }
+  });
+
   // src/llm/prompt.js
   var require_prompt = __commonJS({
     "src/llm/prompt.js"(exports, module) {
@@ -6310,9 +6400,9 @@ ${row3.entry.content}`).join("\n\n");
         vertex: { kind: "vertex", base: "", keyRequired: true, defModel: "gemini-2.5-flash" },
         custom: { kind: "openai", base: "", keyRequired: true, defModel: "" }
       };
-      var providerDef3 = (provider) => PROVIDERS3[provider] || PROVIDERS3.mock;
+      var providerDef = (provider) => PROVIDERS3[provider] || PROVIDERS3.mock;
       async function callProvider3(cfg, prompt) {
-        const def = providerDef3(cfg.provider);
+        const def = providerDef(cfg.provider);
         if (def.kind === "mock") return mockResponse(prompt);
         if (def.keyRequired && !cfg.apiKey) throw new Error("API \uD0A4\uAC00 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4");
         if (def.kind === "vertex") return callVertex(def, cfg, prompt);
@@ -6511,7 +6601,63 @@ ${row3.entry.content}`).join("\n\n");
         }
         return '\uC2E4\uBE44\uC544\uAC00 \uACE0\uAE30 \uC2A4\uD29C \uD55C \uADF8\uB987\uC744 \uC190\uB2D8 \uC55E\uC5D0 \uB0B4\uB824\uB193\uC2B5\uB2C8\uB2E4. \uC190\uB2D8\uC740 \uB728\uAC70\uC6B4 \uAE40\uC774 \uC624\uB974\uB294 \uADF8\uB987\uC744 \uBC1B\uC544 \uB4E4\uACE0 \uB9CC\uC871\uC2A4\uB7FD\uAC8C \uACE0\uAC1C\uB97C \uB044\uB355\uC785\uB2C8\uB2E4.\n\n```json\n{"events":[{"id":"sale","params":{"menuName":"\uACE0\uAE30 \uC2A4\uD29C","qty":1}}]}\n```';
       }
-      module.exports = { PROVIDERS: PROVIDERS3, providerDef: providerDef3, callProvider: callProvider3, buildRequest, parseResponse, requestWithRetry, errorText };
+      module.exports = { PROVIDERS: PROVIDERS3, providerDef, callProvider: callProvider3, buildRequest, parseResponse, requestWithRetry, errorText };
+    }
+  });
+
+  // src/llm/byokSettings.js
+  var require_byokSettings = __commonJS({
+    "src/llm/byokSettings.js"(exports, module) {
+      var { providerDef } = require_providers();
+      function providerConfig3(settings3) {
+        return {
+          provider: settings3.provider,
+          model: settings3.model || defaultModel3(settings3.provider),
+          baseUrl: settings3.provider === "custom" ? settings3.baseUrl : "",
+          location: settings3.provider === "vertex" ? settings3.location || "global" : "",
+          apiKey: settings3.provider === "mock" ? "" : readKey3(settings3.provider)
+        };
+      }
+      function loadSettings3() {
+        return {
+          provider: localStorage.getItem("simbot.byok.provider") || "mock",
+          model: localStorage.getItem("simbot.byok.model") || "gemini-2.5-flash",
+          baseUrl: localStorage.getItem("simbot.byok.customBase") || "",
+          location: localStorage.getItem("simbot.byok.location") || "global"
+        };
+      }
+      function saveSettings3(settings3) {
+        localStorage.setItem("simbot.byok.provider", settings3.provider);
+        localStorage.setItem("simbot.byok.model", settings3.model || "");
+        localStorage.setItem("simbot.byok.customBase", settings3.baseUrl || "");
+        localStorage.setItem("simbot.byok.location", settings3.location || "global");
+      }
+      function registerCustomOrigin3(settings3) {
+        if (settings3.provider !== "custom" || !settings3.baseUrl || !window.SIMBOT_NETWORK_POLICY) return;
+        try {
+          const url = new URL(settings3.baseUrl);
+          if (url.protocol === "https:") window.SIMBOT_NETWORK_POLICY.setAllowedCustomOrigin(url.origin);
+        } catch (_) {
+        }
+      }
+      function readKey3(provider) {
+        return localStorage.getItem(keyName3(provider)) || "";
+      }
+      function keyName3(provider) {
+        return `simbot.byok.${provider}`;
+      }
+      function defaultModel3(provider) {
+        return providerDef(provider).defModel || "";
+      }
+      module.exports = {
+        providerConfig: providerConfig3,
+        loadSettings: loadSettings3,
+        saveSettings: saveSettings3,
+        registerCustomOrigin: registerCustomOrigin3,
+        readKey: readKey3,
+        keyName: keyName3,
+        defaultModel: defaultModel3
+      };
     }
   });
 
@@ -8276,6 +8422,7 @@ ${Array.from(extras).join(" ")}` : text;
 
   // src/engineView.js
   var { summarize, npcSummary, roomStatus, availableMenu, staffMax } = require_selectors();
+  var { el, button, field, namedSelect, appendOption } = require_dom();
   var selectedEvent = "checkin";
   var schema = getSchema();
   function renderEngineView(container, ctx) {
@@ -8724,13 +8871,6 @@ ${Array.from(extras).join(" ")}` : text;
     section.append(h3);
     return section;
   }
-  function field(label, child) {
-    const wrap = el("label", "field");
-    const span = el("span");
-    span.textContent = label;
-    wrap.append(span, child);
-    return wrap;
-  }
   function labelInline(label, child) {
     const wrap = el("label", "engine-inline-field");
     const span = el("span");
@@ -8743,33 +8883,10 @@ ${Array.from(extras).join(" ")}` : text;
     node.name = name;
     return node;
   }
-  function namedSelect(name) {
-    const node = el("select");
-    node.name = name;
-    return node;
-  }
-  function appendOption(select, value, label, disabled) {
-    const option = el("option");
-    option.value = String(value);
-    option.textContent = label;
-    option.disabled = !!disabled;
-    select.append(option);
-  }
-  function button(text, className) {
-    const node = el("button", className);
-    node.type = "button";
-    node.textContent = text;
-    return node;
-  }
   function input(type, value) {
     const node = el("input");
     node.type = type;
     node.value = value;
-    return node;
-  }
-  function el(tag, className = "") {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
     return node;
   }
   function formatMoney(value) {
@@ -8780,13 +8897,15 @@ ${Array.from(extras).join(" ")}` : text;
   var { summarize: summarize2, npcSummary: npcSummary2 } = require_selectors();
   var { estimateTokens, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
   var { buildPrompt, parseAssistantResponse } = require_prompt();
-  var { PROVIDERS, callProvider, providerDef } = require_providers();
+  var { PROVIDERS, callProvider } = require_providers();
+  var { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require_byokSettings();
+  var { el: el2, button: button2, field: field2, row, notice, hiddenBase, namedInput: namedInput2, namedTextarea, namedSelect: namedSelect2, appendOption: appendOption2, copyFallback: fallbackCopy } = require_dom();
   var messages = [];
   var busy = false;
   var settings = loadSettings();
   var lastPrompt = null;
   function renderPlayView(container, ctx) {
-    registerCustomOrigin();
+    registerCustomOrigin(settings);
     const root = el2("div", "play-view");
     container.append(root);
     const render2 = () => {
@@ -8906,30 +9025,30 @@ ${Array.from(extras).join(" ")}` : text;
     provider.addEventListener("change", () => {
       settings.provider = provider.value;
       settings.model = defaultModel(settings.provider);
-      saveSettings();
-      registerCustomOrigin();
+      saveSettings(settings);
+      registerCustomOrigin(settings);
       render2();
     });
     const base = namedInput2("baseUrl", settings.baseUrl || "", "url");
     base.placeholder = "https://openrouter.ai/api/v1";
     base.addEventListener("change", () => {
       settings.baseUrl = base.value.trim();
-      saveSettings();
-      registerCustomOrigin();
+      saveSettings(settings);
+      registerCustomOrigin(settings);
       render2();
     });
     const location = namedInput2("location", settings.location || "global");
     location.placeholder = "us-central1 \uB610\uB294 global";
     location.addEventListener("change", () => {
       settings.location = location.value.trim() || "global";
-      saveSettings();
+      saveSettings(settings);
       render2();
     });
     const model = namedInput2("model", settings.model || defaultModel(settings.provider));
     model.disabled = settings.provider === "mock";
     model.addEventListener("change", () => {
       settings.model = model.value.trim();
-      saveSettings();
+      saveSettings(settings);
       render2();
     });
     const key = settings.provider === "vertex" ? namedTextarea("apiKey", "") : namedInput2("apiKey", "", "password");
@@ -9023,7 +9142,7 @@ ${Array.from(extras).join(" ")}` : text;
       const schema2 = getSchema();
       const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text });
       lastPrompt = prompt;
-      const raw = await callProvider(providerConfig(), prompt);
+      const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
       const chips = [];
       for (const event of parsed.events) {
@@ -9039,60 +9158,15 @@ ${Array.from(extras).join(" ")}` : text;
       render2();
     }
   }
-  function providerConfig() {
-    return {
-      provider: settings.provider,
-      model: settings.model || defaultModel(settings.provider),
-      baseUrl: settings.provider === "custom" ? settings.baseUrl : "",
-      location: settings.provider === "vertex" ? settings.location || "global" : "",
-      apiKey: settings.provider === "mock" ? "" : readKey(settings.provider)
-    };
-  }
-  function loadSettings() {
-    return {
-      provider: localStorage.getItem("simbot.byok.provider") || "mock",
-      model: localStorage.getItem("simbot.byok.model") || "gemini-2.5-flash",
-      baseUrl: localStorage.getItem("simbot.byok.customBase") || "",
-      location: localStorage.getItem("simbot.byok.location") || "global"
-    };
-  }
-  function saveSettings() {
-    localStorage.setItem("simbot.byok.provider", settings.provider);
-    localStorage.setItem("simbot.byok.model", settings.model || "");
-    localStorage.setItem("simbot.byok.customBase", settings.baseUrl || "");
-    localStorage.setItem("simbot.byok.location", settings.location || "global");
-  }
-  function registerCustomOrigin() {
-    if (settings.provider !== "custom" || !settings.baseUrl || !window.SIMBOT_NETWORK_POLICY) return;
-    try {
-      const url = new URL(settings.baseUrl);
-      if (url.protocol === "https:") window.SIMBOT_NETWORK_POLICY.setAllowedCustomOrigin(url.origin);
-    } catch (_) {
-    }
-  }
-  function readKey(provider) {
-    return localStorage.getItem(keyName(provider)) || "";
-  }
-  function keyName(provider) {
-    return `simbot.byok.${provider}`;
-  }
   function maskedKey(provider) {
     if (provider === "vertex") return "\uC800\uC7A5\uB428: \uC11C\uBE44\uC2A4 \uACC4\uC815 JSON";
     const key = readKey(provider);
     if (!key) return "";
     return `\uC800\uC7A5\uB428: ****${key.slice(-4)}`;
   }
-  function defaultModel(provider) {
-    return providerDef(provider).defModel || "";
-  }
   function safeError(err) {
     const message = err && err.message ? err.message : String(err || "\uC624\uB958");
     return `\uC694\uCCAD \uC2E4\uD328: ${message.replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/https?:\/\/\S+/g, "[url]").slice(0, 360)}`;
-  }
-  function hiddenBase(node) {
-    const wrap = el2("div", "play-hidden");
-    wrap.append(node);
-    return wrap;
   }
   function titled(title) {
     const section = el2("section", "play-side-section");
@@ -9100,59 +9174,6 @@ ${Array.from(extras).join(" ")}` : text;
     h3.textContent = title;
     section.append(h3);
     return section;
-  }
-  function field2(label, child) {
-    const wrap = el2("label", "field");
-    const span = el2("span");
-    span.textContent = label;
-    wrap.append(span, child);
-    return wrap;
-  }
-  function row(...children) {
-    const wrap = el2("div", "play-button-row");
-    wrap.append(...children);
-    return wrap;
-  }
-  function notice(text) {
-    const p = el2("p", "muted-line play-notice");
-    p.textContent = text;
-    return p;
-  }
-  function namedInput2(name, value, type = "text") {
-    const node = el2("input");
-    node.name = name;
-    node.type = type;
-    node.value = value;
-    return node;
-  }
-  function namedTextarea(name, value) {
-    const node = el2("textarea");
-    node.name = name;
-    node.value = value;
-    return node;
-  }
-  function namedSelect2(name) {
-    const node = el2("select");
-    node.name = name;
-    return node;
-  }
-  function appendOption2(select, value, label, disabled) {
-    const option = el2("option");
-    option.value = String(value);
-    option.textContent = label;
-    option.disabled = !!disabled;
-    select.append(option);
-  }
-  function button2(text, className) {
-    const node = el2("button", className);
-    node.type = "button";
-    node.textContent = text;
-    return node;
-  }
-  function el2(tag, className = "") {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    return node;
   }
   function formatMoney2(value) {
     return `${Number(value || 0).toLocaleString("ko-KR")}\uC6D0`;
@@ -9165,32 +9186,21 @@ ${Array.from(extras).join(" ")}` : text;
     }
     return out.join("\n\n");
   }
-  function fallbackCopy(text, done) {
-    const ta = el2("textarea", "offscreen");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    document.body.append(ta);
-    ta.select();
-    try {
-      document.execCommand("copy");
-      if (done) done();
-    } catch (_) {
-    }
-    ta.remove();
-  }
 
   // src/importView.js
   var { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require_compilerPrompt();
   var { mineCard } = require_luaMine();
   var { patchSchemaWithMined } = require_schemaPatch();
-  var { PROVIDERS: PROVIDERS2, callProvider: callProvider2, providerDef: providerDef2 } = require_providers();
+  var { PROVIDERS: PROVIDERS2, callProvider: callProvider2 } = require_providers();
+  var { providerConfig: providerConfig2, loadSettings: loadSettings2, saveSettings: saveSettings2, registerCustomOrigin: registerCustomOrigin2, readKey: readKey2, keyName: keyName2, defaultModel: defaultModel2 } = require_byokSettings();
+  var { el: el3, button: button3, field: field3, row: row2, notice: notice2, hiddenBase: hiddenBase2, namedInput: namedInput3, namedTextarea: namedTextarea2, namedSelect: namedSelect3, appendOption: appendOption3, copyFallback } = require_dom();
   var { validateSchema } = require_validate();
   var SECTION_KEYS = ["meta", "resources", "scales", "ladders", "entities", "formulas", "processes", "events", "initialState", "_assumptions"];
   var stateByCard = /* @__PURE__ */ new Map();
   var busy2 = false;
   var settings2 = loadSettings2();
   function renderImportView(container, ctx) {
-    registerCustomOrigin2();
+    registerCustomOrigin2(settings2);
     const root = el3("div", "import-view");
     container.append(root);
     const render2 = () => {
@@ -9202,7 +9212,7 @@ ${Array.from(extras).join(" ")}` : text;
     };
   }
   async function compileSchemaForImport(ctx, config) {
-    const cfg = config || providerConfig2();
+    const cfg = config || providerConfig2(settings2);
     const mined = cfg.provider === "mock" ? null : Object.prototype.hasOwnProperty.call(cfg, "mined") ? cfg.mined : mineCard(ctx && ctx.parsed);
     const compilerInput = buildCompilerInput(ctx && ctx.lore, mined);
     const raw = cfg.provider === "mock" ? mockCompilerOutput() : await callProvider2(cfg, {
@@ -9321,30 +9331,30 @@ ${Array.from(extras).join(" ")}` : text;
     provider.addEventListener("change", () => {
       settings2.provider = provider.value;
       settings2.model = defaultModel2(settings2.provider);
-      saveSettings2();
-      registerCustomOrigin2();
+      saveSettings2(settings2);
+      registerCustomOrigin2(settings2);
       render2();
     });
     const base = namedInput3("baseUrl", settings2.baseUrl || "", "url");
     base.placeholder = "https://openrouter.ai/api/v1";
     base.addEventListener("change", () => {
       settings2.baseUrl = base.value.trim();
-      saveSettings2();
-      registerCustomOrigin2();
+      saveSettings2(settings2);
+      registerCustomOrigin2(settings2);
       render2();
     });
     const location = namedInput3("location", settings2.location || "global");
     location.placeholder = "us-central1 \uB610\uB294 global";
     location.addEventListener("change", () => {
       settings2.location = location.value.trim() || "global";
-      saveSettings2();
+      saveSettings2(settings2);
       render2();
     });
     const model = namedInput3("model", settings2.model || defaultModel2(settings2.provider));
     model.disabled = settings2.provider === "mock";
     model.addEventListener("change", () => {
       settings2.model = model.value.trim();
-      saveSettings2();
+      saveSettings2(settings2);
       render2();
     });
     const key = settings2.provider === "vertex" ? namedTextarea2("apiKey", "") : namedInput3("apiKey", "", "password");
@@ -9420,19 +9430,6 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     });
     bar.append(copy);
     return bar;
-  }
-  function copyFallback(text, done) {
-    const ta = el3("textarea", "offscreen");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    document.body.append(ta);
-    ta.select();
-    try {
-      document.execCommand("copy");
-      if (done) done();
-    } catch (_) {
-    }
-    ta.remove();
   }
   function renderIssueSummary(result) {
     const section = titled2("\uAC80\uC99D");
@@ -9568,7 +9565,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
   async function runCompile(ctx, render2) {
     busy2 = true;
     addLog(ctx, `\uCEF4\uD30C\uC77C \uC2DC\uC791 (\uC81C\uACF5\uC790 ${settings2.provider}).`);
-    const cfg = providerConfig2();
+    const cfg = providerConfig2(settings2);
     let mined = null;
     if (cfg.provider !== "mock") {
       mined = mineCard(ctx && ctx.parsed);
@@ -9649,50 +9646,10 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     const file = ctx && ctx.file;
     return file ? `${file.name}:${file.size}:${file.type}` : "__no_card__";
   }
-  function providerConfig2() {
-    return {
-      provider: settings2.provider,
-      model: settings2.model || defaultModel2(settings2.provider),
-      baseUrl: settings2.provider === "custom" ? settings2.baseUrl : "",
-      location: settings2.provider === "vertex" ? settings2.location || "global" : "",
-      apiKey: settings2.provider === "mock" ? "" : readKey2(settings2.provider)
-    };
-  }
-  function loadSettings2() {
-    return {
-      provider: localStorage.getItem("simbot.byok.provider") || "mock",
-      model: localStorage.getItem("simbot.byok.model") || "gemini-2.5-flash",
-      baseUrl: localStorage.getItem("simbot.byok.customBase") || "",
-      location: localStorage.getItem("simbot.byok.location") || "global"
-    };
-  }
-  function saveSettings2() {
-    localStorage.setItem("simbot.byok.provider", settings2.provider);
-    localStorage.setItem("simbot.byok.model", settings2.model || "");
-    localStorage.setItem("simbot.byok.customBase", settings2.baseUrl || "");
-    localStorage.setItem("simbot.byok.location", settings2.location || "global");
-  }
-  function registerCustomOrigin2() {
-    if (settings2.provider !== "custom" || !settings2.baseUrl || !window.SIMBOT_NETWORK_POLICY) return;
-    try {
-      const url = new URL(settings2.baseUrl);
-      if (url.protocol === "https:") window.SIMBOT_NETWORK_POLICY.setAllowedCustomOrigin(url.origin);
-    } catch (_) {
-    }
-  }
-  function readKey2(provider) {
-    return localStorage.getItem(keyName2(provider)) || "";
-  }
-  function keyName2(provider) {
-    return `simbot.byok.${provider}`;
-  }
   function maskedKey2(provider) {
     if (provider === "vertex") return "stored: service account JSON";
     const key = readKey2(provider);
     return key ? `stored: ****${key.slice(-4)}` : "";
-  }
-  function defaultModel2(provider) {
-    return providerDef2(provider).defModel || "";
   }
   function issueCounts(issues) {
     return (issues || []).reduce((acc, issue) => {
@@ -9706,11 +9663,6 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
   function safeError2(err) {
     const message = err && err.message ? err.message : String(err || "Error");
     return message.replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/https?:\/\/\S+/g, "[url]").slice(0, 360);
-  }
-  function hiddenBase2(node) {
-    const wrap = el3("div", "play-hidden");
-    wrap.append(node);
-    return wrap;
   }
   function titled2(title) {
     const section = el3("section", "play-side-section import-section");
@@ -9727,59 +9679,6 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     strong.textContent = String(value);
     card.append(span, strong);
     return card;
-  }
-  function field3(label, child) {
-    const wrap = el3("label", "field");
-    const span = el3("span");
-    span.textContent = label;
-    wrap.append(span, child);
-    return wrap;
-  }
-  function row2(...children) {
-    const wrap = el3("div", "play-button-row");
-    wrap.append(...children);
-    return wrap;
-  }
-  function notice2(text) {
-    const p = el3("p", "muted-line play-notice");
-    p.textContent = text;
-    return p;
-  }
-  function namedInput3(name, value, type = "text") {
-    const node = el3("input");
-    node.name = name;
-    node.type = type;
-    node.value = value;
-    return node;
-  }
-  function namedTextarea2(name, value) {
-    const node = el3("textarea");
-    node.name = name;
-    node.value = value;
-    return node;
-  }
-  function namedSelect3(name) {
-    const node = el3("select");
-    node.name = name;
-    return node;
-  }
-  function appendOption3(select, value, label, disabled) {
-    const option = el3("option");
-    option.value = String(value);
-    option.textContent = label;
-    option.disabled = !!disabled;
-    select.append(option);
-  }
-  function button3(text, className) {
-    const node = el3("button", className);
-    node.type = "button";
-    node.textContent = text;
-    return node;
-  }
-  function el3(tag, className = "") {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    return node;
   }
 
   // src/main.js

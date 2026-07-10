@@ -1,4 +1,5 @@
 const { summarize, npcSummary, roomStatus, availableMenu, staffMax } = require('../../engine/core/selectors.js');
+const { el, button, field, namedSelect, appendOption } = require('./ui/dom.js');
 import { eventTypes, getEngineState, getEventCount, getLogs, getSchema, getSeed, resetSession, runEvent, summarizeEvent } from './engineSession.js';
 
 let selectedEvent = 'checkin';
@@ -503,14 +504,6 @@ function titledSection(title) {
   return section;
 }
 
-function field(label, child) {
-  const wrap = el('label', 'field');
-  const span = el('span');
-  span.textContent = label;
-  wrap.append(span, child);
-  return wrap;
-}
-
 function labelInline(label, child) {
   const wrap = el('label', 'engine-inline-field');
   const span = el('span');
@@ -525,37 +518,10 @@ function namedInput(name, value, type = 'text') {
   return node;
 }
 
-function namedSelect(name) {
-  const node = el('select');
-  node.name = name;
-  return node;
-}
-
-function appendOption(select, value, label, disabled) {
-  const option = el('option');
-  option.value = String(value);
-  option.textContent = label;
-  option.disabled = !!disabled;
-  select.append(option);
-}
-
-function button(text, className) {
-  const node = el('button', className);
-  node.type = 'button';
-  node.textContent = text;
-  return node;
-}
-
 function input(type, value) {
   const node = el('input');
   node.type = type;
   node.value = value;
-  return node;
-}
-
-function el(tag, className = '') {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
   return node;
 }
 
