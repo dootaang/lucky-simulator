@@ -291,13 +291,14 @@ async function runManagementTurn(event, input, ctx, render) {
   const chips = [];
   const resultTexts = [];
   const recentForNarration = messages.slice(-4);
+  if (flavorText) messages.push({ role: 'user', content: flavorText });
+  input.value = '';
+  // 스포 방지(사용자 피드백): 엔진은 먼저 굴리되, 칩·메시지·상태 패널 공개는 서사 도착과 함께.
+  // "생각 중..." 동안 결과(🎲 성공/실패·골드 변동)가 보이지 않는다. (전투 턴은 즉시 표시 유지 — 호평 기능)
+  render();
   const result = runEvent(event);
   appendEventChips(event.id, result.entries, chips, resultTexts);
-  if (flavorText) messages.push({ role: 'user', content: flavorText });
   const pending = { role: 'assistant', content: '', chips };
-  messages.push(pending);
-  input.value = '';
-  render();
   try {
     const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
     lastPrompt = prompt;
@@ -309,6 +310,7 @@ async function runManagementTurn(event, input, ctx, render) {
     chips.push({ ok: false, text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '관리 결과가 반영되었습니다.';
   } finally {
+    messages.push(pending); // 서사와 칩·상태가 함께 나타난다
     busy = false;
     render();
   }

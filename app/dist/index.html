@@ -10103,13 +10103,12 @@ ${Array.from(extras).join(" ")}` : text;
     const chips = [];
     const resultTexts = [];
     const recentForNarration = messages.slice(-4);
-    const result = runEvent(event);
-    appendEventChips(event.id, result.entries, chips, resultTexts);
     if (flavorText) messages.push({ role: "user", content: flavorText });
-    const pending = { role: "assistant", content: "", chips };
-    messages.push(pending);
     input2.value = "";
     render2();
+    const result = runEvent(event);
+    appendEventChips(event.id, result.entries, chips, resultTexts);
+    const pending = { role: "assistant", content: "", chips };
     try {
       const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
       lastPrompt = prompt;
@@ -10121,6 +10120,7 @@ ${Array.from(extras).join(" ")}` : text;
       chips.push({ ok: false, text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
       pending.content = "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } finally {
+      messages.push(pending);
       busy = false;
       render2();
     }
