@@ -95,7 +95,9 @@ export interface Persona {
 }
 
 export type PromptBlock =
-  | { id: string; type: 'plain' | 'jailbreak'; name: string; enabled: boolean; role: PromptRole; text: string; source: Provenance | null }
+  // slot: Risu의 plain type2 구분 고증 — main은 카드 systemPrompt의 {{original}} 자리,
+  // globalNote는 post-history instructions의 {{original}} 자리. 생략 시 'normal'.
+  | { id: string; type: 'plain' | 'jailbreak'; name: string; enabled: boolean; role: PromptRole; text: string; slot?: 'main' | 'globalNote' | 'normal'; source: Provenance | null }
   | { id: string; type: 'description' | 'persona' | 'lorebook' | 'authornote' | 'memory' | 'postEverything'; name: string; enabled: boolean; role?: PromptRole; innerFormat?: string; source: Provenance | null }
   | { id: string; type: 'chat'; name: string; enabled: boolean; rangeStart: number; rangeEnd: number | 'end'; source: Provenance | null }
   | { id: string; type: 'cache'; name: string; enabled: boolean; depth: number; role: PromptRole | 'all'; source: Provenance | null }

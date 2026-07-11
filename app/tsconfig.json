@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "lib": ["ES2020", "DOM"]
   },
-  "include": ["core/compat/**/*.ts"]
+  "include": ["core/compat/**/*.ts", "core/prompt/**/*.ts"]
 }

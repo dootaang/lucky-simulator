@@ -20,6 +20,7 @@
           "type": { "enum": ["plain", "jailbreak", "description", "persona", "lorebook", "chat", "authornote", "memory", "cache", "postEverything", "engineFacts", "availableActions", "groundedMemory"] },
           "name": { "type": "string" },
           "enabled": { "type": "boolean" },
+          "slot": { "enum": ["main", "globalNote", "normal"] },
           "source": { "type": ["object", "null"] }
         },
         "additionalProperties": true
