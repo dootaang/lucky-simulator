@@ -27,6 +27,7 @@ function applyEvent(schema, state, event, rng) {
   if (type === 'day_end') {
     const result = runDayEnd(schema, state, rng);
     if (result.state.pendingQuest && result.state.pendingQuest.day !== result.state.day) delete result.state.pendingQuest;
+    if (result.state.questAttempts && result.state.questAttempts.day !== result.state.day) delete result.state.questAttempts;
     return { state: result.state, log: [{ ok: true, event: type, report: result.report }] };
   }
 
@@ -180,6 +181,7 @@ function attemptQuest(schema, state, params, rng, ok, fail) {
   const quest = activeQuests(schema, state).find((entry) => entry && entry.id === questId);
   if (!quest) return fail('unknown_quest', questId);
   if (!quest.repeatable && (state.claimedRewards || []).includes(questId)) return fail('already_claimed', questId);
+  if (state.questAttempts && state.questAttempts.day === state.day && (state.questAttempts.ids || []).includes(questId)) return fail('already_attempted_today', questId);
   const range = schema && schema.rewards && schema.rewards.gold && schema.rewards.gold[quest.rewardTier];
   if (!isRewardRange(range)) return fail('unknown_reward_tier', quest.rewardTier);
 
@@ -202,6 +204,8 @@ function attemptQuest(schema, state, params, rng, ok, fail) {
   if (check.mode === 'dc' && check.stat) {
     check.mod = Number((state.player && state.player[check.stat]) ?? (state.player && state.player.stats && state.player.stats[check.stat]) ?? 0);
   }
+  if (!(state.questAttempts && state.questAttempts.day === state.day && Array.isArray(state.questAttempts.ids))) state.questAttempts = { day: state.day, ids: [] };
+  if (!state.questAttempts.ids.includes(questId)) state.questAttempts.ids.push(questId);
   const result = resolveCheck(rng, check);
   const base = { questId, name: quest.name || questId, roll: result.rand, tier: result.tier, success: result.success };
   if (!result.success) return ok(base);

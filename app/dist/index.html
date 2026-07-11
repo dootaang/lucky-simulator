@@ -5519,7 +5519,8 @@ select:focus { border-color: var(--amber-line); }
             chance: questChance(quest.check, state2),
             reward: Array.isArray(rewards && rewards[quest.rewardTier]) ? rewards[quest.rewardTier].slice() : null,
             done: !quest.repeatable && claimed.includes(quest.id),
-            pending: !!(state2.pendingQuest && state2.pendingQuest.day === state2.day && state2.pendingQuest.questId === quest.id)
+            pending: !!(state2.pendingQuest && state2.pendingQuest.day === state2.day && state2.pendingQuest.questId === quest.id),
+            attemptedToday: !!(state2.questAttempts && state2.questAttempts.day === state2.day && (state2.questAttempts.ids || []).includes(quest.id))
           }));
           sections.push({ type: "quests", items });
         }
@@ -6526,6 +6527,7 @@ select:focus { border-color: var(--amber-line); }
         if (type === "day_end") {
           const result = runDayEnd(schema2, state2, rng2);
           if (result.state.pendingQuest && result.state.pendingQuest.day !== result.state.day) delete result.state.pendingQuest;
+          if (result.state.questAttempts && result.state.questAttempts.day !== result.state.day) delete result.state.questAttempts;
           return { state: result.state, log: [{ ok: true, event: type, report: result.report }] };
         }
         const next = clone(state2);
@@ -6669,6 +6671,7 @@ select:focus { border-color: var(--amber-line); }
         const quest = activeQuests(schema2, state2).find((entry) => entry && entry.id === questId);
         if (!quest) return fail("unknown_quest", questId);
         if (!quest.repeatable && (state2.claimedRewards || []).includes(questId)) return fail("already_claimed", questId);
+        if (state2.questAttempts && state2.questAttempts.day === state2.day && (state2.questAttempts.ids || []).includes(questId)) return fail("already_attempted_today", questId);
         const range = schema2 && schema2.rewards && schema2.rewards.gold && schema2.rewards.gold[quest.rewardTier];
         if (!isRewardRange(range)) return fail("unknown_reward_tier", quest.rewardTier);
         if (state2.pendingQuest && state2.pendingQuest.day !== state2.day) delete state2.pendingQuest;
@@ -6688,6 +6691,8 @@ select:focus { border-color: var(--amber-line); }
         if (check.mode === "dc" && check.stat) {
           check.mod = Number((state2.player && state2.player[check.stat]) ?? (state2.player && state2.player.stats && state2.player.stats[check.stat]) ?? 0);
         }
+        if (!(state2.questAttempts && state2.questAttempts.day === state2.day && Array.isArray(state2.questAttempts.ids))) state2.questAttempts = { day: state2.day, ids: [] };
+        if (!state2.questAttempts.ids.includes(questId)) state2.questAttempts.ids.push(questId);
         const result = resolveCheck(rng2, check);
         const base = { questId, name: quest.name || questId, roll: result.rand, tier: result.tier, success: result.success };
         if (!result.success) return ok(base);
@@ -7383,7 +7388,7 @@ ${narrationNpcText}` : "",
         if (!Array.isArray(schema2.quests) || !schema2.quests.length) return "";
         const descriptor = require_selectors().availableManagement(schema2, state2);
         const section = descriptor.sections.find((entry) => entry.type === "quests");
-        return section ? section.items.map((item) => `${item.done ? "\u2713 " : ""}${item.id}: ${item.name} (\uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.map((n) => Number(n).toLocaleString("ko-KR")).join("~") : "\uC5C6\uC74C"})`).join("\n") : "";
+        return section ? section.items.map((item) => `${item.done || item.attemptedToday ? "\u2713 " : ""}${item.id}: ${item.name} (\uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.map((n) => Number(n).toLocaleString("ko-KR")).join("~") : "\uC5C6\uC74C"})${item.attemptedToday && !item.done ? " \xB7 \uC624\uB298 \uCC98\uB9AC\uB428" : ""}`).join("\n") : "";
       }
       function menuListText(schema2, state2) {
         const block = (schema2.entities || []).find((entry) => entry.type === "menuItem");
@@ -10566,6 +10571,7 @@ ${Array.from(extras).join(" ")}` : text;
     if (entry.ok && type === "reward") return `reward \xB7 ${entry.tier} \xB7 gold +${formatMoney3(entry.goldDelta)}`;
     if (entry.ok && type === "upgrade") return `upgrade \xB7 ${entry.facility} Lv.${entry.level} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}`;
     if (entry.ok && type === "gain_resource") return `gain \xB7 ${entry.resource} +${entry.qty} (${entry.scale})`;
+    if (!entry.ok && type === "attempt_quest" && entry.reason === "already_attempted_today") return "\u2696 \uC624\uB298 \uC774\uBBF8 \uCC98\uB9AC\uD55C \uC758\uB8B0 \u2014 \uB0B4\uC77C \uAC8C\uC2DC\uD310 \uAC31\uC2E0 \uD6C4 \uAC00\uB2A5";
     if (!entry.ok) return `${type} \uC2E4\uD328: ${entry.reason || "\uC54C \uC218 \uC5C6\uC74C"}${entry.detail ? ` (${entry.detail})` : ""}`;
     if (type === "start_encounter") return `\uC804\uD22C \uC2DC\uC791 \xB7 \uC801 ${(entry.enemies || []).length}`;
     if (type === "combat_action") {
@@ -11804,9 +11810,9 @@ ${Array.from(extras).join(" ")}` : text;
         group.append(control);
       }
       if (section.type === "quests") for (const item of section.items) {
-        const label2 = item.pending ? `\u2696 ${item.name} \uACC4\uC18D` : item.done ? `\u2713 ${item.name} (\uC644\uB8CC)` : `\u2696 ${item.name} \xB7 \uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.join("~") : "\uC5C6\uC74C"}`;
+        const label2 = item.pending ? `\u2696 ${item.name} \uACC4\uC18D` : item.done ? `\u2713 ${item.name} (\uC644\uB8CC)` : item.attemptedToday ? `\u2713 ${item.name} (\uC624\uB298 \uCC98\uB9AC\uB428)` : `\u2696 ${item.name} \xB7 \uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.join("~") : "\uC5C6\uC74C"}`;
         const control = button2(label2, "secondary-btn");
-        control.disabled = busy || item.done;
+        control.disabled = busy || item.done || item.attemptedToday && !item.pending;
         control.addEventListener("click", () => runManagementTurn({ id: "attempt_quest", params: { questId: item.id } }, input2, ctx, render2));
         group.append(control);
       }

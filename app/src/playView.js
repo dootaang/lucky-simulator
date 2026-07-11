@@ -620,9 +620,9 @@ function renderManagementConsole(input, ctx, render) {
       group.append(control);
     }
     if (section.type === 'quests') for (const item of section.items) {
-      const label = item.pending ? `⚖ ${item.name} 계속` : item.done ? `✓ ${item.name} (완료)` : `⚖ ${item.name} · 성공 ${item.chance}% · 보상 ${item.reward ? item.reward.join('~') : '없음'}`;
+      const label = item.pending ? `⚖ ${item.name} 계속` : item.done ? `✓ ${item.name} (완료)` : item.attemptedToday ? `✓ ${item.name} (오늘 처리됨)` : `⚖ ${item.name} · 성공 ${item.chance}% · 보상 ${item.reward ? item.reward.join('~') : '없음'}`;
       const control = button(label, 'secondary-btn');
-      control.disabled = busy || item.done;
+      control.disabled = busy || item.done || (item.attemptedToday && !item.pending);
       control.addEventListener('click', () => runManagementTurn({ id: 'attempt_quest', params: { questId: item.id } }, input, ctx, render));
       group.append(control);
     }

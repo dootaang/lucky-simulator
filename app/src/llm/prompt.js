@@ -376,7 +376,7 @@ function questListText(schema, state) {
   if (!Array.isArray(schema.quests) || !schema.quests.length) return '';
   const descriptor = require('../../../engine/core/selectors.js').availableManagement(schema, state);
   const section = descriptor.sections.find((entry) => entry.type === 'quests');
-  return section ? section.items.map((item) => `${item.done ? '✓ ' : ''}${item.id}: ${item.name} (성공 ${item.chance}% · 보상 ${item.reward ? item.reward.map((n) => Number(n).toLocaleString('ko-KR')).join('~') : '없음'})`).join('\n') : '';
+  return section ? section.items.map((item) => `${item.done || item.attemptedToday ? '✓ ' : ''}${item.id}: ${item.name} (성공 ${item.chance}% · 보상 ${item.reward ? item.reward.map((n) => Number(n).toLocaleString('ko-KR')).join('~') : '없음'})${item.attemptedToday && !item.done ? ' · 오늘 처리됨' : ''}`).join('\n') : '';
 }
 
 // 현재 주방 레벨에서 팔 수 있는 메뉴 이름을 LLM에 정확히 알려준다(sale 이름 불일치 방지).

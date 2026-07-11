@@ -30,6 +30,25 @@ test('victory continuation skips encounter roll and resolves quest', () => {
   assert.equal(result.log[0].success, true); assert.equal(result.state.pendingQuest, undefined); assert.equal(result.state.gold >= 10, true);
 });
 
+test('victory resolution is allowed before same-day repeatable retry is blocked', () => {
+  const repeatableSchema = { ...schema, quests: [{ ...schema.quests[0], repeatable: true }] };
+  const random = { calls: 0, next: () => 0, int(min) { this.calls += 1; return min; } };
+  let current = applyEvent(repeatableSchema, state(), { id: 'attempt_quest', params: { questId: 'hunt' } }, random).state;
+  assert.equal(current.questAttempts, undefined);
+  current.combat.cleared = true;
+  current.combat.enemies.forEach((enemy) => { enemy.dead = true; enemy.hp.cur = 0; });
+  current = applyEvent(repeatableSchema, current, { id: 'end_encounter', params: {} }, random).state;
+  const resolved = applyEvent(repeatableSchema, current, { id: 'attempt_quest', params: { questId: 'hunt' } }, random);
+  assert.equal(resolved.log[0].success, true);
+  assert.deepEqual(resolved.state.questAttempts, { day: 1, ids: ['hunt'] });
+  const callsAfterResolution = random.calls;
+  const goldAfterResolution = resolved.state.gold;
+  const retry = applyEvent(repeatableSchema, resolved.state, { id: 'attempt_quest', params: { questId: 'hunt' } }, random);
+  assert.equal(retry.log[0].reason, 'already_attempted_today');
+  assert.equal(retry.state.gold, goldAfterResolution);
+  assert.equal(random.calls, callsAfterResolution);
+});
+
 test('defeat keeps pending quest retryable', () => {
   let current = applyEvent(schema, state(), { id: 'attempt_quest', params: { questId: 'hunt' } }, rng).state;
   current.player.dead = true; current.player.pools.hp.cur = 0;
@@ -49,6 +68,16 @@ test('day boundary clears pending quest', () => {
   const s = state(); s.pendingQuest = { questId: 'hunt', day: 1 };
   const result = applyEvent({ ...schema, processes: [] }, s, { id: 'day_end', params: {} }, rng);
   assert.equal(result.state.day, 2); assert.equal(result.state.pendingQuest, undefined);
+});
+
+test('day boundary clears quest attempts and allows the quest again', () => {
+  const s = state(); s.questAttempts = { day: 1, ids: ['hunt'] };
+  const ended = applyEvent({ ...schema, processes: [] }, s, { id: 'day_end', params: {} }, rng);
+  assert.equal(ended.state.day, 2);
+  assert.equal(ended.state.questAttempts, undefined);
+  const retry = applyEvent(schema, ended.state, { id: 'attempt_quest', params: { questId: 'hunt' } }, rng);
+  assert.equal(retry.log[0].reason, undefined);
+  assert.equal(retry.state.combat.active, true);
 });
 
 test('manual combat is opt-in in play view source', () => {

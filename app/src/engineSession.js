@@ -114,6 +114,7 @@ export function summarizeEvent(type, entry, formatMoney) {
   if (entry.ok && type === 'reward') return `reward · ${entry.tier} · gold +${formatMoney(entry.goldDelta)}`;
   if (entry.ok && type === 'upgrade') return `upgrade · ${entry.facility} Lv.${entry.level} · gold ${entry.goldDelta >= 0 ? '+' : ''}${formatMoney(entry.goldDelta)}`;
   if (entry.ok && type === 'gain_resource') return `gain · ${entry.resource} +${entry.qty} (${entry.scale})`;
+  if (!entry.ok && type === 'attempt_quest' && entry.reason === 'already_attempted_today') return '⚖ 오늘 이미 처리한 의뢰 — 내일 게시판 갱신 후 가능';
   if (!entry.ok) return `${type} 실패: ${entry.reason || '알 수 없음'}${entry.detail ? ` (${entry.detail})` : ''}`;
   if (type === 'start_encounter') return `전투 시작 · 적 ${(entry.enemies || []).length}`;
   if (type === 'combat_action') {

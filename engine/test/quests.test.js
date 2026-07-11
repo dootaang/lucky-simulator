@@ -14,7 +14,7 @@ const schema = {
   ],
   rewards: { gold: { Q: [10, 20] } },
 };
-const state = () => ({ gold: 0, claimedRewards: [], player: { stats: { strength: 3 } } });
+const state = () => ({ day: 1, gold: 0, claimedRewards: [], player: { stats: { strength: 3 } } });
 const rng = (...values) => ({ calls: 0, int(min, max) { const value = values[this.calls++]; return value == null ? min : value; } });
 const attempt = (s, id, random, extra = {}) => applyEvent(schema, s, { id: 'attempt_quest', params: { questId: id, ...extra } }, random);
 
@@ -28,25 +28,36 @@ test('success rewards, marks, and shares idempotency with reward', () => {
   assert.equal(applyEvent(schema, result.state, { id: 'reward', params: { questId: 'once', tier: 'Q' } }, random).log[0].reason, 'already_claimed');
 });
 
-test('failure is ok, unchanged, retryable, and consumes check only', () => {
+test('failure records the attempt and same-day retry consumes no rng', () => {
   const initial = state();
   const random = rng(90, 1, 13);
   const failed = attempt(initial, 'once', random);
   assert.equal(failed.log[0].ok, true);
   assert.equal(failed.log[0].success, false);
-  assert.deepEqual(failed.state, initial);
+  assert.equal(failed.state.gold, initial.gold);
+  assert.deepEqual(failed.state.claimedRewards, initial.claimedRewards);
+  assert.deepEqual(failed.state.questAttempts, { day: 1, ids: ['once'] });
   assert.equal(random.calls, 1);
-  const success = attempt(failed.state, 'once', random);
-  assert.equal(success.log[0].goldDelta, 13);
-  assert.equal(random.calls, 3);
+  const retry = attempt(failed.state, 'once', random);
+  assert.equal(retry.log[0].reason, 'already_attempted_today');
+  assert.equal(random.calls, 1);
 });
 
-test('repeatable quest never marks and can retry', () => {
+test('repeatable quest never marks, blocks same-day retry, and allows next-day retry', () => {
   const random = rng(1, 10, 1, 11);
   const first = attempt(state(), 'daily', random);
   const second = attempt(first.state, 'daily', random);
+  assert.equal(second.log[0].reason, 'already_attempted_today');
+  assert.equal(second.state.gold, 10);
+  assert.equal(random.calls, 2);
   assert.deepEqual(second.state.claimedRewards, []);
-  assert.equal(second.state.gold, 21);
+  const nextDay = { ...first.state, day: 2 };
+  delete nextDay.questAttempts;
+  const third = attempt(nextDay, 'daily', random);
+  assert.equal(third.log[0].success, true);
+  assert.equal(third.state.gold, 21);
+  assert.deepEqual(third.state.claimedRewards, []);
+  assert.equal(random.calls, 4);
 });
 
 test('rejections consume no rng and numeric backdoors are rejected', () => {

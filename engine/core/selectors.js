@@ -75,6 +75,7 @@ function availableManagement(schema, state) {
       reward: Array.isArray(rewards && rewards[quest.rewardTier]) ? rewards[quest.rewardTier].slice() : null,
       done: !quest.repeatable && claimed.includes(quest.id),
       pending: !!(state.pendingQuest && state.pendingQuest.day === state.day && state.pendingQuest.questId === quest.id),
+      attemptedToday: !!(state.questAttempts && state.questAttempts.day === state.day && (state.questAttempts.ids || []).includes(quest.id)),
     }));
     sections.push({ type: 'quests', items });
   }
