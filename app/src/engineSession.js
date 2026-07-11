@@ -1,6 +1,6 @@
 const defaultSchema = require('../../schema/yongsa-inn.v0.json');
 const { createState } = require('../../engine/core/createState.js');
-const { applyEvent } = require('../../engine/core/applyEvent.js');
+const { applyEvent, getRegisteredEventIds } = require('../../engine/core/applyEvent.js');
 const { createRng } = require('../../engine/core/rng.js');
 
 let activeSchema = defaultSchema;
@@ -10,42 +10,9 @@ let rng = createRng(seedValue);
 let logs = [];
 let eventCount = 0;
 
-export const eventTypes = [
-  'checkin',
-  'checkout',
-  'sale',
-  'purchase',
-  'purchase_batch',
-  'upgrade',
-  'gain_resource',
-  'hire',
-  'set_wage',
-  'fire',
-  'scale_delta',
-  'set_scale_mult',
-  'set_outfit',
-  'rep_event',
-  'exp_gain',
-  'reward',
-  'attempt_quest',
-  'gold_delta',
-  'resource_delta',
-  'use_item',
-  'buy_item',
-  'start_encounter',
-  'combat_action',
-  'enemy_action',
-  'enemy_turn',
-  'end_encounter',
-  'traffic_wave',
-  'incident_choice',
-  'lodging_review',
-  'lodging_accept',
-  'lodging_reject',
-  'mail_check',
-  'mail_open',
-  'day_end',
-];
+export function getEventTypes() {
+  return getRegisteredEventIds();
+}
 
 // 버튼 전용 인텐트 — LLM 어휘에 노출하지 않으며(prompt.js), LLM 자유 텍스트 응답의
 // events 배열로 흉내 내도 플레이 화면이 실행하지 않는다(감사 지적: 치트 채널 차단).

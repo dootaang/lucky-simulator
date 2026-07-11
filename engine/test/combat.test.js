@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const schema = require('../../schema/hunters-combat.v0.json');
+const schema = require('../../schema/generic-combat.v0.json');
 const { createRng } = require('../core/rng.js');
 const { createState } = require('../core/createState.js');
 const { applyEvent } = require('../core/applyEvent.js');

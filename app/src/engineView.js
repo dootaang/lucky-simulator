@@ -1,6 +1,6 @@
 const { summarize, npcSummary, roomStatus, availableMenu, staffMax } = require('../../engine/core/selectors.js');
 const { el, button, field, namedSelect, appendOption } = require('./ui/dom.js');
-import { eventTypes, getEngineState, getEventCount, getLogs, getSchema, getSeed, resetSession, runEvent, summarizeEvent } from './engineSession.js';
+import { getEventTypes, getEngineState, getEventCount, getLogs, getSchema, getSeed, resetSession, runEvent, summarizeEvent } from './engineSession.js';
 
 let selectedEvent = 'checkin';
 let schema = getSchema();
@@ -166,7 +166,7 @@ function renderConsole(render) {
   const panel = el('section', 'engine-console');
   const form = el('div', 'engine-form');
   const select = el('select');
-  for (const type of eventTypes) appendOption(select, type, type, false);
+  for (const type of getEventTypes()) appendOption(select, type, type, false);
   select.value = selectedEvent;
   select.addEventListener('change', () => {
     selectedEvent = select.value;

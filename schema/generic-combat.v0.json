@@ -1,7 +1,7 @@
 {
   "meta": {
-    "id": "hunters-combat",
-    "title": "헌터 전투 코어 (참조 스키마)",
+    "id": "generic-combat-reference",
+    "title": "범용 전투 코어 (참조 스키마 · 얼헌 아님)",
     "schemaVersion": "0.1"
   },
   "pools": [

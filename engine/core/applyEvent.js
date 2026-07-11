@@ -1,27 +1,27 @@
 'use strict';
 
 const { runDayEnd } = require('./dayEnd.js');
-const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require('./combat.js');
-const { staffMax, tierOf, menuTrade } = require('./selectors.js');
-const { poolHeal } = require('./pools.js');
+const { startEncounter } = require('./combat.js');
+const { staffMax, menuTrade } = require('./selectors.js');
 const { resolveCheck } = require('./resolveCheck.js');
 const { rollQuestEncounter } = require('./questEncounter.js');
 const { activeQuests } = require('./quests.js');
 const { rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require('./traffic.js');
+const { ModuleRegistry } = require('./moduleRegistry.js');
+const { createLegacyModule } = require('./modules/legacy.js');
+const { createStatsModule } = require('./modules/stats.js');
+const { createInventoryModule } = require('./modules/inventory.js');
+const { createCombatModule } = require('./modules/combat.js');
 const {
   clone,
-  clamp,
   findById,
   findRoom,
   findMenu,
-  scaleById,
-  ladderById,
-  rankIndex,
   normalizeInt,
   saleConsumes,
 } = require('./utils.js');
 
-function applyEvent(schema, state, event, rng) {
+function applyLegacyEvent(schema, state, event, rng) {
   const type = event && event.id;
   const params = (event && event.params) || event || {};
   if (type === 'day_end') {
@@ -52,34 +52,14 @@ function applyEvent(schema, state, event, rng) {
       return reward(schema, next, params, rng, ok, fail);
     case 'attempt_quest':
       return attemptQuest(schema, next, params, rng, ok, fail);
-    case 'gain_resource':
-      return gainResource(schema, next, params, rng, ok, fail);
-    case 'resource_delta':
-      return resourceDelta(next, params, ok, fail);
-    case 'use_item':
-      return useItem(schema, next, params, ok, fail);
-    case 'buy_item':
-      return buyItem(schema, next, params, ok, fail);
-    case 'scale_delta':
-      return scaleDelta(schema, next, params, ok, fail);
-    case 'set_scale_mult':
-      return setScaleMult(schema, next, params, ok, fail);
     case 'set_outfit':
       return setOutfit(next, params, ok, fail);
-    case 'rep_event':
-      return repEvent(schema, next, params, rng, ok, fail);
-    case 'exp_gain':
-      return expGain(schema, next, params, rng, ok, fail);
     case 'checkin':
       return checkin(schema, next, params, ok, fail);
     case 'checkout':
       return checkout(next, params, ok, fail);
     case 'sale':
       return sale(schema, next, params, ok, fail);
-    case 'purchase':
-      return purchase(schema, next, params, ok, fail);
-    case 'purchase_batch':
-      return purchaseBatch(schema, next, params, ok, fail);
     case 'hire':
       return hire(schema, next, params, ok, fail);
     case 'set_wage':
@@ -115,46 +95,9 @@ function applyEvent(schema, state, event, rng) {
       const result = openMail(schema, next, params.mailId);
       return result.ok ? ok(result) : fail(result.reason, result.detail);
     }
-    case 'start_encounter':
-      return startEncounter(schema, next, params, rng, ok, fail);
-    case 'combat_action':
-      return combatAction(schema, next, params, rng, ok, fail);
-    case 'enemy_action':
-      return enemyAction(schema, next, params, rng, ok, fail);
-    case 'enemy_turn':
-      return enemyTurn(schema, next, params, rng, ok, fail);
-    case 'end_encounter': {
-      // 승리로 해금되는 의뢰는 "그 의뢰의 조우 전투"만 — 무관한 전투 승리로 열리면 안 된다.
-      const combatQuestId = next.combat && next.combat.questId;
-      const result = endEncounter(schema, next, params, rng, ok, fail);
-      const logEntry = result.log && result.log[0];
-      if (logEntry && logEntry.ok && logEntry.outcome === 'victory'
-        && result.state.pendingQuest && result.state.pendingQuest.questId === combatQuestId) {
-        result.state.pendingQuest.cleared = true;
-      }
-      return result;
-    }
     default:
       return fail('unknown_event', `Unknown event id: ${type}`);
   }
-}
-
-function useItem(schema, state, params, ok, fail) {
-  if (Object.entries(params).some(([key, value]) => key !== 'itemId' && (['amount', 'heal', 'hp', 'mp', 'sp'].includes(key) || (value !== '' && Number.isFinite(Number(value)))))) return fail('item_number_not_allowed');
-  const itemId = params.itemId;
-  const item = (schema.resources || []).find((resource) => resource.id === itemId && resource.effect);
-  if (!item) return fail('unknown_item', itemId);
-  const count = Number((state.resources && state.resources[itemId]) || 0);
-  if (count < 1) return fail('out_of_stock', itemId);
-  if (state.player && state.player.dead) return fail('player_dead');
-  const pool = state.player && state.player.pools && state.player.pools[item.effect.pool];
-  if (!pool) return fail('no_pool', item.effect.pool);
-  const before = Number(pool.cur);
-  if (before >= Number(pool.max)) return fail('pool_full', item.effect.pool);
-  const healed = poolHeal(pool, item.effect.amount);
-  state.player.pools[item.effect.pool] = healed;
-  state.resources[itemId] = count - 1;
-  return ok({ itemId, pool: item.effect.pool, amount: healed.cur - before, before, after: healed.cur, remaining: state.resources[itemId] });
 }
 
 function goldDelta(state, params, ok) {
@@ -249,84 +192,6 @@ function upgrade(schema, state, params, ok, fail) {
   return ok({ facility, level, goldDelta: -Number(cost) });
 }
 
-function gainResource(schema, state, params, rng, ok, fail) {
-  const resource = params.resource || params.resourceId;
-  if (!resource || !(state.resources && resource in state.resources)) return fail('unknown_resource', resource);
-
-  const table = (schema && schema.gather) || {};
-  const requestedScale = params.scale || 'small';
-  const scale = table[requestedScale] ? requestedScale : 'small';
-  const range = table[scale];
-  if (!isRewardRange(range)) return fail('unknown_gather_scale', scale);
-
-  const qty = rng.int(range[0], range[1]);
-  const before = Number(state.resources[resource] || 0);
-  state.resources[resource] = before + qty;
-  return ok({ resource, qty, scale, before, after: state.resources[resource], reason: params.reason || '' });
-}
-
-function resourceDelta(state, params, ok, fail) {
-  const resource = params.resource || params.resourceId;
-  const amount = normalizeInt(params.amount);
-  if (!resource || !(state.resources && resource in state.resources)) return fail('unknown_resource', resource);
-  const before = Number(state.resources[resource] || 0);
-  state.resources[resource] = Math.max(0, before + amount);
-  return ok({ resource, amount, before, after: state.resources[resource], reason: params.reason || '' });
-}
-
-function scaleDelta(schema, state, params, ok, fail) {
-  const scaleId = params.scale || 'affinity';
-  const target = params.target || params.npcId;
-  const scale = scaleById(schema, scaleId);
-  if (!scale) return fail('unknown_scale', scaleId);
-  if (!target || !state.npcs || !state.npcs[target]) return fail('unknown_target', target);
-
-  const counterKey = `${scaleId}DeltaToday`;
-  const cap = Number(scale.dailyCapPerTarget || scale.dailyCap || 0);
-  const used = Number(state.npcs[target][counterKey] || 0);
-  const before = Number(state.npcs[target][scaleId] || scale.default || 0);
-  if (cap && used >= cap) {
-    return ok({ scale: scaleId, target, before, after: before, delta: 0, capped: true, reason: params.reason || '' });
-  }
-
-  const size = params.size || 'S';
-  const direction = params.direction === '-' ? '-' : '+';
-  const key = direction === '-' ? `${size}-` : size;
-  const base = Number(scale.steps && scale.steps[key]);
-  if (!Number.isFinite(base)) return fail('unknown_scale_step', key);
-  const bonusLimit = Math.abs(Number(scale.charBonus || 0));
-  const charBonus = clamp(normalizeInt(params.charBonus, 0), -bonusLimit, bonusLimit);
-  const multRaw = Number((state.scaleMults || {})[scaleId]);
-  const mult = Number.isFinite(multRaw) && multRaw > 0 ? Math.min(3, Math.max(0.5, multRaw)) : 1;
-  const rawDelta = Math.floor((base + charBonus) * mult + 0.5);
-  const range = scale.range || [0, 200];
-  const after = clamp(before + rawDelta, Number(range[0]), Number(range[1]));
-  const fromTier = tierOf(schema, scaleId, before);
-  const toTier = tierOf(schema, scaleId, after);
-
-  state.npcs[target][scaleId] = after;
-  state.npcs[target][counterKey] = used + 1;
-
-  const entry = { scale: scaleId, target, before, after, delta: after - before, size, direction, charBonus, reason: params.reason || '' };
-  if ((fromTier && fromTier.label) !== (toTier && toTier.label)) {
-    entry.tierChanged = { from: fromTier || null, to: toTier || null };
-  }
-  return ok(entry);
-}
-
-function setScaleMult(schema, state, params, ok, fail) {
-  const scale = params.scale;
-  if (!scaleById(schema, scale)) return fail('unknown_scale', scale);
-  const raw = params.mult;
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return fail('invalid_mult', params.mult);
-  const mult = Math.round(Math.min(3, Math.max(0.5, raw)) * 10) / 10;
-  state.scaleMults = state.scaleMults || {};
-  const beforeRaw = Number(state.scaleMults[scale]);
-  const before = Number.isFinite(beforeRaw) ? beforeRaw : 1;
-  state.scaleMults[scale] = mult;
-  return ok({ scale, before, mult });
-}
-
 function setOutfit(state, params, ok, fail) {
   const npcId = params.npcId;
   if (!state.npcs || !state.npcs[npcId]) return fail('unknown_target', npcId);
@@ -335,71 +200,6 @@ function setOutfit(state, params, ok, fail) {
   const before = state.npcs[npcId].outfit;
   state.npcs[npcId].outfit = outfit;
   return ok({ npcId, before, outfit });
-}
-
-function repEvent(schema, state, params, rng, ok, fail) {
-  const ladder = ladderById(schema, 'reputation');
-  const axis = params.axis;
-  const category = params.category;
-  if (!ladder || !ladder.axes.includes(axis)) return fail('unknown_reputation_axis', axis);
-  const table = ladder.categories && ladder.categories[axis];
-  const range = table && table[category];
-  if (!range) return fail('unknown_reputation_category', `${axis}:${category}`);
-  const delta = Array.isArray(range) ? rng.int(range[0], range[1]) : Number(range);
-  const current = state.reputation[axis] || { rank: 'E', exp: 0 };
-  const before = { rank: current.rank, exp: current.exp };
-  let rank = current.rank;
-  let exp = Number(current.exp || 0) + delta;
-  let changed = null;
-
-  if (delta >= 0) {
-    const idx = rankIndex(ladder, rank);
-    const next = (ladder.ranks || [])[idx];
-    if (next && next.next != null && exp >= Number(next.next)) {
-      const promoted = (ladder.ranks || [])[idx + 1];
-      if (promoted) {
-        changed = { from: rank, to: promoted.id, type: 'promote' };
-        rank = promoted.id;
-        exp = 0;
-      }
-    }
-  } else {
-    while (exp < 0) {
-      const idx = rankIndex(ladder, rank);
-      if (idx <= 0) {
-        rank = (ladder.floor && ladder.floor.rank) || 'E';
-        exp = Number((ladder.floor && ladder.floor.exp) || 0);
-        break;
-      }
-      const previous = (ladder.ranks || [])[idx - 1];
-      const previousThreshold = Number(previous.next || 0);
-      changed = { from: rank, to: previous.id, type: 'demote' };
-      rank = previous.id;
-      exp = previousThreshold + exp;
-    }
-  }
-
-  state.reputation[axis] = { rank, exp };
-  return ok({ axis, category, delta, before, after: state.reputation[axis], rankChanged: changed, reason: params.reason || '' });
-}
-
-function expGain(schema, state, params, rng, ok, fail) {
-  const ladder = ladderById(schema, 'player_level');
-  if (!ladder) return fail('missing_player_level_ladder');
-  const source = ladder.sources && ladder.sources[params.category];
-  if (!source) return fail('unknown_exp_category', params.category);
-  const amount = Array.isArray(source) ? rng.int(source[0], source[1]) : Number(source.value == null ? source : source.value);
-  const before = { level: state.player.level, exp: state.player.exp };
-  state.player.exp = Number(state.player.exp || 0) + amount;
-  const levelUps = [];
-  while (state.player.level <= (ladder.thresholds || []).length) {
-    const threshold = Number(ladder.thresholds[state.player.level - 1]);
-    if (!threshold || state.player.exp < threshold) break;
-    state.player.exp -= threshold;
-    state.player.level += 1;
-    levelUps.push(state.player.level);
-  }
-  return ok({ category: params.category, amount, before, after: clone(state.player), levelUps, reason: params.reason || '' });
 }
 
 function checkin(schema, state, params, ok, fail) {
@@ -458,58 +258,6 @@ function sale(schema, state, params, ok, fail) {
   return ok({ menuName: menu.name, qty, goldDelta, consumed });
 }
 
-function buyItem(schema, state, params, ok, fail) {
-  if (state.combat && state.combat.active) return fail('in_combat');
-  if (Object.keys(params).some((key) => !['menuName', 'qty'].includes(key))) return fail('item_number_not_allowed');
-  const menu = findMenu(schema, params.menuName);
-  if (!menu) return fail('unknown_menu', params.menuName);
-  if (menuTrade(menu) !== 'buy') return fail('menu_not_buyable', params.menuName);
-  const qty = normalizeInt(params.qty, 1);
-  if (qty <= 0 || qty > 999) return fail('invalid_qty', qty); // 상한 999 — 가격 0 아이템·consumes 없는 메뉴의 무제한 수량 악용 방지(감사 지적)
-  const cost = Number(menu.price || 0) * qty;
-  if (Number(state.gold || 0) < cost) return fail('insufficient_gold', params.menuName);
-  state.gold = Number(state.gold || 0) - cost;
-  if (!state.items || typeof state.items !== 'object') state.items = {};
-  state.items[menu.name] = Number(state.items[menu.name] || 0) + qty;
-  return ok({ menuName: menu.name, qty, goldDelta: -cost, owned: state.items[menu.name] });
-}
-
-function purchase(schema, state, params, ok, fail) {
-  if (state.combat && state.combat.active) return fail('in_combat');
-  const resource = params.resource || params.resourceId;
-  const qty = normalizeInt(params.qty, 1);
-  const def = (schema.resources || []).find((entry) => entry.id === resource);
-  if (!def || resource === 'gold') return fail('unknown_resource', resource);
-  if (qty <= 0 || qty > 999) return fail('invalid_qty', qty); // 상한 999 — 가격 0 아이템·consumes 없는 메뉴의 무제한 수량 악용 방지(감사 지적)
-  const cost = Number(def.basePrice || 0) * qty;
-  if (state.gold < cost) return fail('insufficient_gold', resource);
-  state.gold -= cost;
-  state.resources[resource] = Number(state.resources[resource] || 0) + qty;
-  return ok({ resource, qty, goldDelta: -cost });
-}
-
-function purchaseBatch(schema, state, params, ok, fail) {
-  if (state.combat && state.combat.active) return fail('in_combat');
-  const items = Array.isArray(params.items) ? params.items : [];
-  if (!items.length) return fail('empty_purchase_batch');
-  const normalized = [];
-  let total = 0;
-  for (const item of items) {
-    const resource = item && (item.resource || item.resourceId);
-    const qty = normalizeInt(item && item.qty, 0);
-    const def = (schema.resources || []).find((entry) => entry.id === resource);
-    if (!def || resource === 'gold') return fail('unknown_resource', resource);
-    if (qty <= 0 || qty > 999) return fail('invalid_qty', qty);
-    const cost = Number(def.basePrice || 0) * qty;
-    total += cost;
-    normalized.push({ resource, qty, cost });
-  }
-  if (Number(state.gold || 0) < total) return fail('insufficient_gold', total);
-  state.gold = Number(state.gold || 0) - total;
-  for (const item of normalized) state.resources[item.resource] = Number(state.resources[item.resource] || 0) + item.qty;
-  return ok({ items: normalized, goldDelta: -total });
-}
-
 function hire(schema, state, params, ok, fail) {
   const npcId = params.npcId;
   const wage = normalizeInt(params.dailyWage);
@@ -540,4 +288,22 @@ function fire(state, params, ok, fail) {
   return ok({ npcId });
 }
 
-module.exports = { applyEvent };
+const defaultModuleRegistry = new ModuleRegistry();
+defaultModuleRegistry.register(createStatsModule());
+defaultModuleRegistry.register(createInventoryModule());
+defaultModuleRegistry.register(createCombatModule());
+defaultModuleRegistry.register(createLegacyModule(applyLegacyEvent));
+
+function applyEvent(schema, state, event, rng) {
+  return defaultModuleRegistry.dispatch(schema, state, event, rng);
+}
+
+function getDefaultModuleRegistry() {
+  return defaultModuleRegistry;
+}
+
+function getRegisteredEventIds() {
+  return defaultModuleRegistry.eventIds();
+}
+
+module.exports = { applyEvent, getDefaultModuleRegistry, getRegisteredEventIds };

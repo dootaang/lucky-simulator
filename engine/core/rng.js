@@ -13,6 +13,13 @@ function hashSeed(seed) {
 function createRng(seed) {
   let t = hashSeed(seed);
   return {
+    snapshot() {
+      return t;
+    },
+    restore(snapshot) {
+      if (!Number.isFinite(Number(snapshot))) throw new TypeError('invalid_rng_snapshot');
+      t = Number(snapshot);
+    },
     next() {
       t += 0x6D2B79F5;
       let x = t;
