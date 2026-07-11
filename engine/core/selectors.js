@@ -16,6 +16,32 @@ function availableMenu(schema, state, category) {
   });
 }
 
+function menuTrade(menu) {
+  return menu && menu.trade === 'buy' ? 'buy' : 'sell';
+}
+
+function availableManagement(schema, state) {
+  if (state && state.combat && state.combat.active) return { sections: [] };
+  const sections = [];
+  const menus = availableMenu(schema, state);
+  const sell = menus.filter((item) => menuTrade(item) === 'sell').map((item) => ({ name: item.name, price: Number(item.price || 0), category: item.category }));
+  if (sell.length) sections.push({ type: 'sell', items: sell });
+  const buy = menus.filter((item) => menuTrade(item) === 'buy').map((item) => ({ name: item.name, price: Number(item.price || 0), category: item.category, affordable: Number(state.gold || 0) >= Number(item.price || 0), owned: Number((state.items && state.items[item.name]) || 0) }));
+  if (buy.length) sections.push({ type: 'buy', items: buy });
+  const purchase = (schema.resources || []).filter((item) => item.id !== 'gold' && item.basePrice != null).map((item) => ({ id: item.id, ...(item.label == null ? {} : { label: item.label }), basePrice: Number(item.basePrice), affordable: Number(state.gold || 0) >= Number(item.basePrice) }));
+  if (purchase.length) sections.push({ type: 'purchase', items: purchase });
+  const upgrade = entityList(schema, 'facility').map((item) => {
+    const level = Number((state.facilities && state.facilities[item.id]) || 1); // 폴백 1 — upgrade 핸들러와 동일(감사 지적)
+    const maxed = level >= Number(item.maxLevel || 0);
+    const nextCost = maxed ? null : Number(item.upgradeCosts && item.upgradeCosts[String(level + 1)]);
+    return { id: item.id, label: item.label || item.id, level, nextCost: Number.isFinite(nextCost) ? nextCost : null, affordable: !maxed && Number.isFinite(nextCost) && Number(state.gold || 0) >= nextCost, maxed };
+  });
+  if (upgrade.length) sections.push({ type: 'upgrade', items: upgrade });
+  if (schema.gather) sections.push({ type: 'gather', resources: (schema.resources || []).filter((item) => item.id !== 'gold').map((item) => item.id), scales: ['small', 'large', 'bulk'].filter((id) => Array.isArray(schema.gather[id])).map((id) => ({ id, range: schema.gather[id].slice() })) });
+  if ((schema.processes || []).some((process) => process.trigger === 'dayEnd')) sections.push({ type: 'day_end' });
+  return { sections };
+}
+
 function roomStatus(schema, state) {
   return entityList(schema, 'room').map((room) => {
     const occupants = (state.rooms && state.rooms[String(room.no)]) || [];
@@ -128,6 +154,9 @@ function summarize(schema, state) {
     lines.push(`[전투] ROUND ${combat.round} · ${enemies.join(' · ')}${combat.guard ? ' · 방어 중' : ''}`);
   }
 
+  const items = Object.entries(state.items || {}).filter(([, qty]) => Number(qty) !== 0);
+  if (items.length) lines.push(`[소지품] ${items.map(([name, qty]) => `${name} ×${qty}`).join(' · ')}`);
+
   return lines.join('\n');
 }
 
@@ -158,4 +187,4 @@ function formatNumber(n) {
   return Number(n || 0).toLocaleString('ko-KR');
 }
 
-module.exports = { staffMax, availableMenu, roomStatus, tierOf, usableItems, availableActions, summarize, npcSummary, rankWeight };
+module.exports = { staffMax, availableMenu, menuTrade, availableManagement, roomStatus, tierOf, usableItems, availableActions, summarize, npcSummary, rankWeight };

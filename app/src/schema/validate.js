@@ -15,6 +15,7 @@ function validateSchema(obj) {
   const schema = clone(obj || {});
 
   normalizeAliases(schema, issues);
+  normalizeMenuTrade(schema, issues);
   normalizePlayerPools(schema, issues);
   normalizeCombatHpPool(schema, issues);
   validateTop(schema, issues);
@@ -32,6 +33,17 @@ function validateSchema(obj) {
   validateEvents(schema, issues);
 
   return { schema, issues };
+}
+
+function normalizeMenuTrade(schema, issues) {
+  const menu = findEntity(schema, 'menuItem');
+  if (!menu) return;
+  for (const [index, instance] of asArray(menu.instances).entries()) {
+    if (isObject(instance) && instance.trade != null && !['sell', 'buy'].includes(instance.trade)) {
+      delete instance.trade;
+      warn(issues, `entities.menuItem.instances[${index}].trade`, 'trade must be sell or buy; removed so default sell applies.');
+    }
+  }
 }
 
 const POOL_ALIASES = { hp: 'hp', mp: 'mp', sp: 'sp', stamina: 'sp', mana: 'mp' };

@@ -9,6 +9,7 @@ function createState(schema, seed) {
     day: Number(initial.day || 1),
     gold: Number(initial.gold || 0),
     resources: clone(initial.resources || {}),
+    items: clone(initial.items || {}),
     facilities: clone(initial.facilities || {}),
     staff: Array.isArray(initial.staff) ? clone(initial.staff) : [],
     rooms: clone(initial.rooms || {}),

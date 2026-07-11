@@ -73,7 +73,9 @@ test('buildPrompt enables all combat vocabulary after scales are promoted', () =
 });
 
 test('buildNarrationPrompt fixes engine results and includes flavor text', () => {
-  const prompt = buildNarrationPrompt({ schema: hunterSchema, state: createState(hunterSchema), results: ['공격 · e1 명중 · 피해 12'], flavorText: '낮게 파고든다', recentMessages: [] });
+  const state = createState(hunterSchema);
+  state.combat = { active: true };
+  const prompt = buildNarrationPrompt({ schema: hunterSchema, state, results: ['공격 · e1 명중 · 피해 12'], flavorText: '낮게 파고든다', recentMessages: [] });
   assert.match(prompt.system, /새 사건 JSON을 내지 마라/);
   assert.match(prompt.messages.at(-1).content, /\[확정된 전투 결과\]/);
   assert.match(prompt.messages.at(-1).content, /공격 · e1 명중 · 피해 12/);
@@ -81,9 +83,21 @@ test('buildNarrationPrompt fixes engine results and includes flavor text', () =>
 });
 
 test('buildNarrationPrompt adds chronological whole-combat instruction only for long result lists', () => {
-  const base = { schema: hunterSchema, state: createState(hunterSchema), flavorText: '', recentMessages: [] };
+  const state = createState(hunterSchema);
+  state.combat = { active: true };
+  const base = { schema: hunterSchema, state, flavorText: '', recentMessages: [] };
   assert.doesNotMatch(buildNarrationPrompt({ ...base, results: Array(8).fill('결과') }).messages.at(-1).content, /여러 턴의 전투 전체/);
   assert.match(buildNarrationPrompt({ ...base, results: Array(9).fill('결과') }).messages.at(-1).content, /여러 턴의 전투 전체를 시간순으로 요약/);
+});
+
+test('buy menus expose only buy_item vocabulary and narration uses generic result heading', () => {
+  const shop = { meta: { title: '상점' }, resources: [], entities: [{ type: 'menuItem', instances: [{ name: '서약반지', price: 30000, trade: 'buy' }] }] };
+  const system = buildSystemPrompt(shop);
+  assert.match(system, /buy_item \{menuName, qty\}/);
+  assert.doesNotMatch(system, /- sale \{/);
+  const narration = buildNarrationPrompt({ schema: shop, state: { gold: 70000, items: { 서약반지: 1 } }, results: ['구매'], recentMessages: [] });
+  assert.match(narration.messages.at(-1).content, /^\[확정된 결과\]/);
+  assert.match(narration.messages.at(-1).content, /\[소지품\] 서약반지 ×1/);
 });
 
 test('consumables inject vocabulary and stocked item list while inn stays unchanged', () => {

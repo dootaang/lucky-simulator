@@ -975,6 +975,12 @@ select:focus { border-color: var(--amber-line); }
 .combat-gauge-track { height: 8px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--inset); }
 .combat-gauge-fill { width: var(--pct); height: 100%; background: var(--amber); transition: width 140ms ease; }
 
+.mgmt-console { padding: 12px 14px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.mgmt-console:empty { display: none; }
+.mgmt-console > summary { cursor: pointer; color: var(--ink-mid); font-family: var(--font-mono); }
+.mgmt-section { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 9px; }
+.mgmt-section .primary-btn, .mgmt-section .secondary-btn { margin-top: 0; padding: 7px 10px; }
+
   </style>
 </head>
 <body>
@@ -5090,6 +5096,7 @@ select:focus { border-color: var(--amber-line); }
           day: Number(initial.day || 1),
           gold: Number(initial.gold || 0),
           resources: clone(initial.resources || {}),
+          items: clone(initial.items || {}),
           facilities: clone(initial.facilities || {}),
           staff: Array.isArray(initial.staff) ? clone(initial.staff) : [],
           rooms: clone(initial.rooms || {}),
@@ -5165,6 +5172,30 @@ select:focus { border-color: var(--amber-line); }
           if (category && item.category !== category) return false;
           return Number(item.requiresKitchenLevel || 1) <= kitchen;
         });
+      }
+      function menuTrade(menu) {
+        return menu && menu.trade === "buy" ? "buy" : "sell";
+      }
+      function availableManagement2(schema2, state2) {
+        if (state2 && state2.combat && state2.combat.active) return { sections: [] };
+        const sections = [];
+        const menus = availableMenu2(schema2, state2);
+        const sell = menus.filter((item) => menuTrade(item) === "sell").map((item) => ({ name: item.name, price: Number(item.price || 0), category: item.category }));
+        if (sell.length) sections.push({ type: "sell", items: sell });
+        const buy = menus.filter((item) => menuTrade(item) === "buy").map((item) => ({ name: item.name, price: Number(item.price || 0), category: item.category, affordable: Number(state2.gold || 0) >= Number(item.price || 0), owned: Number(state2.items && state2.items[item.name] || 0) }));
+        if (buy.length) sections.push({ type: "buy", items: buy });
+        const purchase = (schema2.resources || []).filter((item) => item.id !== "gold" && item.basePrice != null).map((item) => ({ id: item.id, ...item.label == null ? {} : { label: item.label }, basePrice: Number(item.basePrice), affordable: Number(state2.gold || 0) >= Number(item.basePrice) }));
+        if (purchase.length) sections.push({ type: "purchase", items: purchase });
+        const upgrade = entityList(schema2, "facility").map((item) => {
+          const level = Number(state2.facilities && state2.facilities[item.id] || 1);
+          const maxed = level >= Number(item.maxLevel || 0);
+          const nextCost = maxed ? null : Number(item.upgradeCosts && item.upgradeCosts[String(level + 1)]);
+          return { id: item.id, label: item.label || item.id, level, nextCost: Number.isFinite(nextCost) ? nextCost : null, affordable: !maxed && Number.isFinite(nextCost) && Number(state2.gold || 0) >= nextCost, maxed };
+        });
+        if (upgrade.length) sections.push({ type: "upgrade", items: upgrade });
+        if (schema2.gather) sections.push({ type: "gather", resources: (schema2.resources || []).filter((item) => item.id !== "gold").map((item) => item.id), scales: ["small", "large", "bulk"].filter((id) => Array.isArray(schema2.gather[id])).map((id) => ({ id, range: schema2.gather[id].slice() })) });
+        if ((schema2.processes || []).some((process) => process.trigger === "dayEnd")) sections.push({ type: "day_end" });
+        return { sections };
       }
       function roomStatus2(schema2, state2) {
         return entityList(schema2, "room").map((room) => {
@@ -5264,6 +5295,8 @@ select:focus { border-color: var(--amber-line); }
           });
           lines.push(`[\uC804\uD22C] ROUND ${combat.round} \xB7 ${enemies.join(" \xB7 ")}${combat.guard ? " \xB7 \uBC29\uC5B4 \uC911" : ""}`);
         }
+        const items = Object.entries(state2.items || {}).filter(([, qty]) => Number(qty) !== 0);
+        if (items.length) lines.push(`[\uC18C\uC9C0\uD488] ${items.map(([name, qty]) => `${name} \xD7${qty}`).join(" \xB7 ")}`);
         return lines.join("\n");
       }
       function npcSummary3(schema2, state2, npcId) {
@@ -5289,7 +5322,7 @@ select:focus { border-color: var(--amber-line); }
       function formatNumber(n) {
         return Number(n || 0).toLocaleString("ko-KR");
       }
-      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, roomStatus: roomStatus2, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
+      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, menuTrade, availableManagement: availableManagement2, roomStatus: roomStatus2, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
     }
   });
 
@@ -5710,7 +5743,7 @@ select:focus { border-color: var(--amber-line); }
       "use strict";
       var { runDayEnd } = require_dayEnd();
       var { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require_combat();
-      var { staffMax: staffMax2, tierOf } = require_selectors();
+      var { staffMax: staffMax2, tierOf, menuTrade } = require_selectors();
       var { poolHeal } = require_pools();
       var {
         clone,
@@ -5750,6 +5783,8 @@ select:focus { border-color: var(--amber-line); }
             return resourceDelta(next, params, ok, fail);
           case "use_item":
             return useItem(schema2, next, params, ok, fail);
+          case "buy_item":
+            return buyItem(schema2, next, params, ok, fail);
           case "scale_delta":
             return scaleDelta(schema2, next, params, ok, fail);
           case "rep_event":
@@ -5830,7 +5865,7 @@ select:focus { border-color: var(--amber-line); }
         const facility = params.facility || params.facilityId;
         const def = findById(schema2, "facility", facility);
         if (!def) return fail("unknown_facility", facility);
-        const current = Number(state2.facilities && state2.facilities[facility] || 0);
+        const current = Number(state2.facilities && state2.facilities[facility] || 1);
         if (current >= Number(def.maxLevel || 0)) return fail("max_level", facility);
         const level = current + 1;
         const cost = def.upgradeCosts && def.upgradeCosts[String(level)];
@@ -5995,7 +6030,8 @@ select:focus { border-color: var(--amber-line); }
         const menu = findMenu(schema2, params.menuName);
         const qty = normalizeInt(params.qty, 1);
         if (!menu) return fail("unknown_menu", params.menuName);
-        if (qty <= 0) return fail("invalid_qty", qty);
+        if (menuTrade(menu) !== "sell") return fail("menu_not_sellable", params.menuName);
+        if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
         if (Number(menu.requiresKitchenLevel || 1) > Number(state2.facilities && state2.facilities.kitchen || 1)) return fail("menu_locked", params.menuName);
         const consumes = saleConsumes(menu, state2);
         for (const [resource, amount] of Object.entries(consumes)) {
@@ -6013,12 +6049,26 @@ select:focus { border-color: var(--amber-line); }
         state2.gold += goldDelta2;
         return ok({ menuName: menu.name, qty, goldDelta: goldDelta2, consumed });
       }
+      function buyItem(schema2, state2, params, ok, fail) {
+        if (Object.keys(params).some((key) => !["menuName", "qty"].includes(key))) return fail("item_number_not_allowed");
+        const menu = findMenu(schema2, params.menuName);
+        if (!menu) return fail("unknown_menu", params.menuName);
+        if (menuTrade(menu) !== "buy") return fail("menu_not_buyable", params.menuName);
+        const qty = normalizeInt(params.qty, 1);
+        if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
+        const cost = Number(menu.price || 0) * qty;
+        if (Number(state2.gold || 0) < cost) return fail("insufficient_gold", params.menuName);
+        state2.gold = Number(state2.gold || 0) - cost;
+        if (!state2.items || typeof state2.items !== "object") state2.items = {};
+        state2.items[menu.name] = Number(state2.items[menu.name] || 0) + qty;
+        return ok({ menuName: menu.name, qty, goldDelta: -cost, owned: state2.items[menu.name] });
+      }
       function purchase(schema2, state2, params, ok, fail) {
         const resource = params.resource || params.resourceId;
         const qty = normalizeInt(params.qty, 1);
         const def = (schema2.resources || []).find((entry) => entry.id === resource);
         if (!def || resource === "gold") return fail("unknown_resource", resource);
-        if (qty <= 0) return fail("invalid_qty", qty);
+        if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
         const cost = Number(def.basePrice || 0) * qty;
         if (state2.gold < cost) return fail("insufficient_gold", resource);
         state2.gold -= cost;
@@ -6187,8 +6237,9 @@ select:focus { border-color: var(--amber-line); }
 {"events":[{"id":"sale","params":{"menuName":"\uACE0\uAE30 \uC2A4\uD29C","qty":2}}]}
 \`\`\``;
       var EVENT_PROMPTS = {
-        sale: `- sale {menuName, qty} \u2014 \uBA54\uB274 \uD310\uB9E4 \uC644\uACB0 \uC2DC. (\uC5D4\uC9C4: \uB9E4\uCD9C \uAC00\uC0B0 + \uC2DD\uC790\uC7AC \uCC28\uAC10)
-- purchase {resource:"food"|"drink", qty} \u2014 \uC7AC\uB8CC \uAD6C\uB9E4. (\uC5D4\uC9C4: \uC6D0\uAC00 \uCC28\uAC10 + \uC7AC\uACE0 \uAC00\uC0B0. \uC720\uC800\uAC00 \uC0B0 \uADF8 \uD55C \uAC74\uB9CC, gold \uBCC0\uB3D9\uC744 \uB530\uB85C \uB123\uC9C0 \uB9C8\uB77C)`,
+        sale: `- sale {menuName, qty} \u2014 \uBA54\uB274 \uD310\uB9E4 \uC644\uACB0 \uC2DC. (\uC5D4\uC9C4: \uB9E4\uCD9C \uAC00\uC0B0 + \uC2DD\uC790\uC7AC \uCC28\uAC10)`,
+        purchase: `- purchase {resource:"food"|"drink", qty} \u2014 \uC7AC\uB8CC \uAD6C\uB9E4. (\uC5D4\uC9C4: \uC6D0\uAC00 \uCC28\uAC10 + \uC7AC\uACE0 \uAC00\uC0B0. \uC720\uC800\uAC00 \uC0B0 \uADF8 \uD55C \uAC74\uB9CC, gold \uBCC0\uB3D9\uC744 \uB530\uB85C \uB123\uC9C0 \uB9C8\uB77C)`,
+        buyItem: `- buy_item {menuName, qty} \u2014 \uC0C1\uC810 \uD488\uBAA9 \uAD6C\uB9E4 \uC644\uACB0 \uC2DC. menuName\uC740 [\uBA54\uB274 \uBAA9\uB85D] \uADF8\uB300\uB85C. (\uC5D4\uC9C4: \uB300\uAE08 \uCC28\uAC10 + \uC18C\uC9C0\uD488 \uAC00\uC0B0. \uAC00\uACA9\xB7\uACE8\uB4DC\uB97C \uC4F0\uC9C0 \uB9C8\uB77C)`,
         upgrade: `- upgrade {facility} \u2014 \uC2DC\uC124 \uD655\uC7A5. facility\uB294 \uC0C1\uD0DC\uC758 \uC2DC\uC124 id(tavern/kitchen/room/quarters). (\uC5D4\uC9C4: \uBE44\uC6A9 \uCC28\uAC10 + \uB808\uBCA8 \uC0C1\uC2B9. \uBE44\uC6A9\xB7\uACE8\uB4DC\xB7\uB808\uBCA8\uC740 \uC4F0\uC9C0 \uB9C8\uB77C)`,
         gather: `- gain_resource {resource:"food"|"drink", scale:"small"|"large"|"bulk", reason} \u2014 \uC0AC\uB0E5\xB7\uCC44\uC9D1\xB7\uBD80\uC0B0\uBB3C\uB85C \uC7AC\uB8CC\uB97C \uC5BB\uC744 \uB54C. (\uC5D4\uC9C4: \uADDC\uBAA8 \uD45C\uC5D0\uC11C \uC218\uB7C9 \uACB0\uC815. qty\xB7amount\xB7gold\uB294 \uC4F0\uC9C0 \uB9C8\uB77C)`,
         room: `- checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName} \u2014 roomNo\uB294 [\uAC1D\uC2E4 \uBAA9\uB85D]\uC758 \uC2E4\uC81C \uD638\uC218(\uC608: 101). (\uC5D4\uC9C4: \uC219\uBC15\uBE44 \uC120\uBD88 \uAC00\uC0B0)`,
@@ -6249,7 +6300,9 @@ select:focus { border-color: var(--amber-line); }
         const types = new Set((schema2.entities || []).map((entry) => entry.type));
         const ladders = schema2.ladders || [];
         const sections = [];
-        if (hasSaleCapability(schema2)) sections.push(EVENT_PROMPTS.sale);
+        if (hasSellMenus(schema2)) sections.push(EVENT_PROMPTS.sale);
+        if (hasPurchasableResources(schema2)) sections.push(EVENT_PROMPTS.purchase);
+        if (hasBuyMenus(schema2)) sections.push(EVENT_PROMPTS.buyItem);
         if (types.has("facility")) sections.push(EVENT_PROMPTS.upgrade);
         if (schema2.gather) sections.push(EVENT_PROMPTS.gather);
         if (types.has("room")) sections.push(EVENT_PROMPTS.room);
@@ -6266,6 +6319,19 @@ select:focus { border-color: var(--amber-line); }
       }
       function hasSaleCapability(schema2) {
         return (schema2.entities || []).some((entry) => entry.type === "menuItem") || (schema2.resources || []).some((resource) => resource.basePrice != null && !resource.effect);
+      }
+      function menuItems(schema2) {
+        const block = (schema2.entities || []).find((entry) => entry.type === "menuItem");
+        return block && Array.isArray(block.instances) ? block.instances : [];
+      }
+      function hasSellMenus(schema2) {
+        return menuItems(schema2).some((menu) => menu.trade !== "buy");
+      }
+      function hasBuyMenus(schema2) {
+        return menuItems(schema2).some((menu) => menu.trade === "buy");
+      }
+      function hasPurchasableResources(schema2) {
+        return (schema2.resources || []).some((resource) => resource.basePrice != null && !resource.effect);
       }
       function isInnLike(schema2) {
         const types = new Set((schema2.entities || []).map((entry) => entry.type));
@@ -6343,25 +6409,30 @@ ${lines.join("\n")}`;
       }
       function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages }) {
         const stateText = summarize3(schema2, state2);
+        const combatActive = !!(state2.combat && state2.combat.active);
         const combatLine = stateText.split("\n").find((line) => line.startsWith("[\uC804\uD22C]")) || "[\uC804\uD22C] \uC885\uB8CC\uB428";
+        const managementLines = stateText.split("\n").filter((line) => /^\[(자원|여관|소지품)\]/.test(line)).slice(0, 2).join("\n") || "\uC0C1\uD0DC \uBCC0\uD654 \uC5C6\uC74C";
         const resultText = (results || []).map((result) => typeof result === "string" ? result : String(result && result.text || "")).filter(Boolean).join("\n");
         const context = [
-          "[\uD655\uC815\uB41C \uC804\uD22C \uACB0\uACFC]",
-          (results || []).length > 8 ? "\uC5EC\uB7EC \uD134\uC758 \uC804\uD22C \uC804\uCCB4\uB97C \uC2DC\uAC04\uC21C\uC73C\uB85C \uC694\uC57D \uC11C\uC0AC\uD654\uD558\uB77C." : "",
+          combatActive ? "[\uD655\uC815\uB41C \uC804\uD22C \uACB0\uACFC]" : "[\uD655\uC815\uB41C \uACB0\uACFC]",
+          combatActive && (results || []).length > 8 ? "\uC5EC\uB7EC \uD134\uC758 \uC804\uD22C \uC804\uCCB4\uB97C \uC2DC\uAC04\uC21C\uC73C\uB85C \uC694\uC57D \uC11C\uC0AC\uD654\uD558\uB77C." : "",
           resultText || "\uBCC0\uD654 \uC5C6\uC74C",
           "",
-          combatLine,
+          combatActive ? combatLine : managementLines,
           flavorText ? `\uD50C\uB808\uC774\uC5B4\uC758 \uC5F0\uCD9C \uC758\uB3C4: ${flavorText}` : ""
         ].filter(Boolean).join("\n");
         const messages2 = conversationMessages([...(recentMessages || []).slice(-4), { role: "user", content: context }]);
-        const injectedParts = { state: estimateTokens2(combatLine), results: estimateTokens2(resultText), flavor: estimateTokens2(flavorText || "") };
+        const injectedState = combatActive ? combatLine : managementLines;
+        const injectedParts = { state: estimateTokens2(injectedState), results: estimateTokens2(resultText), flavor: estimateTokens2(flavorText || "") };
         return {
-          system: buildSystemPrompt(schema2).split("\n\n[\uC808\uB300 \uADDC\uCE59]")[0] + "\n\n\uC544\uB798 [\uD655\uC815\uB41C \uC804\uD22C \uACB0\uACFC]\uB294 \uC5D4\uC9C4\uC774 \uC774\uBBF8 \uACC4\uC0B0\xB7\uBC18\uC601\uD55C \uC0AC\uC2E4\uC774\uB2E4. \uC774 \uC218\uCE58\xB7\uC0DD\uC0AC\uB97C \uADF8\uB300\uB85C \uB530\uB77C \uD55C\uAD6D\uC5B4\uB85C \uC9E7\uAC8C(250\uC790 \uB0B4\uC678) \uC11C\uC0AC\uD654\uD558\uB77C. \uACB0\uACFC\uB97C \uBC14\uAFB8\uAC70\uB098 \uC0C8 \uC0AC\uAC74 JSON\uC744 \uB0B4\uC9C0 \uB9C8\uB77C.",
+          system: buildSystemPrompt(schema2).split("\n\n[\uC808\uB300 \uADDC\uCE59]")[0] + `
+
+\uC544\uB798 [\uD655\uC815\uB41C${combatActive ? " \uC804\uD22C" : ""} \uACB0\uACFC]\uB294 \uC5D4\uC9C4\uC774 \uC774\uBBF8 \uACC4\uC0B0\xB7\uBC18\uC601\uD55C \uC0AC\uC2E4\uC774\uB2E4. \uC774 \uC218\uCE58${combatActive ? "\xB7\uC0DD\uC0AC" : ""}\uB97C \uADF8\uB300\uB85C \uB530\uB77C \uD55C\uAD6D\uC5B4\uB85C \uC9E7\uAC8C(250\uC790 \uB0B4\uC678) \uC11C\uC0AC\uD654\uD558\uB77C. \uACB0\uACFC\uB97C \uBC14\uAFB8\uAC70\uB098 \uC0C8 \uC0AC\uAC74 JSON\uC744 \uB0B4\uC9C0 \uB9C8\uB77C.`,
           messages: messages2,
           injectedTokens: Object.values(injectedParts).reduce((sum, value) => sum + value, 0),
           injectedParts,
           relatedNpcIds: [],
-          injectedText: { state: combatLine, results: resultText, flavorText: flavorText || "" }
+          injectedText: { state: injectedState, results: resultText, flavorText: flavorText || "" }
         };
       }
       var MARKER_ONLY_RE = /^[\s⚡🧪]*$/;
@@ -6892,6 +6963,11 @@ ${row3.entry.content}`).join("\n\n");
       var canonicalSchema = require_yongsa_inn_v0();
       var SYSTEM_PROMPT = '\uB2F9\uC2E0\uC740 RisuAI \uC2DC\uBBAC\uBD07 \uCE74\uB4DC\uC758 "\uB8F0\uBD81 \uC0B0\uBB38"\uC744 \uACB0\uC815\uB860 \uAC8C\uC784 \uC5D4\uC9C4\uC6A9 \uD45C\uC900 \uC2A4\uD0A4\uB9C8 JSON\uC73C\uB85C \uBCC0\uD658\uD558\uB294 \uCEF4\uD30C\uC77C\uB7EC\uB2E4.\n\n[\uC124\uACC4 \uCCA0\uD559] \uB7F0\uD0C0\uC784\uC5D0 \uC11C\uC0AC\uB294 LLM\uC774, \uC218\uCE58 \uACC4\uC0B0\xB7\uC0C1\uD0DC\uB294 \uC5D4\uC9C4\uC774 \uC18C\uC720\uD55C\uB2E4. \uB108\uC758 \uC784\uBB34\uB294 \uB8F0\uBD81\uC5D0\uC11C "\uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD560 \uC218 \uC788\uB294 \uADDC\uCE59"(\uC218\uCE58\xB7\uBB38\uD131\xB7\uBC94\uC704\xB7\uD2F0\uC5B4\xB7\uACF5\uC2DD\xB7\uD45C)\uB9CC \uBF51\uC544 \uAD6C\uC870\uD654\uD558\uB294 \uAC83\uC774\uB2E4. \uBD84\uC704\uAE30\xB7\uC11C\uC0AC \uC9C0\uCE68\xB7\uC774\uBBF8\uC9C0 \uADDC\uCE59\uC740 \uB123\uC9C0 \uB9C8\uB77C.\n\n[\uCD9C\uB825 \uD615\uC2DD \u2014 \uC774 JSON \uD558\uB098\uB9CC. \uC55E\uB4A4 \uC124\uBA85\xB7\uB9C8\uD06C\uB2E4\uC6B4\xB7\uCF54\uB4DC\uD39C\uC2A4 \uAE08\uC9C0. \u2605\uD544\uB4DC\uBA85\uC740 \uC544\uB798 \uADF8\uB300\uB85C \uC4F0\uACE0 \uB300\uCCB4 \uC774\uB984\uC744 \uC9C0\uC5B4\uB0B4\uC9C0 \uB9C8\uB77C.]\n{\n  "meta": { "id": "kebab-id", "title": "\uCE74\uB4DC\uBA85", "schemaVersion": "0.1" },\n  "resources": [ { "id": "gold|food|drink|material", "unit": "\uBB38\uC790\uC5F4", "min": 0, "basePrice": \uC815\uC218\uC635\uC158 } ],\n  "scales": [ { "id": "affinity \uB4F1", "owner": "npc|player|captive", "range": [\uCD5C\uC18C,\uCD5C\uB300], "default": \uC815\uC218,\n    "steps": { "S": +\uC815\uC218, "M": +\uC815\uC218, "L": +\uC815\uC218, "XL": +\uC815\uC218, "S-": -\uC815\uC218, "M-": -\uC815\uC218, "L-": -\uC815\uC218, "XL-": -\uC815\uC218 },\n    "tiers": [ { "range": [lo,hi], "label": "\uD2F0\uC5B4\uBA85", "brief": "\uC9E7\uC740 \uC11C\uC220", "forbidden": ["\uAE08\uC9C0\uD589\uB3D9"] } ],\n    "actionMinimums": { "\uB3D9\uC791\uBA85": \uCD5C\uC18C\uC218\uCE58 } } ],\n  "ladders": [\n    { "id": "player_level", "currency": "exp", "thresholds": [\uBB38\uD131\uB4E4 \uB610\uB294 null], "sources": { "\uCE74\uD14C\uACE0\uB9AC": \uAC12 \uB610\uB294 [\uCD5C\uC18C,\uCD5C\uB300] } },\n    { "id": "reputation", "axes": ["\uCD95id"], "axisLabels": { "\uCD95id": "\uD55C\uAE00\uBA85" },\n      "ranks": [ { "id": "E", "next": \uBB38\uD131 }, { "id": "S", "next": null } ],\n      "onPromote": "resetExp", "onNegative": "demoteBorrow",\n      "categories": { "\uCD95id": { "\uCE74\uD14C\uACE0\uB9AC": [\uCD5C\uC18C,\uCD5C\uB300] } } } ],\n  "entities": [\n    { "type": "room", "fields": ["no","kind","pricePerNight","capacity","requiresRoomLevel"], "instances": [ { "no": \uC815\uC218, "kind": "\uBB38\uC790\uC5F4", "pricePerNight": \uC815\uC218, "capacity": \uC815\uC218\uB610\uB294null, "requiresRoomLevel": \uC815\uC218 } ] },\n    { "type": "menuItem", "fields": ["name","category","grade","price","requiresKitchenLevel","consumes"], "instances": [ { "name": "", "category": "", "grade": "E~S", "price": \uC815\uC218, "requiresKitchenLevel": \uC815\uC218, "consumes": { "food|drink": 1 } } ] },\n    { "type": "npc", "fields": ["id","nameKo","nameEn","class","group"], "instances": [ { "id":"", "nameKo":"", "nameEn":"", "class":"", "group":"" } ] },\n    { "type": "facility", "fields": ["id","label","maxLevel"], "instances": [ { "id":"", "label":"", "maxLevel": \uC815\uC218 } ] } ],\n  "formulas": [ { "id": "daily_revenue \uB4F1", "baseline": { "\uC2DC\uC124\uB808\uBCA8": { "cap": \uC815\uC218, "customers": [\uCD5C\uC18C,\uCD5C\uB300], "revenue": [\uCD5C\uC18C,\uCD5C\uB300] } }, "note": "" } ],\n  "processes": [ { "trigger": "dayEnd \uB4F1", "steps": [ { "id": "\uB2E8\uACC4id", "note": "" } ] } ],\n  "events": [ { "id": "sale|purchase|checkin|checkout|hire|fire|scale_delta|rep_event|exp_gain|gold_delta|resource_delta|day_end \uB4F1", "params": { "\uD544\uB4DC": "\uD0C0\uC785" } } ],\n  "initialState": { "day": 1, "gold": \uC815\uC218, "resources": {}, "facilities": {}, "staff": [], "player": {}, "reputation": {} },\n  "_assumptions": [ "\uB8F0\uBD81\uC5D0\uC11C \uD655\uC815 \uBABB \uD55C \uAC12\uACFC \uC0AC\uC720\uB97C \uBB38\uC7A5\uC73C\uB85C" ]\n}\n\n[\uBCC0\uD658 \uADDC\uCE59]\n1. \uB8F0\uBD81\uC5D0 \uBA85\uC2DC\uB41C \uC218\uCE58\uB9CC. \uC5C6\uB294 \uAC12\uC740 \uC9C0\uC5B4\uB0B4\uC9C0 \uB9D0\uACE0 \uC0DD\uB7B5\uD558\uAC70\uB098 null, \uADF8\uB9AC\uACE0 \uBB34\uC5C7\uC744 \uBABB \uC815\uD588\uB294\uC9C0 "_assumptions"\uC5D0 \uBC18\uB4DC\uC2DC \uC801\uB294\uB2E4.\n2. 0~200 \uB4F1 \uC720\uACC4 \uC218\uCE58 + \uAD6C\uAC04\uBCC4 \uC11C\uC220/\uAE08\uC9C0 = scales.tiers. \uC6D0\uBCF8 \uD2F0\uC5B4\uB97C \uD558\uB098\uB3C4 \uBE60\uB728\uB9AC\uC9C0 \uB9D0\uACE0 range\xB7label\xB7forbidden\uC744 \uC62E\uAE34\uB2E4.\n3. EXP \uB204\uC801\u2192\uBB38\uD131 \uC2B9\uAE09 = ladders. \uD3C9\uD310 \uC5EC\uB7EC \uCD95\uC740 axes\uB85C \uBB36\uACE0 \uCD95\uBCC4 \uBCC0\uB3D9 \uBC94\uC704\uD45C\uB97C categories\uB85C.\n4. \uD0DC\uADF8(\uC608: [ysp_affinity::id::\xB1N])\uB294 events\uB85C. \uC2A4\uCF00\uC77C \uBCC0\uB3D9\uC740 LLM\uC774 \uD06C\uAE30(S/M/L/XL)\uB9CC \uBD84\uB958\uD558\uACE0 \uC5D4\uC9C4\uC774 steps\uB85C \uC218\uCE58\uD654\uD558\uB294 \uC124\uACC4\uC774\uBBC0\uB85C params\uC5D0 size\uB97C \uB450\uACE0, \uC6D0\uBCF8\uC774 \xB1N\uC744 \uC918\uB3C4 \uADF8 \uAC12\uB4E4\uC740 steps\uB85C \uBF51\uB294\uB2E4.\n5. \u2605\uBA54\uB274\uB294 \uC5D4\uC9C4 \uD310\uB9E4\uC758 \uD575\uC2EC\uC774\uB2E4. \uC694\uB9AC\xB7\uC8FC\uB958\xB7\uD2B9\uC218\uBA54\uB274\xB7\uBB34\uAE30\xB7\uBC29\uC5B4\uAD6C \uB4F1 \uBAA8\uB4E0 \uD310\uB9E4 \uD488\uBAA9\uC744 entities.menuItem.instances\uC5D0 \uBE60\uC9D0\uC5C6\uC774 \uB123\uB418, name\uC740 \uB8F0\uBD81\uC5D0 \uC801\uD78C \uD55C\uAD6D\uC5B4 \uC774\uB984 \uADF8\uB300\uB85C(\uC608: "\uACE0\uAE30 \uC2A4\uD29C", "\uC5D0\uC77C", "\uCCA0\uC81C \uC7A5\uAC80"), price\uB294 \uC6D0\uBB38 \uAC00\uACA9(1\uB9CC\uC6D0=10000\uCC98\uB7FC \uC22B\uC790\uB9CC), requiresKitchenLevel/requiresForge\uB294 \uADF8 \uD488\uBAA9\uC774 \uB4F1\uC7A5\uD558\uB294 \uC2DC\uC124 \uB808\uBCA8({{#when kitchen level}} \uB4F1 \uC870\uAC74 \uBE14\uB85D\uC758 \uB808\uBCA8)\uB85C \uCC44\uC6B4\uB2E4. \uAC1D\uC2E4\xB7NPC\uB3C4 \uB9C8\uCC2C\uAC00\uC9C0\uB85C \uD45C/\uBAA9\uB85D\uC744 \uBE60\uC9D0\uC5C6\uC774 instances\uB85C.\n6. \uC815\uAE30 \uC815\uC0B0\xB7\uC77C\uAE09 \uCC28\uAC10\xB7\uC2DC\uAC04 \uACBD\uACFC\uB294 formulas + processes\uB85C.\n7. \u2605initialState\uB294 \uD50C\uB808\uC774\uB97C \uBC14\uB85C \uC2DC\uC791\uD560 \uC218 \uC788\uAC8C \uCC44\uC6B4\uB2E4. \uB8F0\uBD81\uC5D0 \uC2DC\uC791 \uC790\uBCF8\xB7\uCD08\uAE30 \uC7AC\uACE0\uAC00 \uC5C6\uC73C\uBA74(\uB300\uAC1C Lua \uBCC0\uC218\uB77C \uBA85\uC2DC \uC548 \uB428), \uC7AC\uD654 \uAC00\uACA9 \uADDC\uBAA8\uB97C \uBCF4\uACE0 \uCD08\uAE30 \uC6B4\uC601\uC774 \uAC00\uB2A5\uD55C \uAC12\uC73C\uB85C \uC815\uD55C\uB2E4: gold\uB294 \uAE30\uBCF8 \uC2DD\uC790\uC7AC/\uC7AC\uB8CC\uB97C \uC218\uC2ED \uC778\uBD84 \uC0B4 \uC218 \uC788\uB294 \uC218\uC900(\uC608: \uCD5C\uC18C 300,000 \uC774\uC0C1), food\xB7drink\uB294 \uCD5C\uC18C \uC601\uC5C5 \uAC00\uB2A5\uD55C \uCD08\uAE30 \uC7AC\uACE0(\uC608: \uAC01 20), facilities\uB294 \uBAA8\uB4E0 \uC2DC\uC124\uC744 \uB808\uBCA8 1\uB85C. \uC774\uB807\uAC8C \uC815\uD55C \uAC12\uC740 _assumptions\uC5D0 "\uC784\uC2DC \uC2DC\uC791\uAC12"\uC73C\uB85C \uAE30\uB85D\uD55C\uB2E4.\n8. \uCD9C\uB825\uC740 \uD30C\uC2F1 \uAC00\uB2A5\uD55C \uB2E8\uC77C JSON. \uADF8 \uC678 \uD14D\uC2A4\uD2B8 \uC808\uB300 \uAE08\uC9C0.\n\n\uC544\uB798 [\uB8F0\uBD81]\uC744 \uCEF4\uD30C\uC77C\uD558\uB77C.\n\n[\uB8F0\uBD81]\n{{RULEBOOK}}';
       var MAX_RULEBOOK_CHARS = 2e5;
+      var TRADE_SCHEMA_APPENDIX = `
+
+[\uAC70\uB798 \uBC29\uD5A5 \uD655\uC7A5]
+- menuItem \uD615\uC2DD\uC5D0 "trade": "sell"|"buy"\uB97C \uCD94\uAC00\uD55C\uB2E4.
+- \u2605trade: \uD50C\uB808\uC774\uC5B4\uAC00 \uC190\uB2D8/\uC2DC\uC7A5\uC5D0 \uD30C\uB294 \uD488\uBAA9\uC774\uBA74 "sell", \uC0C1\uC810\uC5D0\uC11C \uC0AC\uC624\uB294 \uD488\uBAA9\uC774\uBA74 "buy". \uC5EC\uAD00 \uBA54\uB274\uD310\uC740 sell, \uAE30\uC9C0 \uC0C1\uC810\xB7\uBCF4\uAE09\uD488 \uAD6C\uB9E4 \uBAA9\uB85D\uC740 buy\uB2E4.`;
       var COMBAT_SCHEMA_APPENDIX = `
 
 [\uC804\uD22C \uCE74\uB4DC \uC804\uC6A9 \uCD9C\uB825 \uD615\uC2DD \u2014 \uC804\uD22C \uADDC\uCE59\uC774 \uC788\uB294 \uCE74\uB4DC\uB9CC \uCD94\uAC00\uD558\uACE0, \uC5C6\uC73C\uBA74 \uC0DD\uB7B5\uD55C \uC774\uC720\uB97C _assumptions\uC5D0 \uAE30\uB85D]
@@ -6910,7 +6986,7 @@ skills\uC5D0\uB294 \uB8F0\uBD81\uC5D0 \uC774\uB984\uACFC \uCF54\uC2A4\uD2B8\xB7\
 \uC804\uD22C \uCE74\uB4DC\uC758 initialState.player\uC5D0\uB294 "pools":{"hp":{"cur":\uC815\uC218,"max":\uC815\uC218}} \uD615\uD0DC\uB85C \uAC01 \uC790\uC6D0\uC744 \uB123\uACE0 atk/def/evade/acc\uB97C \uB123\uB294\uB2E4. \uB8F0\uBD81 \uADFC\uAC70\uAC00 \uC5C6\uC73C\uBA74 \uAC01\uAC01 5/0/10/0\uC744 \uC0AC\uC6A9\uD558\uACE0 _assumptions\uC5D0 \uAE30\uB85D\uD55C\uB2E4.`;
       var REWARD_SCHEMA_APPENDIX = '\n\n[rewards/upgrades/gather table rules]\nOutput JSON must include "rewards": { "gold": { "E":[min,max], "D":[min,max], "C":[min,max], "B":[min,max], "A":[min,max], "S":[min,max] } }. Quest/manual/request reward gold belongs only in this engine table, not in individual event params.\n\n\u2605 Reward gold source priority: if the mined rules block has a per-rank table with a pay/reward range (e.g. a questPay or reward field already given as [min,max] numbers), copy those numbers EXACTLY into rewards.gold for the matching rank. Do NOT scale, round up, multiply, or inflate them \u2014 the mined numbers are the authoritative amounts. Only invent ranges for ranks that are ABSENT from the mined table, and keep those consistent in magnitude with the nearest mined rank (a lower rank must not exceed a higher rank). Sanity bound: unless a mined value explicitly says so, no rewards.gold max should exceed roughly 3x the most expensive facility upgrade cost \u2014 if your inferred number blows past that, you are hallucinating; pull it back down. If the rulebook gives no reward amounts at all, infer sensible tier ranges from menu prices and upgrade costs, then record the reason in _assumptions as temporary reward values.\n\nEach facility instance should include "upgradeCosts": { "2": cost, "3": cost, "4": cost } for the next-level expansion costs. Upgrade costs are engine-owned table values; never place costs, gold deltas, or target levels in individual upgrade events. If the rulebook does not provide exact costs, infer them from the economy scale and record the temporary assumption in _assumptions.\n\nOutput top-level "gather": { "small":[min,max], "large":[min,max], "bulk":[min,max], "note":"..." } for self-supply yields such as hunting, gathering, and monster byproducts. Gather quantities are engine-owned table values; never place qty or amount in individual gain_resource events.';
       function promptTemplate() {
-        return SYSTEM_PROMPT + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX;
+        return SYSTEM_PROMPT + TRADE_SCHEMA_APPENDIX + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX;
       }
       function buildCompilerInput2(lore, mined) {
         const entries = Array.isArray(lore && lore.entries) ? lore.entries : [];
@@ -7686,6 +7762,7 @@ ${row3.content}`;
         const issues = [];
         const schema2 = clone(obj || {});
         normalizeAliases(schema2, issues);
+        normalizeMenuTrade(schema2, issues);
         normalizePlayerPools(schema2, issues);
         normalizeCombatHpPool(schema2, issues);
         validateTop(schema2, issues);
@@ -7702,6 +7779,16 @@ ${row3.content}`;
         validateGather(schema2, issues);
         validateEvents(schema2, issues);
         return { schema: schema2, issues };
+      }
+      function normalizeMenuTrade(schema2, issues) {
+        const menu = findEntity(schema2, "menuItem");
+        if (!menu) return;
+        for (const [index, instance] of asArray(menu.instances).entries()) {
+          if (isObject(instance) && instance.trade != null && !["sell", "buy"].includes(instance.trade)) {
+            delete instance.trade;
+            warn(issues, `entities.menuItem.instances[${index}].trade`, "trade must be sell or buy; removed so default sell applies.");
+          }
+        }
       }
       var POOL_ALIASES = { hp: "hp", mp: "mp", sp: "sp", stamina: "sp", mana: "mp" };
       function normalizePlayerPools(schema2, issues) {
@@ -8879,6 +8966,7 @@ ${Array.from(extras).join(" ")}` : text;
     "gold_delta",
     "resource_delta",
     "use_item",
+    "buy_item",
     "start_encounter",
     "combat_action",
     "enemy_action",
@@ -8922,6 +9010,7 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function summarizeEvent(type, entry, formatMoney3) {
+    if (entry.ok && type === "buy_item") return `\u{1F6D2} ${entry.menuName} \xD7${entry.qty} \xB7 -${formatMoney3(-entry.goldDelta)} (\uBCF4\uC720 ${entry.owned})`;
     if (entry.ok && type === "use_item") {
       const def = (activeSchema && activeSchema.resources || []).find((resource) => resource.id === entry.itemId);
       return `\u{1F9EA} ${def && def.label || entry.itemId} \xB7 ${String(entry.pool).toUpperCase()} +${entry.amount} (\uB0A8\uC740 ${entry.remaining})`;
@@ -9423,7 +9512,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
 
   // src/playView.js
-  var { summarize: summarize2, npcSummary: npcSummary2, availableActions } = require_selectors();
+  var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement } = require_selectors();
   var { estimateTokens, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
   var { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require_prompt();
   var { PROVIDERS, callProvider } = require_providers();
@@ -9522,7 +9611,7 @@ ${Array.from(extras).join(" ")}` : text;
       if (!text || busy) return;
       await submitTurn(text, ctx, render2);
     });
-    panel.append(header, list, renderCombatConsole(input2, ctx, render2), form);
+    panel.append(header, list, renderCombatConsole(input2, ctx, render2), renderManagementConsole(input2, ctx, render2), form);
     return panel;
   }
   function renderMessage(message) {
@@ -9645,6 +9734,83 @@ ${Array.from(extras).join(" ")}` : text;
     commands.append(defend, fleeButton);
     consoleBox.append(targetRow, commands);
     return consoleBox;
+  }
+  function renderManagementConsole(input2, ctx, render2) {
+    const descriptor = availableManagement(getSchema(), getEngineState());
+    const details = el2("details", "mgmt-console");
+    if (!descriptor.sections.length) return details;
+    const summary = el2("summary");
+    summary.textContent = "\u{1F5C2} \uAD00\uB9AC";
+    details.append(summary);
+    for (const section of descriptor.sections) {
+      const group = el2("div", "mgmt-section");
+      const label = el2("span", "combat-command-label");
+      label.textContent = { sell: "\uD310\uB9E4", buy: "\uAD6C\uB9E4", purchase: "\uC7AC\uB8CC \uAD6C\uB9E4", upgrade: "\uC99D\uCD95", gather: "\uCC44\uC9D1", day_end: "\uD558\uB8E8" }[section.type] || section.type;
+      group.append(label);
+      if (section.type === "sell" || section.type === "buy") for (const item of section.items) {
+        const owned = section.type === "buy" && item.owned ? ` \xB7 \uBCF4\uC720 ${item.owned}` : "";
+        const control = button2(`${item.name} (${formatMoney2(item.price)})${owned}`, "secondary-btn");
+        control.disabled = busy || section.type === "buy" && !item.affordable;
+        control.addEventListener("click", () => runManagementTurn({ id: section.type === "buy" ? "buy_item" : "sale", params: { menuName: item.name, qty: 1 } }, input2, ctx, render2));
+        group.append(control);
+      }
+      if (section.type === "purchase") for (const item of section.items) {
+        const control = button2(`${item.label || item.id} (${formatMoney2(item.basePrice)})`, "secondary-btn");
+        control.disabled = busy || !item.affordable;
+        control.addEventListener("click", () => runManagementTurn({ id: "purchase", params: { resource: item.id, qty: 1 } }, input2, ctx, render2));
+        group.append(control);
+      }
+      if (section.type === "upgrade") for (const item of section.items) {
+        const control = button2(item.maxed ? `${item.label} Lv.${item.level} (\uCD5C\uB300)` : `${item.label} Lv.${item.level}\u2192${item.level + 1} (${formatMoney2(item.nextCost)})`, "secondary-btn");
+        control.disabled = busy || item.maxed || !item.affordable;
+        control.addEventListener("click", () => runManagementTurn({ id: "upgrade", params: { facility: item.id } }, input2, ctx, render2));
+        group.append(control);
+      }
+      if (section.type === "gather") for (const resource of section.resources) for (const scale of section.scales) {
+        const scaleLabel = { small: "\uC18C\uB7C9", large: "\uB300\uB7C9", bulk: "\uB300\uADDC\uBAA8" }[scale.id];
+        const control = button2(`${resource} [${scaleLabel} ${scale.range.join("~")}]`, "secondary-btn");
+        control.disabled = busy;
+        control.addEventListener("click", () => runManagementTurn({ id: "gain_resource", params: { resource, scale: scale.id } }, input2, ctx, render2));
+        group.append(control);
+      }
+      if (section.type === "day_end") {
+        const control = button2("\uD558\uB8E8 \uB9C8\uAC10", "primary-btn");
+        control.disabled = busy;
+        control.addEventListener("click", () => runManagementTurn({ id: "day_end", params: {} }, input2, ctx, render2));
+        group.append(control);
+      }
+      details.append(group);
+    }
+    return details;
+  }
+  async function runManagementTurn(event, input2, ctx, render2) {
+    if (busy) return;
+    busy = true;
+    const flavorText = input2.value.trim();
+    const chips = [];
+    const resultTexts = [];
+    const recentForNarration = messages.slice(-4);
+    const result = runEvent(event);
+    appendEventChips(event.id, result.entries, chips, resultTexts);
+    if (flavorText) messages.push({ role: "user", content: flavorText });
+    const pending = { role: "assistant", content: "", chips };
+    messages.push(pending);
+    input2.value = "";
+    render2();
+    try {
+      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
+      lastPrompt = prompt;
+      const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+      const ignored = parsed.events.length + parsed.dropped;
+      if (ignored) chips.push({ ok: false, text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
+      pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+    } catch (_) {
+      chips.push({ ok: false, text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
+      pending.content = "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+    } finally {
+      busy = false;
+      render2();
+    }
   }
   function renderSettings(render2) {
     const details = el2("details", "play-settings");

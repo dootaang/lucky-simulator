@@ -1,4 +1,4 @@
-const { summarize, npcSummary, availableActions } = require('../../engine/core/selectors.js');
+const { summarize, npcSummary, availableActions, availableManagement } = require('../../engine/core/selectors.js');
 const { estimateTokens, estimateLorebookTokens } = require('../core/lorebook/tokens.js');
 const { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('./llm/prompt.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
@@ -100,7 +100,7 @@ function renderChat(ctx, render) {
     await submitTurn(text, ctx, render);
   });
 
-  panel.append(header, list, renderCombatConsole(input, ctx, render), form);
+  panel.append(header, list, renderCombatConsole(input, ctx, render), renderManagementConsole(input, ctx, render), form);
   return panel;
 }
 
@@ -225,6 +225,85 @@ function renderCombatConsole(input, ctx, render) {
   commands.append(defend, fleeButton);
   consoleBox.append(targetRow, commands);
   return consoleBox;
+}
+
+function renderManagementConsole(input, ctx, render) {
+  const descriptor = availableManagement(getSchema(), getEngineState());
+  const details = el('details', 'mgmt-console');
+  if (!descriptor.sections.length) return details;
+  const summary = el('summary');
+  summary.textContent = '🗂 관리';
+  details.append(summary);
+  for (const section of descriptor.sections) {
+    const group = el('div', 'mgmt-section');
+    const label = el('span', 'combat-command-label');
+    label.textContent = ({ sell: '판매', buy: '구매', purchase: '재료 구매', upgrade: '증축', gather: '채집', day_end: '하루' })[section.type] || section.type;
+    group.append(label);
+    if (section.type === 'sell' || section.type === 'buy') for (const item of section.items) {
+      const owned = section.type === 'buy' && item.owned ? ` · 보유 ${item.owned}` : '';
+      const control = button(`${item.name} (${formatMoney(item.price)})${owned}`, 'secondary-btn');
+      control.disabled = busy || (section.type === 'buy' && !item.affordable);
+      control.addEventListener('click', () => runManagementTurn({ id: section.type === 'buy' ? 'buy_item' : 'sale', params: { menuName: item.name, qty: 1 } }, input, ctx, render));
+      group.append(control);
+    }
+    if (section.type === 'purchase') for (const item of section.items) {
+      const control = button(`${item.label || item.id} (${formatMoney(item.basePrice)})`, 'secondary-btn');
+      control.disabled = busy || !item.affordable;
+      control.addEventListener('click', () => runManagementTurn({ id: 'purchase', params: { resource: item.id, qty: 1 } }, input, ctx, render));
+      group.append(control);
+    }
+    if (section.type === 'upgrade') for (const item of section.items) {
+      const control = button(item.maxed ? `${item.label} Lv.${item.level} (최대)` : `${item.label} Lv.${item.level}→${item.level + 1} (${formatMoney(item.nextCost)})`, 'secondary-btn');
+      control.disabled = busy || item.maxed || !item.affordable;
+      control.addEventListener('click', () => runManagementTurn({ id: 'upgrade', params: { facility: item.id } }, input, ctx, render));
+      group.append(control);
+    }
+    if (section.type === 'gather') for (const resource of section.resources) for (const scale of section.scales) {
+      const scaleLabel = { small: '소량', large: '대량', bulk: '대규모' }[scale.id];
+      const control = button(`${resource} [${scaleLabel} ${scale.range.join('~')}]`, 'secondary-btn');
+      control.disabled = busy;
+      control.addEventListener('click', () => runManagementTurn({ id: 'gain_resource', params: { resource, scale: scale.id } }, input, ctx, render));
+      group.append(control);
+    }
+    if (section.type === 'day_end') {
+      const control = button('하루 마감', 'primary-btn');
+      control.disabled = busy;
+      control.addEventListener('click', () => runManagementTurn({ id: 'day_end', params: {} }, input, ctx, render));
+      group.append(control);
+    }
+    details.append(group);
+  }
+  return details;
+}
+
+async function runManagementTurn(event, input, ctx, render) {
+  if (busy) return;
+  busy = true;
+  const flavorText = input.value.trim();
+  const chips = [];
+  const resultTexts = [];
+  const recentForNarration = messages.slice(-4);
+  const result = runEvent(event);
+  appendEventChips(event.id, result.entries, chips, resultTexts);
+  if (flavorText) messages.push({ role: 'user', content: flavorText });
+  const pending = { role: 'assistant', content: '', chips };
+  messages.push(pending);
+  input.value = '';
+  render();
+  try {
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
+    lastPrompt = prompt;
+    const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+    const ignored = parsed.events.length + parsed.dropped;
+    if (ignored) chips.push({ ok: false, text: `서사화 사건 ${ignored}개 무시됨` });
+    pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
+  } catch (_) {
+    chips.push({ ok: false, text: '서사화 API 오류 · 엔진 결과 유지' });
+    pending.content = '관리 결과가 반영되었습니다.';
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 function renderSettings(render) {

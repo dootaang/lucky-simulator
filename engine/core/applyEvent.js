@@ -2,7 +2,7 @@
 
 const { runDayEnd } = require('./dayEnd.js');
 const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require('./combat.js');
-const { staffMax, tierOf } = require('./selectors.js');
+const { staffMax, tierOf, menuTrade } = require('./selectors.js');
 const { poolHeal } = require('./pools.js');
 const {
   clone,
@@ -45,6 +45,8 @@ function applyEvent(schema, state, event, rng) {
       return resourceDelta(next, params, ok, fail);
     case 'use_item':
       return useItem(schema, next, params, ok, fail);
+    case 'buy_item':
+      return buyItem(schema, next, params, ok, fail);
     case 'scale_delta':
       return scaleDelta(schema, next, params, ok, fail);
     case 'rep_event':
@@ -131,7 +133,8 @@ function upgrade(schema, state, params, ok, fail) {
   const facility = params.facility || params.facilityId;
   const def = findById(schema, 'facility', facility);
   if (!def) return fail('unknown_facility', facility);
-  const current = Number((state.facilities && state.facilities[facility]) || 0);
+  // 폴백 1: 다른 셀렉터(availableMenu·roomStatus 등)와 동일 — 미기재 시설은 1레벨 취급(감사 지적: 0이면 Lv.0→1 이중 청구 노출).
+  const current = Number((state.facilities && state.facilities[facility]) || 1);
   if (current >= Number(def.maxLevel || 0)) return fail('max_level', facility);
   const level = current + 1;
   const cost = def.upgradeCosts && def.upgradeCosts[String(level)];
@@ -316,7 +319,8 @@ function sale(schema, state, params, ok, fail) {
   const menu = findMenu(schema, params.menuName);
   const qty = normalizeInt(params.qty, 1);
   if (!menu) return fail('unknown_menu', params.menuName);
-  if (qty <= 0) return fail('invalid_qty', qty);
+  if (menuTrade(menu) !== 'sell') return fail('menu_not_sellable', params.menuName);
+  if (qty <= 0 || qty > 999) return fail('invalid_qty', qty); // 상한 999 — 가격 0 아이템·consumes 없는 메뉴의 무제한 수량 악용 방지(감사 지적)
   if (Number(menu.requiresKitchenLevel || 1) > Number((state.facilities && state.facilities.kitchen) || 1)) return fail('menu_locked', params.menuName);
   const consumes = saleConsumes(menu, state);
   for (const [resource, amount] of Object.entries(consumes)) {
@@ -335,12 +339,27 @@ function sale(schema, state, params, ok, fail) {
   return ok({ menuName: menu.name, qty, goldDelta, consumed });
 }
 
+function buyItem(schema, state, params, ok, fail) {
+  if (Object.keys(params).some((key) => !['menuName', 'qty'].includes(key))) return fail('item_number_not_allowed');
+  const menu = findMenu(schema, params.menuName);
+  if (!menu) return fail('unknown_menu', params.menuName);
+  if (menuTrade(menu) !== 'buy') return fail('menu_not_buyable', params.menuName);
+  const qty = normalizeInt(params.qty, 1);
+  if (qty <= 0 || qty > 999) return fail('invalid_qty', qty); // 상한 999 — 가격 0 아이템·consumes 없는 메뉴의 무제한 수량 악용 방지(감사 지적)
+  const cost = Number(menu.price || 0) * qty;
+  if (Number(state.gold || 0) < cost) return fail('insufficient_gold', params.menuName);
+  state.gold = Number(state.gold || 0) - cost;
+  if (!state.items || typeof state.items !== 'object') state.items = {};
+  state.items[menu.name] = Number(state.items[menu.name] || 0) + qty;
+  return ok({ menuName: menu.name, qty, goldDelta: -cost, owned: state.items[menu.name] });
+}
+
 function purchase(schema, state, params, ok, fail) {
   const resource = params.resource || params.resourceId;
   const qty = normalizeInt(params.qty, 1);
   const def = (schema.resources || []).find((entry) => entry.id === resource);
   if (!def || resource === 'gold') return fail('unknown_resource', resource);
-  if (qty <= 0) return fail('invalid_qty', qty);
+  if (qty <= 0 || qty > 999) return fail('invalid_qty', qty); // 상한 999 — 가격 0 아이템·consumes 없는 메뉴의 무제한 수량 악용 방지(감사 지적)
   const cost = Number(def.basePrice || 0) * qty;
   if (state.gold < cost) return fail('insufficient_gold', resource);
   state.gold -= cost;

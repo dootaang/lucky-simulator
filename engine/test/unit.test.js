@@ -6,7 +6,7 @@ const schema = require('../../schema/yongsa-inn.v0.json');
 const { createRng } = require('../core/rng.js');
 const { createState } = require('../core/createState.js');
 const { applyEvent } = require('../core/applyEvent.js');
-const { staffMax, availableMenu } = require('../core/selectors.js');
+const { staffMax, availableMenu, availableManagement, summarize } = require('../core/selectors.js');
 const { deepFreeze } = require('./helpers.js');
 
 function event(state, id, params = {}) {
@@ -22,6 +22,29 @@ test('full room checkin is rejected without throwing or mutating', () => {
   assert.equal(result.log[0].reason, 'room_full');
   assert.equal(result.state, state);
   assert.equal(JSON.stringify(state), before);
+});
+
+test('buy_item is schema-priced, inventory-backed, guarded, and consumes no rng', () => {
+  const shop = JSON.parse(JSON.stringify(schema));
+  const menus = shop.entities.find((entry) => entry.type === 'menuItem').instances;
+  menus.push({ name: '서약반지', category: '보급품', grade: 'S', price: 30000, requiresKitchenLevel: 1, consumes: {}, trade: 'buy' });
+  let state = createState(shop);
+  let rngCalls = 0;
+  const rng = { int() { rngCalls += 1; return 1; } };
+  const bought = applyEvent(shop, state, { id: 'buy_item', params: { menuName: '서약반지', qty: 2 } }, rng);
+  assert.equal(bought.state.gold, state.gold - 60000);
+  assert.equal(bought.state.items['서약반지'], 2);
+  assert.equal(bought.log[0].owned, 2);
+  assert.equal(rngCalls, 0);
+  assert.equal(applyEvent(shop, state, { id: 'buy_item', params: { menuName: '서약반지', qty: 1, price: 1 } }, rng).log[0].reason, 'item_number_not_allowed');
+  assert.equal(applyEvent(shop, state, { id: 'sale', params: { menuName: '서약반지', qty: 1 } }, rng).log[0].reason, 'menu_not_sellable');
+  assert.equal(applyEvent(shop, state, { id: 'buy_item', params: { menuName: '고기 스튜' } }, rng).log[0].reason, 'menu_not_buyable');
+  assert.equal(rngCalls, 0);
+  state = bought.state;
+  assert.match(summarize(shop, state), /\[소지품\] 서약반지 ×2/);
+  assert.deepEqual(availableManagement(shop, state).sections.map((section) => section.type), ['sell', 'buy', 'purchase', 'upgrade', 'gather', 'day_end']);
+  state.combat = { active: true };
+  assert.deepEqual(availableManagement(shop, state), { sections: [] });
 });
 
 test('locked menu above kitchen level is rejected', () => {

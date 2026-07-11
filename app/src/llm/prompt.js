@@ -14,8 +14,9 @@ const SALE_JSON_EXAMPLE = `\`\`\`json
 {"events":[{"id":"sale","params":{"menuName":"고기 스튜","qty":2}}]}
 \`\`\``;
 const EVENT_PROMPTS = {
-  sale: `- sale {menuName, qty} — 메뉴 판매 완결 시. (엔진: 매출 가산 + 식자재 차감)
-- purchase {resource:"food"|"drink", qty} — 재료 구매. (엔진: 원가 차감 + 재고 가산. 유저가 산 그 한 건만, gold 변동을 따로 넣지 마라)`,
+  sale: `- sale {menuName, qty} — 메뉴 판매 완결 시. (엔진: 매출 가산 + 식자재 차감)`,
+  purchase: `- purchase {resource:"food"|"drink", qty} — 재료 구매. (엔진: 원가 차감 + 재고 가산. 유저가 산 그 한 건만, gold 변동을 따로 넣지 마라)`,
+  buyItem: `- buy_item {menuName, qty} — 상점 품목 구매 완결 시. menuName은 [메뉴 목록] 그대로. (엔진: 대금 차감 + 소지품 가산. 가격·골드를 쓰지 마라)`,
   upgrade: `- upgrade {facility} — 시설 확장. facility는 상태의 시설 id(tavern/kitchen/room/quarters). (엔진: 비용 차감 + 레벨 상승. 비용·골드·레벨은 쓰지 마라)`,
   gather: `- gain_resource {resource:"food"|"drink", scale:"small"|"large"|"bulk", reason} — 사냥·채집·부산물로 재료를 얻을 때. (엔진: 규모 표에서 수량 결정. qty·amount·gold는 쓰지 마라)`,
   room: `- checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName} — roomNo는 [객실 목록]의 실제 호수(예: 101). (엔진: 숙박비 선불 가산)`,
@@ -85,7 +86,9 @@ function eventSections(schema) {
   const types = new Set((schema.entities || []).map((entry) => entry.type));
   const ladders = schema.ladders || [];
   const sections = [];
-  if (hasSaleCapability(schema)) sections.push(EVENT_PROMPTS.sale);
+  if (hasSellMenus(schema)) sections.push(EVENT_PROMPTS.sale);
+  if (hasPurchasableResources(schema)) sections.push(EVENT_PROMPTS.purchase);
+  if (hasBuyMenus(schema)) sections.push(EVENT_PROMPTS.buyItem);
   if (types.has('facility')) sections.push(EVENT_PROMPTS.upgrade);
   if (schema.gather) sections.push(EVENT_PROMPTS.gather);
   if (types.has('room')) sections.push(EVENT_PROMPTS.room);
@@ -106,6 +109,14 @@ function hasSaleCapability(schema) {
   return (schema.entities || []).some((entry) => entry.type === 'menuItem')
     || (schema.resources || []).some((resource) => resource.basePrice != null && !resource.effect);
 }
+
+function menuItems(schema) {
+  const block = (schema.entities || []).find((entry) => entry.type === 'menuItem');
+  return block && Array.isArray(block.instances) ? block.instances : [];
+}
+function hasSellMenus(schema) { return menuItems(schema).some((menu) => menu.trade !== 'buy'); }
+function hasBuyMenus(schema) { return menuItems(schema).some((menu) => menu.trade === 'buy'); }
+function hasPurchasableResources(schema) { return (schema.resources || []).some((resource) => resource.basePrice != null && !resource.effect); }
 
 // 여관형 = 숙박(room)과 메뉴 판매(menuItem)를 둘 다 갖춘 스키마.
 // menuItem만 있는 카드(예: 헌터물의 마정석 판매)에 "여관 주인" 정체성을 씌우지 않는다.
@@ -196,25 +207,28 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
 
 function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages }) {
   const stateText = summarize(schema, state);
+  const combatActive = !!(state.combat && state.combat.active);
   const combatLine = stateText.split('\n').find((line) => line.startsWith('[전투]')) || '[전투] 종료됨';
+  const managementLines = stateText.split('\n').filter((line) => /^\[(자원|여관|소지품)\]/.test(line)).slice(0, 2).join('\n') || '상태 변화 없음';
   const resultText = (results || []).map((result) => typeof result === 'string' ? result : String((result && result.text) || '')).filter(Boolean).join('\n');
   const context = [
-    '[확정된 전투 결과]',
-    (results || []).length > 8 ? '여러 턴의 전투 전체를 시간순으로 요약 서사화하라.' : '',
+    combatActive ? '[확정된 전투 결과]' : '[확정된 결과]',
+    combatActive && (results || []).length > 8 ? '여러 턴의 전투 전체를 시간순으로 요약 서사화하라.' : '',
     resultText || '변화 없음',
     '',
-    combatLine,
+    combatActive ? combatLine : managementLines,
     flavorText ? `플레이어의 연출 의도: ${flavorText}` : '',
   ].filter(Boolean).join('\n');
   const messages = conversationMessages([...(recentMessages || []).slice(-4), { role: 'user', content: context }]);
-  const injectedParts = { state: estimateTokens(combatLine), results: estimateTokens(resultText), flavor: estimateTokens(flavorText || '') };
+  const injectedState = combatActive ? combatLine : managementLines;
+  const injectedParts = { state: estimateTokens(injectedState), results: estimateTokens(resultText), flavor: estimateTokens(flavorText || '') };
   return {
-    system: buildSystemPrompt(schema).split('\n\n[절대 규칙]')[0] + '\n\n아래 [확정된 전투 결과]는 엔진이 이미 계산·반영한 사실이다. 이 수치·생사를 그대로 따라 한국어로 짧게(250자 내외) 서사화하라. 결과를 바꾸거나 새 사건 JSON을 내지 마라.',
+    system: buildSystemPrompt(schema).split('\n\n[절대 규칙]')[0] + `\n\n아래 [확정된${combatActive ? ' 전투' : ''} 결과]는 엔진이 이미 계산·반영한 사실이다. 이 수치${combatActive ? '·생사' : ''}를 그대로 따라 한국어로 짧게(250자 내외) 서사화하라. 결과를 바꾸거나 새 사건 JSON을 내지 마라.`,
     messages,
     injectedTokens: Object.values(injectedParts).reduce((sum, value) => sum + value, 0),
     injectedParts,
     relatedNpcIds: [],
-    injectedText: { state: combatLine, results: resultText, flavorText: flavorText || '' },
+    injectedText: { state: injectedState, results: resultText, flavorText: flavorText || '' },
   };
 }
 

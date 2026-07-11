@@ -6,6 +6,12 @@ const SYSTEM_PROMPT = "당신은 RisuAI 시뮬봇 카드의 \"룰북 산문\"을
 
 const MAX_RULEBOOK_CHARS = 200000;
 
+const TRADE_SCHEMA_APPENDIX = `
+
+[거래 방향 확장]
+- menuItem 형식에 "trade": "sell"|"buy"를 추가한다.
+- ★trade: 플레이어가 손님/시장에 파는 품목이면 "sell", 상점에서 사오는 품목이면 "buy". 여관 메뉴판은 sell, 기지 상점·보급품 구매 목록은 buy다.`;
+
 const COMBAT_SCHEMA_APPENDIX = `
 
 [전투 카드 전용 출력 형식 — 전투 규칙이 있는 카드만 추가하고, 없으면 생략한 이유를 _assumptions에 기록]
@@ -26,7 +32,7 @@ skills에는 룰북에 이름과 코스트·위력이 명시된 스킬만 넣는
 const REWARD_SCHEMA_APPENDIX = "\n\n[rewards/upgrades/gather table rules]\nOutput JSON must include \"rewards\": { \"gold\": { \"E\":[min,max], \"D\":[min,max], \"C\":[min,max], \"B\":[min,max], \"A\":[min,max], \"S\":[min,max] } }. Quest/manual/request reward gold belongs only in this engine table, not in individual event params.\n\n★ Reward gold source priority: if the mined rules block has a per-rank table with a pay/reward range (e.g. a questPay or reward field already given as [min,max] numbers), copy those numbers EXACTLY into rewards.gold for the matching rank. Do NOT scale, round up, multiply, or inflate them — the mined numbers are the authoritative amounts. Only invent ranges for ranks that are ABSENT from the mined table, and keep those consistent in magnitude with the nearest mined rank (a lower rank must not exceed a higher rank). Sanity bound: unless a mined value explicitly says so, no rewards.gold max should exceed roughly 3x the most expensive facility upgrade cost — if your inferred number blows past that, you are hallucinating; pull it back down. If the rulebook gives no reward amounts at all, infer sensible tier ranges from menu prices and upgrade costs, then record the reason in _assumptions as temporary reward values.\n\nEach facility instance should include \"upgradeCosts\": { \"2\": cost, \"3\": cost, \"4\": cost } for the next-level expansion costs. Upgrade costs are engine-owned table values; never place costs, gold deltas, or target levels in individual upgrade events. If the rulebook does not provide exact costs, infer them from the economy scale and record the temporary assumption in _assumptions.\n\nOutput top-level \"gather\": { \"small\":[min,max], \"large\":[min,max], \"bulk\":[min,max], \"note\":\"...\" } for self-supply yields such as hunting, gathering, and monster byproducts. Gather quantities are engine-owned table values; never place qty or amount in individual gain_resource events.";
 
 function promptTemplate() {
-  return SYSTEM_PROMPT + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX;
+  return SYSTEM_PROMPT + TRADE_SCHEMA_APPENDIX + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX;
 }
 
 function buildCompilerInput(lore, mined) {

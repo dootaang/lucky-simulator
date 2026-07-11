@@ -25,6 +25,19 @@ test('valid pools, combat, and skills produce zero errors', () => {
   assert.deepEqual(errors(result), []);
 });
 
+test('menu trade keeps sell and buy but removes invalid values with a warning', () => {
+  const menu = { type: 'menuItem', fields: ['name', 'category', 'grade', 'price', 'requiresKitchenLevel', 'consumes'], instances: [
+    { name: '판매', category: '', grade: 'E', price: 1, requiresKitchenLevel: 1, consumes: {}, trade: 'sell' },
+    { name: '구매', category: '', grade: 'E', price: 1, requiresKitchenLevel: 1, consumes: {}, trade: 'buy' },
+    { name: '오류', category: '', grade: 'E', price: 1, requiresKitchenLevel: 1, consumes: {}, trade: 'both' },
+  ] };
+  const result = validateSchema(base({ entities: [menu] }));
+  assert.equal(result.schema.entities[0].instances[0].trade, 'sell');
+  assert.equal(result.schema.entities[0].instances[1].trade, 'buy');
+  assert.equal(result.schema.entities[0].instances[2].trade, undefined);
+  assert.ok(result.issues.some((issue) => issue.path.includes('.trade')));
+});
+
 test('single _hp pool is normalized to hp with initial state key and warning', () => {
   const result = validateSchema(base({
     pools: [{ id: 'unit_hp', label: '유닛 체력', max: 30 }],

@@ -26,6 +26,7 @@ export const eventTypes = [
   'gold_delta',
   'resource_delta',
   'use_item',
+  'buy_item',
   'start_encounter',
   'combat_action',
   'enemy_action',
@@ -78,6 +79,7 @@ export function runEvent(event) {
 }
 
 export function summarizeEvent(type, entry, formatMoney) {
+  if (entry.ok && type === 'buy_item') return `🛒 ${entry.menuName} ×${entry.qty} · -${formatMoney(-entry.goldDelta)} (보유 ${entry.owned})`;
   if (entry.ok && type === 'use_item') {
     const def = ((activeSchema && activeSchema.resources) || []).find((resource) => resource.id === entry.itemId);
     return `🧪 ${(def && def.label) || entry.itemId} · ${String(entry.pool).toUpperCase()} +${entry.amount} (남은 ${entry.remaining})`;
