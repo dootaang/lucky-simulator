@@ -104,6 +104,50 @@ function validateTraffic(schema, issues) {
     warn(issues, `traffic.modifiers[${index}]`, 'Unknown traffic modifier removed.');
     return false;
   });
+  if (traffic.mail != null) {
+    const mail = traffic.mail;
+    const ladderExists = isObject(mail) && asArray(schema.ladders).some((ladder) => ladder && ladder.id === mail.ladder);
+    if (!ladderExists) {
+      warn(issues, 'traffic.mail.ladder', 'Unknown mail ladder; mail block removed.');
+      delete traffic.mail;
+    } else {
+      if (!isObject(mail.chances)) {
+        if (mail.chances != null) warn(issues, 'traffic.mail.chances', 'Invalid chances normalized to empty tables.');
+        mail.chances = {};
+      }
+      for (const type of ['reward', 'quest']) {
+        if (!isObject(mail.chances[type])) {
+          if (mail.chances[type] != null) warn(issues, `traffic.mail.chances.${type}`, 'Invalid chance table normalized to empty.');
+          mail.chances[type] = {};
+        }
+        const table = mail.chances[type];
+        for (const [rank, raw] of Object.entries(table)) {
+          const number = Number(raw);
+          const normalized = Number.isFinite(number) ? Math.max(0, Math.min(100, number)) : 0;
+          if (normalized !== number) warn(issues, `traffic.mail.chances.${type}.${rank}`, 'Mail chance normalized to 0..100.');
+          table[rank] = normalized;
+        }
+      }
+      const rawGold = isObject(mail.reward) ? mail.reward.gold : undefined;
+      if (Number.isFinite(Number(rawGold))) {
+        const value = Math.max(0, Number(rawGold));
+        mail.reward.gold = [value, value];
+        warn(issues, 'traffic.mail.reward.gold', 'Numeric mail reward normalized to [n,n].');
+      } else if (Array.isArray(rawGold) && rawGold.length >= 2 && rawGold.every((value) => Number.isFinite(Number(value)))) {
+        const values = [Number(rawGold[0]), Number(rawGold[1])];
+        // 보상 편지가 골드를 빼앗으면 안 된다 — 음수는 0으로 클램프(악성 스키마 방어).
+        const low = Math.max(0, Math.min(...values));
+        const high = Math.max(0, Math.max(...values));
+        mail.reward.gold = [low, high];
+        if (values[0] > values[1]) warn(issues, 'traffic.mail.reward.gold', 'Mail reward range reordered to [min,max].');
+        if (Math.min(...values) < 0) warn(issues, 'traffic.mail.reward.gold', 'Negative mail reward clamped to 0.');
+      } else {
+        mail.reward = isObject(mail.reward) ? mail.reward : {};
+        mail.reward.gold = [0, 0];
+        warn(issues, 'traffic.mail.reward.gold', 'Invalid mail reward normalized to [0,0].');
+      }
+    }
+  }
   if (traffic.lodging != null) {
     const lodging = traffic.lodging;
     if (!isObject(lodging) || !lodging.roomsEntity || !findEntity(schema, lodging.roomsEntity)) {

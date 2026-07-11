@@ -172,4 +172,47 @@ function resolveLodgingDecision(schema, state, requestId, decision) {
   return { ok: true, name: request.name, roomNo, party: request.party, stayDays: request.stayDays, goldDelta };
 }
 
-module.exports = { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision };
+function checkMail(schema, state) {
+  if (state.combat && state.combat.active) return { ok: false, reason: 'in_combat' };
+  const mail = schema && schema.traffic && schema.traffic.mail;
+  if (!mail) return { ok: false, reason: 'mail_not_configured' };
+  if (state.mail && state.mail.checkedDay === state.day) return { ok: false, reason: 'already_checked' };
+  const existing = Array.isArray(state.mail && state.mail.letters) ? state.mail.letters.slice() : [];
+  const letters = existing.slice();
+  for (const axis of Object.keys(state.reputation || {}).sort()) {
+    const value = state.reputation[axis];
+    const rank = value && typeof value === 'object' ? (value.rank || 'E') : 'E';
+    for (const type of ['reward', 'quest']) {
+      if (existing.some((letter) => letter.axis === axis && letter.type === type)) continue;
+      const chance = mail.chances && mail.chances[type] && mail.chances[type][rank];
+      if (chance == null) continue;
+      const rng = deriveRng(state.seed ?? 0, `mail/${state.day}/${axis}/${type}`);
+      if (rng.next() * 100 < Number(chance)) letters.push({ id: `mail_${state.day}_${axis}_${type}`, axis, type, day: state.day });
+    }
+  }
+  state.mail = { checkedDay: state.day, letters };
+  return { ok: true, arrived: letters.length - existing.length, letters: letters.slice() };
+}
+
+function openMail(schema, state, mailId) {
+  if (state.combat && state.combat.active) return { ok: false, reason: 'in_combat' };
+  const letters = Array.isArray(state.mail && state.mail.letters) ? state.mail.letters : [];
+  const index = letters.findIndex((letter) => letter.id === mailId);
+  if (index < 0) return { ok: false, reason: 'mail_not_found', detail: mailId };
+  const letter = letters[index];
+  const result = { ok: true, mailId: letter.id, axis: letter.axis, type: letter.type };
+  if (letter.type === 'reward') {
+    // 편지 생성 후 스키마에서 mail 블록이 사라진 엣지(검증기 미경유·스키마 교체) 방어 — 크래시 대신 0원.
+    const mail = schema && schema.traffic && schema.traffic.mail;
+    const range = (mail && mail.reward && Array.isArray(mail.reward.gold)) ? mail.reward.gold : [0, 0];
+    // 보상 편지는 골드를 빼앗지 않는다 — 음수 범위(악성/오류 스키마)는 0으로 클램프.
+    const low = Math.max(0, Number(range[0]) || 0);
+    const high = Math.max(low, Number(range[1]) || 0);
+    result.goldDelta = deriveRng(state.seed ?? 0, `mail/open/${letter.id}`).int(low, high);
+    state.gold = Number(state.gold || 0) + result.goldDelta;
+  }
+  state.mail.letters = letters.slice(0, index).concat(letters.slice(index + 1));
+  return result;
+}
+
+module.exports = { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail };

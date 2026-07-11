@@ -5,7 +5,7 @@ const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = r
 const { staffMax, tierOf, menuTrade } = require('./selectors.js');
 const { poolHeal } = require('./pools.js');
 const { resolveCheck } = require('./resolveCheck.js');
-const { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision } = require('./traffic.js');
+const { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require('./traffic.js');
 const {
   clone,
   clamp,
@@ -83,6 +83,14 @@ function applyEvent(schema, state, event, rng) {
     case 'lodging_accept':
     case 'lodging_reject': {
       const result = resolveLodgingDecision(schema, next, params.requestId, type === 'lodging_accept' ? 'accept' : 'reject');
+      return result.ok ? ok(result) : fail(result.reason, result.detail);
+    }
+    case 'mail_check': {
+      const result = checkMail(schema, next);
+      return result.ok ? ok(result) : fail(result.reason, result.detail);
+    }
+    case 'mail_open': {
+      const result = openMail(schema, next, params.mailId);
       return result.ok ? ok(result) : fail(result.reason, result.detail);
     }
     case 'start_encounter':

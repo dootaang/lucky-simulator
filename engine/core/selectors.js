@@ -30,6 +30,12 @@ function availableManagement(schema, state) {
       const lodging = state.lodging && state.lodging.day === state.day ? state.lodging : null;
       section.lodging = { reviewed: !!(lodging && lodging.reviewed), pending: ((lodging && lodging.requests) || []).filter((item) => item.status === 'pending').map(({ id, label, name, party, stayDays }) => ({ id, label, name, party, stayDays })) };
     }
+    if (schema.traffic.mail) {
+      section.mail = {
+        checkedToday: !!(state.mail && state.mail.checkedDay === state.day),
+        letters: ((state.mail && state.mail.letters) || []).map(({ id, axis, type, day }) => ({ id, axis, type, day })),
+      };
+    }
     sections.push(section);
   }
   const menus = availableMenu(schema, state);

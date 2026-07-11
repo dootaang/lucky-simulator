@@ -188,3 +188,68 @@ test('accepted lodging guests follow day-end nightsLeft decrement', () => {
   const ended = applyEvent(schema, accepted.state, { id: 'day_end', params: {} }, createRng(1));
   assert.ok(ended.state.rooms['101'].every((guest) => guest.nightsLeft === 1));
 });
+
+function mail(state, id = 'mail_check', params = {}, source = schema) {
+  return applyEvent(source, state, { id, params }, createRng(999));
+}
+
+function mailSchema(chance = 100) {
+  const source = JSON.parse(JSON.stringify(schema));
+  for (const type of ['reward', 'quest']) for (const rank of ['C', 'B', 'A', 'S']) source.traffic.mail.chances[type][rank] = chance;
+  return source;
+}
+
+test('mail check is reproducible for the same seed and day', () => {
+  const source = mailSchema(50);
+  const a = createState(source, 42); const b = createState(source, 42);
+  for (const state of [a, b]) state.reputation = { zed: { rank: 'A' }, alpha: { rank: 'C' } };
+  assert.deepEqual(mail(a, 'mail_check', {}, source).state.mail.letters, mail(b, 'mail_check', {}, source).state.mail.letters);
+});
+
+test('mail check rejects a second check on the same day', () => {
+  const source = mailSchema(); const first = mail(createState(source, 1), 'mail_check', {}, source);
+  assert.equal(mail(first.state, 'mail_check', {}, source).log[0].reason, 'already_checked');
+});
+
+test('mail check does not roll ranks E or D when chances are undefined', () => {
+  const source = mailSchema(); const state = createState(source, 1);
+  state.reputation = { low: { rank: 'E' }, next: { rank: 'D' } };
+  assert.deepEqual(mail(state, 'mail_check', {}, source).state.mail.letters, []);
+});
+
+test('unopened mail blocks the same axis and type roll on later days', () => {
+  const source = mailSchema(); const state = createState(source, 1);
+  state.reputation = { guild: { rank: 'C' } };
+  const first = mail(state, 'mail_check', {}, source); first.state.day += 1;
+  const second = mail(first.state, 'mail_check', {}, source);
+  assert.deepEqual(second.state.mail.letters, first.state.mail.letters);
+});
+
+test('reward mail gold is in range and deterministic', () => {
+  const source = mailSchema(); const state = createState(source, 7);
+  state.mail = { checkedDay: 1, letters: [{ id: 'fixed_reward', axis: 'guild', type: 'reward', day: 1 }] };
+  const a = mail(state, 'mail_open', { mailId: 'fixed_reward' }, source);
+  const b = mail(JSON.parse(JSON.stringify(state)), 'mail_open', { mailId: 'fixed_reward' }, source);
+  assert.equal(a.log[0].goldDelta, b.log[0].goldDelta);
+  assert.ok(a.log[0].goldDelta >= 30000 && a.log[0].goldDelta <= 80000);
+});
+
+test('quest mail opening does not change gold', () => {
+  const state = createState(schema, 7); const before = state.gold;
+  state.mail = { letters: [{ id: 'fixed_quest', axis: 'guild', type: 'quest', day: 1 }] };
+  assert.equal(mail(state, 'mail_open', { mailId: 'fixed_quest' }).state.gold, before);
+});
+
+test('opening removes a letter and reopening fails', () => {
+  const state = createState(schema, 7);
+  state.mail = { letters: [{ id: 'fixed_quest', axis: 'guild', type: 'quest', day: 1 }] };
+  const opened = mail(state, 'mail_open', { mailId: 'fixed_quest' });
+  assert.deepEqual(opened.state.mail.letters, []);
+  assert.equal(mail(opened.state, 'mail_open', { mailId: 'fixed_quest' }).log[0].reason, 'mail_not_found');
+});
+
+test('mail-less schema rejects mail check without mutation', () => {
+  const source = JSON.parse(JSON.stringify(schema)); delete source.traffic.mail;
+  const state = createState(source, 7); const result = mail(state, 'mail_check', {}, source);
+  assert.equal(result.log[0].reason, 'mail_not_configured'); assert.equal(result.state, state);
+});

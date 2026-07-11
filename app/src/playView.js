@@ -435,6 +435,19 @@ function renderManagementConsole(input, ctx, render) {
         group.append(line);
       }
     }
+    if (section.type === 'traffic' && section.mail) {
+      const check = button(section.mail.checkedToday ? '✓ 우편함 확인함' : '📬 우편함 확인', 'secondary-btn');
+      check.disabled = busy || section.mail.checkedToday;
+      check.addEventListener('click', () => runManagementTurn({ id: 'mail_check', params: {} }, input, ctx, render));
+      group.append(check);
+      for (const letter of section.mail.letters) {
+        const kind = letter.type === 'reward' ? '감사 선물' : '의뢰 편지';
+        const open = button(`📨 ${letter.axis} ${kind} 개봉`, 'secondary-btn');
+        open.disabled = busy;
+        open.addEventListener('click', () => runManagementTurn({ id: 'mail_open', params: { mailId: letter.id } }, input, ctx, render));
+        group.append(open);
+      }
+    }
     if (section.type === 'sell' || section.type === 'buy') for (const item of section.items) {
       const owned = section.type === 'buy' && item.owned ? ` · 보유 ${item.owned}` : '';
       const control = button(`${item.name} (${formatMoney(item.price)})${owned}`, 'secondary-btn');
