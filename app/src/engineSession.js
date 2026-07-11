@@ -34,6 +34,7 @@ export const eventTypes = [
   'enemy_turn',
   'end_encounter',
   'traffic_wave',
+  'incident_choice',
   'lodging_review',
   'lodging_accept',
   'lodging_reject',
@@ -86,6 +87,8 @@ export function runEvent(event) {
 }
 
 export function summarizeEvent(type, entry, formatMoney) {
+  if (entry.ok && entry.awaitingChoice && entry.incident) return `⚠ ${entry.incident.label} 발생 — 대응을 선택하세요`;
+  if (entry.ok && type === 'incident_choice' && entry.incidentId) return `${entry.label} · ${entry.choiceLabel}${entry.goldDelta != null ? ` · ${entry.goldDelta >= 0 ? '+' : ''}${formatMoney(entry.goldDelta)}` : ''}`;
   if (entry.ok && type === 'mail_check') return entry.arrived ? `편지 ${entry.arrived}통 도착` : '새 편지 없음';
   if (entry.ok && type === 'mail_open') return entry.type === 'reward'
     ? `${entry.axis} 감사 선물 개봉 · +${formatMoney(entry.goldDelta)}`
@@ -148,6 +151,8 @@ function eventKind(type, entry) {
   if (['attempt_quest'].includes(type)) return 'quest';
   if (['day_end'].includes(type)) return 'settlement';
   if (type === 'mail_open' && entry.type === 'reward') return 'resource';
+  if ((type === 'incident_choice' || entry.awaitingChoice) && entry.goldDelta != null) return 'resource';
+  if (type === 'incident_choice' || entry.awaitingChoice) return 'info';
   if (['traffic_wave', 'lodging_accept', 'buy_item', 'reward', 'upgrade', 'gain_resource', 'gold_delta', 'resource_delta', 'sale', 'purchase'].includes(type)) return 'resource';
   return 'info';
 }

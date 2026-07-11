@@ -4729,6 +4729,28 @@ select:focus { border-color: var(--amber-line); }
             { type: "facility_level", facility: "kitchen", perLevel: 0.05 }
           ],
           sells: { entity: "menuItem" },
+          incidents: {
+            chance: 35,
+            deck: [
+              { id: "drunk_brawl", label: "\uC9C4\uC0C1 \uCDE8\uAC1D", desc: "\uB9CC\uCDE8\uD55C \uC6A9\uBCD1\uC774 \uD640\uC5D0\uC11C \uD589\uD328\uB97C \uBD80\uB9B0\uB2E4.", weight: 4, choices: [
+                { id: "subdue", label: "\uC9C1\uC811 \uC81C\uC555\uD55C\uB2E4", effects: { waveMultiplier: 0.9 } },
+                { id: "appease", label: "\uC220\uAC12\uC744 \uBB3C\uC5B4 \uB2EC\uB79C\uB2E4", effects: { gold: [-15e3, -5e3] } },
+                { id: "ignore", label: "\uBC29\uCE58\uD55C\uB2E4", effects: { waveMultiplier: 0.7 } }
+              ] },
+              { id: "noble_visit", label: "\uADC0\uC871\uC758 \uAE5C\uC9DD \uBC29\uBB38", desc: "\uACE0\uC704 \uADC0\uC871 \uC77C\uD589\uC774 \uC608\uACE0 \uC5C6\uC774 \uB4E4\uC5B4\uC120\uB2E4.", weight: 2, requires: { ladderRank: { ladder: "reputation", axis: "noble", rank: "C" } }, choices: [
+                { id: "feast", label: "\uCD5C\uACE0\uAE09\uC73C\uB85C \uC811\uB300\uD55C\uB2E4", effects: { resources: { food: -3, drink: -2 }, gold: [8e4, 15e4] } },
+                { id: "decline", label: "\uC815\uC911\uD788 \uD3C9\uBC94\uD558\uAC8C \uC751\uB300", effects: {} }
+              ] },
+              { id: "petty_thief", label: "\uC880\uB3C4\uB451", desc: "\uC190\uB2D8 \uD558\uB098\uAC00 \uACC4\uC0B0\uB300 \uADFC\uCC98\uB97C \uC11C\uC131\uC778\uB2E4.", weight: 3, choices: [
+                { id: "chase", label: "\uCAD3\uC544\uAC00 \uBD99\uC7A1\uB294\uB2E4", effects: { gold: [-5e3, 25e3] } },
+                { id: "guard", label: "\uACC4\uC0B0\uB300\uB9CC \uC9C0\uD0A8\uB2E4", effects: { waveMultiplier: 0.95 } }
+              ] },
+              { id: "kitchen_fire", label: "\uC8FC\uBC29 \uC0AC\uACE0", desc: "\uD654\uB355\uC5D0\uC11C \uBD88\uAE38\uC774 \uCE58\uC19F\uB294\uB2E4.", weight: 2, choices: [
+                { id: "repair", label: "\uC989\uC2DC \uC218\uB9AC\uD55C\uB2E4", effects: { gold: [-3e4, -1e4] } },
+                { id: "endure", label: "\uC784\uC2DC\uB85C \uBC84\uD2F4\uB2E4", effects: { resources: { food: -2 }, waveMultiplier: 0.85 } }
+              ] }
+            ]
+          },
           mail: {
             ladder: "reputation",
             chances: {
@@ -5329,6 +5351,9 @@ select:focus { border-color: var(--amber-line); }
         if (schema2.traffic) {
           const resolved = state2.traffic && state2.traffic.day === state2.day ? state2.traffic.resolved || {} : {};
           const section = { type: "traffic", id: schema2.traffic.id, waves: (schema2.traffic.waves || []).map((wave) => ({ id: wave.id, label: wave.label, share: wave.share, resolved: !!resolved[wave.id] })) };
+          const pending = state2.pendingIncident && state2.pendingIncident.day === state2.day ? state2.pendingIncident : null;
+          const incident = pending && schema2.traffic.incidents && (schema2.traffic.incidents.deck || []).find((item) => item.id === pending.incidentId);
+          if (incident) section.pendingIncident = { incidentId: incident.id, label: incident.label, desc: incident.desc, waveId: pending.waveId, choices: (incident.choices || []).map(({ id, label }) => ({ id, label })) };
           if (schema2.traffic.lodging) {
             const lodging = state2.lodging && state2.lodging.day === state2.day ? state2.lodging : null;
             section.lodging = { reviewed: !!(lodging && lodging.reviewed), pending: (lodging && lodging.requests || []).filter((item) => item.status === "pending").map(({ id, label, name, party, stayDays }) => ({ id, label, name, party, stayDays })) };
@@ -6036,7 +6061,7 @@ select:focus { border-color: var(--amber-line); }
       "use strict";
       var { deriveRng } = require_rng();
       var { saleConsumes } = require_utils();
-      function resolveTrafficWave(schema2, state2, waveId) {
+      function resolveTrafficWave(schema2, state2, waveId, waveMultiplier = 1) {
         if (state2.combat && state2.combat.active) return { ok: false, reason: "in_combat" };
         const traffic = schema2 && schema2.traffic;
         if (!traffic) return { ok: false, reason: "traffic_not_configured" };
@@ -6063,7 +6088,7 @@ select:focus { border-color: var(--amber-line); }
             multiplier *= 1 + Number(modifier.perLevel || 0) * (modifierLevel - 1);
           }
         }
-        potential = Math.round(potential * multiplier);
+        potential = Math.round(potential * multiplier * Number(waveMultiplier || 1));
         const cap = Math.round(Number(traffic.capacity[level - 1]) * share);
         const accepted = Math.min(potential, cap);
         const lostCapacity = potential - accepted;
@@ -6114,6 +6139,72 @@ select:focus { border-color: var(--amber-line); }
         if (lostStockout > 0) entries.push({ ok: true, kindHint: "loss", lostStockout, revenue_opportunity: lostStockout * avgTicket, text: `\uC7AC\uACE0 \uBD80\uC871\uC73C\uB85C ${lostStockout}\uBA85 \uB193\uCE68` });
         return { ok: true, entries };
       }
+      function eligibleIncident(state2, incident) {
+        const requirement = incident.requires && incident.requires.ladderRank;
+        if (!requirement) return true;
+        const order = ["E", "D", "C", "B", "A", "S"];
+        const requiredIndex = order.indexOf(requirement.rank);
+        if (requiredIndex < 0) return false;
+        const current = state2[requirement.ladder] && state2[requirement.ladder][requirement.axis];
+        const rank = current && typeof current === "object" ? current.rank : current;
+        return Math.max(0, order.indexOf(rank)) >= requiredIndex;
+      }
+      function rollTrafficIncident(schema2, state2, waveId) {
+        if (state2.combat && state2.combat.active) return { ok: false, reason: "in_combat" };
+        const traffic = schema2 && schema2.traffic;
+        if (!traffic) return { ok: false, reason: "traffic_not_configured" };
+        const wave = (traffic.waves || []).find((entry) => entry.id === waveId);
+        if (!wave) return { ok: false, reason: "unknown_wave", detail: waveId };
+        if (state2.pendingIncident && state2.pendingIncident.day !== state2.day) delete state2.pendingIncident;
+        const resolved = state2.traffic && state2.traffic.day === state2.day ? state2.traffic.resolved || {} : {};
+        if (resolved[waveId]) return { ok: false, reason: "wave_already_resolved", detail: waveId };
+        if (state2.pendingIncident && state2.pendingIncident.day === state2.day) return { ok: false, reason: "incident_pending", detail: state2.pendingIncident.waveId };
+        const incidents = traffic.incidents;
+        if (!incidents) return resolveTrafficWave(schema2, state2, waveId);
+        const rng2 = deriveRng(state2.seed ?? 0, `incident/${state2.day}/${traffic.id}/${waveId}`);
+        if (rng2.next() * 100 >= Number(incidents.chance || 0)) return resolveTrafficWave(schema2, state2, waveId);
+        const deck = (incidents.deck || []).filter((incident2) => eligibleIncident(state2, incident2));
+        if (!deck.length) return resolveTrafficWave(schema2, state2, waveId);
+        const incident = weightedPick(rng2, deck, (item) => item.weight);
+        state2.pendingIncident = { day: state2.day, waveId, incidentId: incident.id };
+        return { ok: true, entries: [{ ok: true, incident: { id: incident.id, label: incident.label, desc: incident.desc }, choices: incident.choices.map((choice) => ({ id: choice.id, label: choice.label })), awaitingChoice: true }] };
+      }
+      function resolveIncidentChoice(schema2, state2, choiceId) {
+        if (state2.combat && state2.combat.active) return { ok: false, reason: "in_combat" };
+        const pending = state2.pendingIncident;
+        if (!pending || pending.day !== state2.day) {
+          if (pending) delete state2.pendingIncident;
+          return { ok: false, reason: "no_pending_incident" };
+        }
+        const traffic = schema2 && schema2.traffic;
+        const incident = traffic && traffic.incidents && (traffic.incidents.deck || []).find((item) => item.id === pending.incidentId);
+        const choice = incident && (incident.choices || []).find((item) => item.id === choiceId);
+        if (!choice) return { ok: false, reason: "unknown_choice", detail: choiceId };
+        const effects = choice.effects || {};
+        const entry = { ok: true, incidentId: incident.id, label: incident.label, choice: choice.id, choiceLabel: choice.label };
+        if (effects.gold) {
+          const rng2 = deriveRng(state2.seed ?? 0, `incident/${state2.day}/${pending.waveId}/${incident.id}/${choice.id}`);
+          const rolled = rng2.int(Number(effects.gold[0]), Number(effects.gold[1]));
+          const before = Number(state2.gold || 0);
+          state2.gold = Math.max(0, before + rolled);
+          entry.goldDelta = state2.gold - before;
+          if (entry.goldDelta !== rolled) entry.goldShortfall = Math.abs(rolled - entry.goldDelta);
+        }
+        if (effects.resources) {
+          entry.resourceDeltas = {};
+          state2.resources = state2.resources || {};
+          for (const [id, delta] of Object.entries(effects.resources)) {
+            const before = Number(state2.resources[id] || 0);
+            state2.resources[id] = Math.max(0, before + Number(delta));
+            entry.resourceDeltas[id] = state2.resources[id] - before;
+          }
+        }
+        const waveMultiplier = effects.waveMultiplier == null ? 1 : Math.max(0.1, Math.min(2, Number(effects.waveMultiplier)));
+        if (effects.waveMultiplier != null) entry.waveMultiplier = waveMultiplier;
+        delete state2.pendingIncident;
+        const waveResult = resolveTrafficWave(schema2, state2, pending.waveId, waveMultiplier);
+        return waveResult.ok ? { ok: true, entries: [entry, ...waveResult.entries] } : waveResult;
+      }
       function guestSuffix(index) {
         let n = index;
         let suffix = "";
@@ -6147,10 +6238,12 @@ select:focus { border-color: var(--amber-line); }
           if (Number(requires.roomLevel || 1) > roomLevel) return false;
           if (!requires.ladderRank) return true;
           const requirement = requires.ladderRank;
+          const requiredIndex = rankOrder.indexOf(requirement.rank);
+          if (requiredIndex < 0) return false;
           const current = state2[requirement.ladder] && state2[requirement.ladder][requirement.axis];
           const rank = current && typeof current === "object" ? current.rank : current;
           const rankValue = Math.max(0, rankOrder.indexOf(rank));
-          return rankValue >= rankOrder.indexOf(requirement.rank);
+          return rankValue >= requiredIndex;
         });
         const rng2 = deriveRng(state2.seed ?? 0, `lodging/${state2.day}/${traffic.id}`);
         const count2 = rng2.int(range[0], range[1]);
@@ -6237,7 +6330,7 @@ select:focus { border-color: var(--amber-line); }
         state2.mail.letters = letters.slice(0, index).concat(letters.slice(index + 1));
         return result;
       }
-      module.exports = { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail };
+      module.exports = { resolveTrafficWave, rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail };
     }
   });
 
@@ -6250,7 +6343,7 @@ select:focus { border-color: var(--amber-line); }
       var { staffMax: staffMax2, tierOf, menuTrade } = require_selectors();
       var { poolHeal } = require_pools();
       var { resolveCheck } = require_resolveCheck();
-      var { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require_traffic();
+      var { rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require_traffic();
       var {
         clone,
         clamp,
@@ -6313,7 +6406,13 @@ select:focus { border-color: var(--amber-line); }
           case "fire":
             return fire(next, params, ok, fail);
           case "traffic_wave": {
-            const result = resolveTrafficWave(schema2, next, params.wave);
+            const result = rollTrafficIncident(schema2, next, params.wave);
+            if (!result.ok) return fail(result.reason, result.detail);
+            for (const entry of result.entries) log.push(Object.assign({ event: type }, entry));
+            return { state: next, log };
+          }
+          case "incident_choice": {
+            const result = resolveIncidentChoice(schema2, next, params.choice);
             if (!result.ok) return fail(result.reason, result.detail);
             for (const entry of result.entries) log.push(Object.assign({ event: type }, entry));
             return { state: next, log };
@@ -8326,6 +8425,13 @@ ${row3.content}`;
         validateEvents(schema2, issues);
         return { schema: schema2, issues };
       }
+      function validLadderRankGate(schema2, requires) {
+        const gate = isObject(requires) ? requires.ladderRank : null;
+        if (gate == null) return true;
+        if (!isObject(gate)) return false;
+        if (!asArray(schema2.ladders).some((ladder) => ladder && ladder.id === gate.ladder)) return false;
+        return ["E", "D", "C", "B", "A", "S"].includes(gate.rank);
+      }
       function validateTraffic(schema2, issues) {
         if (schema2.traffic == null) return;
         if (!isObject(schema2.traffic)) {
@@ -8389,6 +8495,54 @@ ${row3.content}`;
           warn(issues, `traffic.modifiers[${index}]`, "Unknown traffic modifier removed.");
           return false;
         });
+        if (traffic.incidents != null) {
+          if (!isObject(traffic.incidents) || !Array.isArray(traffic.incidents.deck) || !traffic.incidents.deck.length) {
+            warn(issues, "traffic.incidents", "Empty incident deck; incidents removed.");
+            delete traffic.incidents;
+          } else {
+            const rawChance = Number(traffic.incidents.chance);
+            const chance = Number.isFinite(rawChance) ? Math.max(0, Math.min(100, rawChance)) : 0;
+            if (chance !== rawChance) warn(issues, "traffic.incidents.chance", "Incident chance normalized to 0..100.");
+            traffic.incidents.chance = chance;
+            traffic.incidents.deck = traffic.incidents.deck.filter((card, cardIndex) => {
+              if (!isObject(card) || !Array.isArray(card.choices) || !card.choices.length) {
+                warn(issues, `traffic.incidents.deck[${cardIndex}].choices`, "Card with empty choices removed.");
+                return false;
+              }
+              if (!validLadderRankGate(schema2, card.requires)) {
+                warn(issues, `traffic.incidents.deck[${cardIndex}].requires`, "Invalid ladderRank gate; card removed.");
+                return false;
+              }
+              card.choices = card.choices.filter(isObject).map((choice, choiceIndex) => {
+                const effects = isObject(choice.effects) ? choice.effects : {};
+                for (const key of Object.keys(effects)) if (!["gold", "resources", "waveMultiplier"].includes(key)) {
+                  delete effects[key];
+                  warn(issues, `traffic.incidents.deck[${cardIndex}].choices[${choiceIndex}].effects.${key}`, "Unknown incident effect removed.");
+                }
+                if (effects.gold != null) {
+                  if (Number.isFinite(Number(effects.gold))) effects.gold = [Number(effects.gold), Number(effects.gold)];
+                  else if (Array.isArray(effects.gold) && effects.gold.length >= 2 && effects.gold.every((value) => Number.isFinite(Number(value)))) effects.gold = [Math.min(Number(effects.gold[0]), Number(effects.gold[1])), Math.max(Number(effects.gold[0]), Number(effects.gold[1]))];
+                  else {
+                    delete effects.gold;
+                    warn(issues, `traffic.incidents.deck[${cardIndex}].choices[${choiceIndex}].effects.gold`, "Invalid gold effect removed.");
+                  }
+                }
+                if (effects.waveMultiplier != null) {
+                  const raw = Number(effects.waveMultiplier);
+                  effects.waveMultiplier = Number.isFinite(raw) ? Math.max(0.1, Math.min(2, raw)) : 1;
+                  if (effects.waveMultiplier !== raw) warn(issues, `traffic.incidents.deck[${cardIndex}].choices[${choiceIndex}].effects.waveMultiplier`, "Wave multiplier normalized to 0.1..2.");
+                }
+                choice.effects = effects;
+                return choice;
+              });
+              return true;
+            });
+            if (!traffic.incidents.deck.length) {
+              warn(issues, "traffic.incidents.deck", "No valid incident cards; incidents removed.");
+              delete traffic.incidents;
+            }
+          }
+        }
         if (traffic.mail != null) {
           const mail = traffic.mail;
           const ladderExists = isObject(mail) && asArray(schema2.ladders).some((ladder) => ladder && ladder.id === mail.ladder);
@@ -8453,6 +8607,15 @@ ${row3.content}`;
             lodging.segments = [{ id: "guest", label: "\uC190\uB2D8", weight: 1, party: [1, 2], stay: { "1": 1 } }];
             warn(issues, "traffic.lodging.segments", "Empty segments normalized to a default guest segment.");
           } else lodging.segments = lodging.segments.filter(isObject);
+          lodging.segments = lodging.segments.filter((segment, index) => {
+            if (validLadderRankGate(schema2, segment.requires)) return true;
+            warn(issues, `traffic.lodging.segments[${index}].requires`, "Invalid ladderRank gate; segment removed.");
+            return false;
+          });
+          if (!lodging.segments.length) {
+            lodging.segments = [{ id: "guest", label: "\uC190\uB2D8", weight: 1, party: [1, 2], stay: { "1": 1 } }];
+            warn(issues, "traffic.lodging.segments", "All segments invalid; normalized to a default guest segment.");
+          }
           lodging.segments = lodging.segments.map((segment, index) => {
             if (!(Number(segment.weight) > 0)) {
               segment.weight = 1;
@@ -9818,6 +9981,7 @@ ${Array.from(extras).join(" ")}` : text;
     "enemy_turn",
     "end_encounter",
     "traffic_wave",
+    "incident_choice",
     "lodging_review",
     "lodging_accept",
     "lodging_reject",
@@ -9861,6 +10025,8 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function summarizeEvent(type, entry, formatMoney3) {
+    if (entry.ok && entry.awaitingChoice && entry.incident) return `\u26A0 ${entry.incident.label} \uBC1C\uC0DD \u2014 \uB300\uC751\uC744 \uC120\uD0DD\uD558\uC138\uC694`;
+    if (entry.ok && type === "incident_choice" && entry.incidentId) return `${entry.label} \xB7 ${entry.choiceLabel}${entry.goldDelta != null ? ` \xB7 ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}` : ""}`;
     if (entry.ok && type === "mail_check") return entry.arrived ? `\uD3B8\uC9C0 ${entry.arrived}\uD1B5 \uB3C4\uCC29` : "\uC0C8 \uD3B8\uC9C0 \uC5C6\uC74C";
     if (entry.ok && type === "mail_open") return entry.type === "reward" ? `${entry.axis} \uAC10\uC0AC \uC120\uBB3C \uAC1C\uBD09 \xB7 +${formatMoney3(entry.goldDelta)}` : `${entry.axis} \uC758\uB8B0 \uD3B8\uC9C0 \uAC1C\uBD09`;
     if (entry.ok && type === "lodging_review") return `\uC219\uBC15 \uBB38\uC758 ${entry.count}\uAC74 \uB3C4\uCC29`;
@@ -9916,6 +10082,8 @@ ${Array.from(extras).join(" ")}` : text;
     if (["attempt_quest"].includes(type)) return "quest";
     if (["day_end"].includes(type)) return "settlement";
     if (type === "mail_open" && entry.type === "reward") return "resource";
+    if ((type === "incident_choice" || entry.awaitingChoice) && entry.goldDelta != null) return "resource";
+    if (type === "incident_choice" || entry.awaitingChoice) return "info";
     if (["traffic_wave", "lodging_accept", "buy_item", "reward", "upgrade", "gain_resource", "gold_delta", "resource_delta", "sale", "purchase"].includes(type)) return "resource";
     return "info";
   }
@@ -10865,10 +11033,22 @@ ${Array.from(extras).join(" ")}` : text;
       label.textContent = section.type === "traffic" ? Number.isFinite(trafficDay) ? `\u{1F3EA} ${trafficDay}\uC77C\uCC28 \uC601\uC5C5` : "\u{1F3EA} \uC601\uC5C5" : { sell: "\uD310\uB9E4", buy: "\uAD6C\uB9E4", purchase: "\uC7AC\uB8CC \uAD6C\uB9E4", upgrade: "\uC99D\uCD95", gather: "\uCC44\uC9D1 (\uBB34\uB8CC \xB7 \uD68D\uB4DD\uB7C9\uC740 \uC8FC\uC0AC\uC704)", day_end: "\uD558\uB8E8" }[section.type] || section.type;
       group.append(label);
       if (section.type === "traffic") for (const wave of section.waves) {
+        if (section.pendingIncident && section.pendingIncident.waveId === wave.id) continue;
         const control = button2(wave.resolved ? `\u2713 ${wave.label} \uC644\uB8CC` : `${wave.label} \uC9C4\uD589`, "secondary-btn");
-        control.disabled = busy || wave.resolved;
+        control.disabled = busy || wave.resolved || !!section.pendingIncident;
         control.addEventListener("click", () => runManagementTurn({ id: "traffic_wave", params: { wave: wave.id } }, input2, ctx, render2));
         group.append(control);
+      }
+      if (section.type === "traffic" && section.pendingIncident) {
+        const warning = el2("span", "combat-command-label");
+        warning.textContent = `\u26A0 ${section.pendingIncident.label}`;
+        group.append(warning);
+        for (const choice of section.pendingIncident.choices) {
+          const control = button2(choice.label, "secondary-btn");
+          control.disabled = busy;
+          control.addEventListener("click", () => runManagementTurn({ id: "incident_choice", params: { choice: choice.id } }, input2, ctx, render2));
+          group.append(control);
+        }
       }
       if (section.type === "traffic" && section.lodging) {
         if (!section.lodging.reviewed) {

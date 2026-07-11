@@ -26,6 +26,9 @@ function availableManagement(schema, state) {
   if (schema.traffic) {
     const resolved = state.traffic && state.traffic.day === state.day ? state.traffic.resolved || {} : {};
     const section = { type: 'traffic', id: schema.traffic.id, waves: (schema.traffic.waves || []).map((wave) => ({ id: wave.id, label: wave.label, share: wave.share, resolved: !!resolved[wave.id] })) };
+    const pending = state.pendingIncident && state.pendingIncident.day === state.day ? state.pendingIncident : null;
+    const incident = pending && schema.traffic.incidents && (schema.traffic.incidents.deck || []).find((item) => item.id === pending.incidentId);
+    if (incident) section.pendingIncident = { incidentId: incident.id, label: incident.label, desc: incident.desc, waveId: pending.waveId, choices: (incident.choices || []).map(({ id, label }) => ({ id, label })) };
     if (schema.traffic.lodging) {
       const lodging = state.lodging && state.lodging.day === state.day ? state.lodging : null;
       section.lodging = { reviewed: !!(lodging && lodging.reviewed), pending: ((lodging && lodging.requests) || []).filter((item) => item.status === 'pending').map(({ id, label, name, party, stayDays }) => ({ id, label, name, party, stayDays })) };

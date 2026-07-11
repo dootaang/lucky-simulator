@@ -3,7 +3,7 @@
 const { deriveRng } = require('./rng.js');
 const { saleConsumes } = require('./utils.js');
 
-function resolveTrafficWave(schema, state, waveId) {
+function resolveTrafficWave(schema, state, waveId, waveMultiplier = 1) {
   if (state.combat && state.combat.active) return { ok: false, reason: 'in_combat' };
   const traffic = schema && schema.traffic;
   if (!traffic) return { ok: false, reason: 'traffic_not_configured' };
@@ -31,7 +31,7 @@ function resolveTrafficWave(schema, state, waveId) {
       multiplier *= 1 + Number(modifier.perLevel || 0) * (modifierLevel - 1);
     }
   }
-  potential = Math.round(potential * multiplier);
+  potential = Math.round(potential * multiplier * Number(waveMultiplier || 1));
   const cap = Math.round(Number(traffic.capacity[level - 1]) * share);
   const accepted = Math.min(potential, cap);
   const lostCapacity = potential - accepted;
@@ -79,6 +79,77 @@ function resolveTrafficWave(schema, state, waveId) {
   return { ok: true, entries };
 }
 
+function eligibleIncident(state, incident) {
+  const requirement = incident.requires && incident.requires.ladderRank;
+  if (!requirement) return true;
+  const order = ['E', 'D', 'C', 'B', 'A', 'S'];
+  // 존재하지 않는 요구 랭크는 fail-closed — indexOf(-1) 비교로 "무조건 해금"이 되면 안 된다.
+  const requiredIndex = order.indexOf(requirement.rank);
+  if (requiredIndex < 0) return false;
+  const current = state[requirement.ladder] && state[requirement.ladder][requirement.axis];
+  const rank = current && typeof current === 'object' ? current.rank : current;
+  return Math.max(0, order.indexOf(rank)) >= requiredIndex;
+}
+
+function rollTrafficIncident(schema, state, waveId) {
+  if (state.combat && state.combat.active) return { ok: false, reason: 'in_combat' };
+  const traffic = schema && schema.traffic;
+  if (!traffic) return { ok: false, reason: 'traffic_not_configured' };
+  const wave = (traffic.waves || []).find((entry) => entry.id === waveId);
+  if (!wave) return { ok: false, reason: 'unknown_wave', detail: waveId };
+  if (state.pendingIncident && state.pendingIncident.day !== state.day) delete state.pendingIncident;
+  const resolved = state.traffic && state.traffic.day === state.day ? state.traffic.resolved || {} : {};
+  if (resolved[waveId]) return { ok: false, reason: 'wave_already_resolved', detail: waveId };
+  // 사건은 한 번에 하나 — 다른 파동에서 새 사건이 대기 사건을 덮어쓰는 것 방지(중복 공지·UI 출렁임).
+  if (state.pendingIncident && state.pendingIncident.day === state.day) return { ok: false, reason: 'incident_pending', detail: state.pendingIncident.waveId };
+  const incidents = traffic.incidents;
+  if (!incidents) return resolveTrafficWave(schema, state, waveId);
+  const rng = deriveRng(state.seed ?? 0, `incident/${state.day}/${traffic.id}/${waveId}`);
+  if (rng.next() * 100 >= Number(incidents.chance || 0)) return resolveTrafficWave(schema, state, waveId);
+  const deck = (incidents.deck || []).filter((incident) => eligibleIncident(state, incident));
+  if (!deck.length) return resolveTrafficWave(schema, state, waveId);
+  const incident = weightedPick(rng, deck, (item) => item.weight);
+  state.pendingIncident = { day: state.day, waveId, incidentId: incident.id };
+  return { ok: true, entries: [{ ok: true, incident: { id: incident.id, label: incident.label, desc: incident.desc }, choices: incident.choices.map((choice) => ({ id: choice.id, label: choice.label })), awaitingChoice: true }] };
+}
+
+function resolveIncidentChoice(schema, state, choiceId) {
+  if (state.combat && state.combat.active) return { ok: false, reason: 'in_combat' };
+  const pending = state.pendingIncident;
+  if (!pending || pending.day !== state.day) {
+    if (pending) delete state.pendingIncident;
+    return { ok: false, reason: 'no_pending_incident' };
+  }
+  const traffic = schema && schema.traffic;
+  const incident = traffic && traffic.incidents && (traffic.incidents.deck || []).find((item) => item.id === pending.incidentId);
+  const choice = incident && (incident.choices || []).find((item) => item.id === choiceId);
+  if (!choice) return { ok: false, reason: 'unknown_choice', detail: choiceId };
+  const effects = choice.effects || {};
+  const entry = { ok: true, incidentId: incident.id, label: incident.label, choice: choice.id, choiceLabel: choice.label };
+  if (effects.gold) {
+    const rng = deriveRng(state.seed ?? 0, `incident/${state.day}/${pending.waveId}/${incident.id}/${choice.id}`);
+    const rolled = rng.int(Number(effects.gold[0]), Number(effects.gold[1]));
+    const before = Number(state.gold || 0);
+    state.gold = Math.max(0, before + rolled);
+    entry.goldDelta = state.gold - before;
+    if (entry.goldDelta !== rolled) entry.goldShortfall = Math.abs(rolled - entry.goldDelta);
+  }
+  if (effects.resources) {
+    entry.resourceDeltas = {};
+    state.resources = state.resources || {};
+    for (const [id, delta] of Object.entries(effects.resources)) {
+      const before = Number(state.resources[id] || 0);
+      state.resources[id] = Math.max(0, before + Number(delta));
+      entry.resourceDeltas[id] = state.resources[id] - before;
+    }
+  }
+  const waveMultiplier = effects.waveMultiplier == null ? 1 : Math.max(0.1, Math.min(2, Number(effects.waveMultiplier)));
+  if (effects.waveMultiplier != null) entry.waveMultiplier = waveMultiplier;
+  delete state.pendingIncident;
+  const waveResult = resolveTrafficWave(schema, state, pending.waveId, waveMultiplier);
+  return waveResult.ok ? { ok: true, entries: [entry, ...waveResult.entries] } : waveResult;
+}
+
 // 26건 초과 시에도 알파벳 유지: A..Z, AA, AB… (엑셀 열 방식)
 function guestSuffix(index) {
   let n = index;
@@ -115,11 +186,14 @@ function generateLodgingQueue(schema, state) {
     if (Number(requires.roomLevel || 1) > roomLevel) return false;
     if (!requires.ladderRank) return true;
     const requirement = requires.ladderRank;
+    // 존재하지 않는 요구 랭크는 fail-closed(무조건 해금 방지).
+    const requiredIndex = rankOrder.indexOf(requirement.rank);
+    if (requiredIndex < 0) return false;
     const current = state[requirement.ladder] && state[requirement.ladder][requirement.axis];
     const rank = current && typeof current === 'object' ? current.rank : current;
     // 미기록/알 수 없는 랭크는 최저 랭크 E로 간주 — 초기 상태에서 E 요구 세그먼트가 배제되지 않도록.
     const rankValue = Math.max(0, rankOrder.indexOf(rank));
-    return rankValue >= rankOrder.indexOf(requirement.rank);
+    return rankValue >= requiredIndex;
   });
   const rng = deriveRng(state.seed ?? 0, `lodging/${state.day}/${traffic.id}`);
   const count = rng.int(range[0], range[1]);
@@ -215,4 +289,4 @@ function openMail(schema, state, mailId) {
   return result;
 }
 
-module.exports = { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail };
+module.exports = { resolveTrafficWave, rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail };

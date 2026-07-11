@@ -30,6 +30,28 @@
       { "type": "facility_level", "facility": "kitchen", "perLevel": 0.05 }
     ],
     "sells": { "entity": "menuItem" },
+    "incidents": {
+      "chance": 35,
+      "deck": [
+        { "id": "drunk_brawl", "label": "진상 취객", "desc": "만취한 용병이 홀에서 행패를 부린다.", "weight": 4, "choices": [
+          { "id": "subdue", "label": "직접 제압한다", "effects": { "waveMultiplier": 0.9 } },
+          { "id": "appease", "label": "술값을 물어 달랜다", "effects": { "gold": [-15000, -5000] } },
+          { "id": "ignore", "label": "방치한다", "effects": { "waveMultiplier": 0.7 } }
+        ] },
+        { "id": "noble_visit", "label": "귀족의 깜짝 방문", "desc": "고위 귀족 일행이 예고 없이 들어선다.", "weight": 2, "requires": { "ladderRank": { "ladder": "reputation", "axis": "noble", "rank": "C" } }, "choices": [
+          { "id": "feast", "label": "최고급으로 접대한다", "effects": { "resources": { "food": -3, "drink": -2 }, "gold": [80000, 150000] } },
+          { "id": "decline", "label": "정중히 평범하게 응대", "effects": {} }
+        ] },
+        { "id": "petty_thief", "label": "좀도둑", "desc": "손님 하나가 계산대 근처를 서성인다.", "weight": 3, "choices": [
+          { "id": "chase", "label": "쫓아가 붙잡는다", "effects": { "gold": [-5000, 25000] } },
+          { "id": "guard", "label": "계산대만 지킨다", "effects": { "waveMultiplier": 0.95 } }
+        ] },
+        { "id": "kitchen_fire", "label": "주방 사고", "desc": "화덕에서 불길이 치솟는다.", "weight": 2, "choices": [
+          { "id": "repair", "label": "즉시 수리한다", "effects": { "gold": [-30000, -10000] } },
+          { "id": "endure", "label": "임시로 버틴다", "effects": { "resources": { "food": -2 }, "waveMultiplier": 0.85 } }
+        ] }
+      ]
+    },
     "mail": {
       "ladder": "reputation",
       "chances": {

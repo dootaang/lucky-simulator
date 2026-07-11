@@ -7,9 +7,81 @@ const { createState } = require('../core/createState.js');
 const { createRng } = require('../core/rng.js');
 const { applyEvent } = require('../core/applyEvent.js');
 
-function run(state, wave = 'lunch', source = schema) {
+const legacySchema = JSON.parse(JSON.stringify(schema));
+delete legacySchema.traffic.incidents;
+
+function run(state, wave = 'lunch', source = legacySchema) {
   return applyEvent(source, state, { id: 'traffic_wave', params: { wave } }, createRng(999));
 }
+
+function incidentSchema(card, chance = 100) {
+  const source = JSON.parse(JSON.stringify(legacySchema));
+  source.traffic.incidents = { chance, deck: [card] };
+  return source;
+}
+
+function incident(state, id, params, source) {
+  return applyEvent(source, state, { id, params }, createRng(999));
+}
+
+test('incident occurrence and card are reproducible for the same seed/day/wave', () => {
+  const source = incidentSchema({ id: 'fixed', label: '고정 사건', desc: '설명', weight: 1, choices: [{ id: 'ok', label: '대응', effects: {} }] });
+  assert.deepEqual(run(createState(source, 17), 'lunch', source), run(createState(source, 17), 'lunch', source));
+});
+
+test('incident pauses wave, stores pending, and guards retry', () => {
+  const source = incidentSchema({ id: 'fixed', label: '고정 사건', desc: '설명', weight: 1, choices: [{ id: 'ok', label: '대응', effects: {} }] });
+  const rolled = run(createState(source, 1), 'lunch', source);
+  assert.equal(rolled.log[0].awaitingChoice, true);
+  assert.deepEqual(rolled.state.pendingIncident, { day: 1, waveId: 'lunch', incidentId: 'fixed' });
+  assert.equal(rolled.state.traffic, undefined);
+  assert.equal(run(rolled.state, 'lunch', source).log[0].reason, 'incident_pending');
+});
+
+test('incident choice resolves wave and prevents reroll', () => {
+  const source = incidentSchema({ id: 'fixed', label: '고정 사건', weight: 1, choices: [{ id: 'ok', label: '대응', effects: {} }] });
+  const rolled = run(createState(source, 1), 'lunch', source);
+  const chosen = incident(rolled.state, 'incident_choice', { choice: 'ok' }, source);
+  assert.equal(chosen.log[1].wave, 'lunch');
+  assert.equal(chosen.state.traffic.resolved.lunch, true);
+  assert.equal(chosen.state.pendingIncident, undefined);
+  assert.equal(run(chosen.state, 'lunch', source).log[0].reason, 'wave_already_resolved');
+});
+
+test('waveMultiplier 0.7 reduces potential versus 1.0', () => {
+  const make = (value) => incidentSchema({ id: 'fixed', label: '사건', weight: 1, choices: [{ id: 'pick', label: '선택', effects: { waveMultiplier: value } }] });
+  const resolve = (source) => incident(run(createState(source, 5), 'evening', source).state, 'incident_choice', { choice: 'pick' }, source).log[1].potential;
+  assert.ok(resolve(make(0.7)) < resolve(make(1)));
+});
+
+test('negative incident gold clamps balance at zero', () => {
+  const source = incidentSchema({ id: 'cost', label: '비용', weight: 1, choices: [{ id: 'pay', label: '지불', effects: { gold: [-100, -100] } }] });
+  const state = createState(source, 2); state.gold = 30;
+  const result = incident(run(state, 'lunch', source).state, 'incident_choice', { choice: 'pay' }, source);
+  assert.equal(result.state.gold >= 0, true);
+  assert.equal(result.log[0].goldShortfall, 70);
+});
+
+test('incident requires gate treats missing noble rank as E', () => {
+  const noble = { id: 'noble_visit', label: '귀족', weight: 1, requires: { ladderRank: { ladder: 'reputation', axis: 'noble', rank: 'C' } }, choices: [{ id: 'ok', label: '응대', effects: {} }] };
+  const fallback = { id: 'common', label: '일반', weight: 1, choices: [{ id: 'ok', label: '응대', effects: {} }] };
+  const source = incidentSchema(noble); source.traffic.incidents.deck.push(fallback);
+  for (let seed = 1; seed <= 20; seed += 1) assert.notEqual(run(createState(source, seed), 'lunch', source).state.pendingIncident.incidentId, 'noble_visit');
+});
+
+test('incident choice gold uses deterministic choice address', () => {
+  const source = incidentSchema({ id: 'gold', label: '골드', weight: 1, choices: [{ id: 'roll', label: '굴림', effects: { gold: [-50, 50] } }] });
+  const choose = () => incident(run(createState(source, 77), 'lunch', source).state, 'incident_choice', { choice: 'roll' }, source).log[0].goldDelta;
+  assert.equal(choose(), choose());
+});
+
+test('stale pending incident expires at day boundary', () => {
+  const source = incidentSchema({ id: 'fixed', label: '사건', weight: 1, choices: [{ id: 'ok', label: '대응', effects: {} }] }, 0);
+  const state = createState(source, 1); state.pendingIncident = { day: 1, waveId: 'lunch', incidentId: 'fixed' }; state.day = 2;
+  const result = run(state, 'lunch', source);
+  assert.equal(result.state.pendingIncident, undefined);
+  assert.equal(result.state.traffic.day, 2);
+});
 
 test('traffic wave is reproducible by addressed seed/day/wave and independent of shared rng', () => {
   const a = run(createState(schema, 42));
@@ -91,6 +163,7 @@ test('menu without consumes still burns category ingredients (no free money)', (
 
 test('zero-priced item does not break the weighted roll', () => {
   const source = JSON.parse(JSON.stringify(schema));
+  delete source.traffic.incidents;
   const entity = source.entities.find((entry) => entry.type === 'menuItem');
   entity.instances = [
     { name: '공짜 물', category: '주류', price: 0, requiresKitchenLevel: 1, consumes: { drink: 1 } },
@@ -252,4 +325,25 @@ test('mail-less schema rejects mail check without mutation', () => {
   const source = JSON.parse(JSON.stringify(schema)); delete source.traffic.mail;
   const state = createState(source, 7); const result = mail(state, 'mail_check', {}, source);
   assert.equal(result.log[0].reason, 'mail_not_configured'); assert.equal(result.state, state);
+});
+
+test('a pending incident blocks every other wave until resolved', () => {
+  const state = createState(schema, 42);
+  state.pendingIncident = { day: state.day, waveId: 'lunch', incidentId: 'drunk_brawl' };
+  const blocked = run(state, 'evening');
+  assert.equal(blocked.log[0].reason, 'incident_pending');
+  assert.equal(blocked.log[0].detail, 'lunch');
+});
+
+test('unknown required rank never unlocks (fail-closed gate)', () => {
+  const source = JSON.parse(JSON.stringify(schema));
+  source.traffic.incidents.chance = 100;
+  source.traffic.incidents.deck = [{ id: 'ghost', label: '유령', desc: '?', weight: 1,
+    requires: { ladderRank: { ladder: 'reputation', axis: 'village', rank: 'X' } },
+    choices: [{ id: 'run', label: '도망', effects: {} }] }];
+  const state = createState(source, 42);
+  const result = run(state, 'lunch', source);
+  // 덱이 전부 부적격이면 사건 없이 파동이 그대로 해결된다.
+  assert.equal(result.log[0].ok, true);
+  assert.equal(result.log[0].awaitingChoice, undefined);
 });

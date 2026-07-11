@@ -5,7 +5,7 @@ const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = r
 const { staffMax, tierOf, menuTrade } = require('./selectors.js');
 const { poolHeal } = require('./pools.js');
 const { resolveCheck } = require('./resolveCheck.js');
-const { resolveTrafficWave, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require('./traffic.js');
+const { rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require('./traffic.js');
 const {
   clone,
   clamp,
@@ -71,7 +71,13 @@ function applyEvent(schema, state, event, rng) {
     case 'fire':
       return fire(next, params, ok, fail);
     case 'traffic_wave': {
-      const result = resolveTrafficWave(schema, next, params.wave);
+      const result = rollTrafficIncident(schema, next, params.wave);
+      if (!result.ok) return fail(result.reason, result.detail);
+      for (const entry of result.entries) log.push(Object.assign({ event: type }, entry));
+      return { state: next, log };
+    }
+    case 'incident_choice': {
+      const result = resolveIncidentChoice(schema, next, params.choice);
       if (!result.ok) return fail(result.reason, result.detail);
       for (const entry of result.entries) log.push(Object.assign({ event: type }, entry));
       return { state: next, log };

@@ -43,6 +43,16 @@ function validateSchema(obj) {
   return { schema, issues };
 }
 
+// requires.ladderRank 게이트 정합: 사다리 id가 스키마에 존재하고 rank가 E..S 안이어야 한다.
+// (axis는 사다리 정의 형식이 카드마다 달라 여기서 검증하지 않는다 — 엔진은 미기록 축을 E로 간주)
+function validLadderRankGate(schema, requires) {
+  const gate = isObject(requires) ? requires.ladderRank : null;
+  if (gate == null) return true;
+  if (!isObject(gate)) return false;
+  if (!asArray(schema.ladders).some((ladder) => ladder && ladder.id === gate.ladder)) return false;
+  return ['E', 'D', 'C', 'B', 'A', 'S'].includes(gate.rank);
+}
+
 function validateTraffic(schema, issues) {
   if (schema.traffic == null) return;
   if (!isObject(schema.traffic)) {
@@ -104,6 +114,50 @@ function validateTraffic(schema, issues) {
     warn(issues, `traffic.modifiers[${index}]`, 'Unknown traffic modifier removed.');
     return false;
   });
+  if (traffic.incidents != null) {
+    if (!isObject(traffic.incidents) || !Array.isArray(traffic.incidents.deck) || !traffic.incidents.deck.length) {
+      warn(issues, 'traffic.incidents', 'Empty incident deck; incidents removed.');
+      delete traffic.incidents;
+    } else {
+      const rawChance = Number(traffic.incidents.chance);
+      const chance = Number.isFinite(rawChance) ? Math.max(0, Math.min(100, rawChance)) : 0;
+      if (chance !== rawChance) warn(issues, 'traffic.incidents.chance', 'Incident chance normalized to 0..100.');
+      traffic.incidents.chance = chance;
+      traffic.incidents.deck = traffic.incidents.deck.filter((card, cardIndex) => {
+        if (!isObject(card) || !Array.isArray(card.choices) || !card.choices.length) {
+          warn(issues, `traffic.incidents.deck[${cardIndex}].choices`, 'Card with empty choices removed.');
+          return false;
+        }
+        // 잘못 구성된 해금 게이트는 카드를 제거 — 오타 사다리는 조용한 영구 미해금,
+        // 존재하지 않는 랭크는 무조건 해금이 되므로 어느 쪽도 두면 안 된다(감사 지적).
+        if (!validLadderRankGate(schema, card.requires)) {
+          warn(issues, `traffic.incidents.deck[${cardIndex}].requires`, 'Invalid ladderRank gate; card removed.');
+          return false;
+        }
+        card.choices = card.choices.filter(isObject).map((choice, choiceIndex) => {
+          const effects = isObject(choice.effects) ? choice.effects : {};
+          for (const key of Object.keys(effects)) if (!['gold', 'resources', 'waveMultiplier'].includes(key)) {
+            delete effects[key];
+            warn(issues, `traffic.incidents.deck[${cardIndex}].choices[${choiceIndex}].effects.${key}`, 'Unknown incident effect removed.');
+          }
+          if (effects.gold != null) {
+            if (Number.isFinite(Number(effects.gold))) effects.gold = [Number(effects.gold), Number(effects.gold)];
+            else if (Array.isArray(effects.gold) && effects.gold.length >= 2 && effects.gold.every((value) => Number.isFinite(Number(value)))) effects.gold = [Math.min(Number(effects.gold[0]), Number(effects.gold[1])), Math.max(Number(effects.gold[0]), Number(effects.gold[1]))];
+            else { delete effects.gold; warn(issues, `traffic.incidents.deck[${cardIndex}].choices[${choiceIndex}].effects.gold`, 'Invalid gold effect removed.'); }
+          }
+          if (effects.waveMultiplier != null) {
+            const raw = Number(effects.waveMultiplier);
+            effects.waveMultiplier = Number.isFinite(raw) ? Math.max(0.1, Math.min(2, raw)) : 1;
+            if (effects.waveMultiplier !== raw) warn(issues, `traffic.incidents.deck[${cardIndex}].choices[${choiceIndex}].effects.waveMultiplier`, 'Wave multiplier normalized to 0.1..2.');
+          }
+          choice.effects = effects;
+          return choice;
+        });
+        return true;
+      });
+      if (!traffic.incidents.deck.length) { warn(issues, 'traffic.incidents.deck', 'No valid incident cards; incidents removed.'); delete traffic.incidents; }
+    }
+  }
   if (traffic.mail != null) {
     const mail = traffic.mail;
     const ladderExists = isObject(mail) && asArray(schema.ladders).some((ladder) => ladder && ladder.id === mail.ladder);
@@ -169,6 +223,16 @@ function validateTraffic(schema, issues) {
       lodging.segments = [{ id: 'guest', label: '손님', weight: 1, party: [1, 2], stay: { '1': 1 } }];
       warn(issues, 'traffic.lodging.segments', 'Empty segments normalized to a default guest segment.');
     } else lodging.segments = lodging.segments.filter(isObject);
+    // 잘못된 해금 게이트 세그먼트 제거 — incidents와 동일 원칙(감사 지적).
+    lodging.segments = lodging.segments.filter((segment, index) => {
+      if (validLadderRankGate(schema, segment.requires)) return true;
+      warn(issues, `traffic.lodging.segments[${index}].requires`, 'Invalid ladderRank gate; segment removed.');
+      return false;
+    });
+    if (!lodging.segments.length) {
+      lodging.segments = [{ id: 'guest', label: '손님', weight: 1, party: [1, 2], stay: { '1': 1 } }];
+      warn(issues, 'traffic.lodging.segments', 'All segments invalid; normalized to a default guest segment.');
+    }
     lodging.segments = lodging.segments.map((segment, index) => {
       if (!(Number(segment.weight) > 0)) {
         segment.weight = 1;
