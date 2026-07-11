@@ -53,6 +53,12 @@
   --bad-wash: rgba(226, 101, 74, 0.12);
   --warn: #e0924a;
   --warn-wash: rgba(224, 146, 74, 0.1);
+  --chip-combat: #dc8068; --chip-combat-wash: rgba(220, 128, 104, 0.1);
+  --chip-resource: #d7ae55; --chip-resource-wash: rgba(215, 174, 85, 0.1);
+  --chip-pool: #d48395; --chip-pool-wash: rgba(212, 131, 149, 0.1);
+  --chip-quest: #9b91d1; --chip-quest-wash: rgba(155, 145, 209, 0.1);
+  --chip-settlement: #72a8bc; --chip-settlement-wash: rgba(114, 168, 188, 0.1);
+  --chip-system: #9b9387; --chip-system-wash: rgba(155, 147, 135, 0.1);
 
   /* 타이포 (웹폰트 금지 → 시스템 스택. 한글 자동 폴백) */
   --font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, 'JetBrains Mono', 'D2Coding', Consolas, 'Courier New', monospace;
@@ -805,6 +811,27 @@ select:focus { border-color: var(--amber-line); }
 .play-message-text { white-space: pre-wrap; }
 
 .play-chip-row, .play-button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.event-chip { display: inline-flex; align-items: center; gap: 3px; }
+.event-chip strong { color: var(--ink); font-weight: 800; }
+.event-chip.chip-combat { border-color: var(--chip-combat); background: var(--chip-combat-wash); color: var(--chip-combat); }
+.event-chip.chip-resource { border-color: var(--chip-resource); background: var(--chip-resource-wash); color: var(--chip-resource); }
+.event-chip.chip-pool { border-color: var(--chip-pool); background: var(--chip-pool-wash); color: var(--chip-pool); }
+.event-chip.chip-quest { border-color: var(--chip-quest); background: var(--chip-quest-wash); color: var(--chip-quest); }
+.event-chip.chip-settlement { border-color: var(--chip-settlement); background: var(--chip-settlement-wash); color: var(--chip-settlement); }
+.event-chip.chip-system, .event-chip.chip-info { border-color: var(--chip-system); background: var(--chip-system-wash); color: var(--chip-system); }
+.event-chip.engine-fail { border-color: var(--bad); background: var(--bad-wash); color: var(--bad); }
+.play-chip-more { width: 100%; }
+.play-chip-more summary { cursor: pointer; color: var(--ink-dim); font-family: var(--font-mono); font-size: 12px; }
+.play-chip-hidden { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+.state-metrics, .state-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.state-metric, .state-card { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); padding: 9px 10px; }
+.state-metric > span, .state-card > span { display: block; color: var(--ink-dim); font-size: 11px; }
+.state-metric > strong, .state-card > strong { display: block; margin-top: 4px; color: var(--ink); font-family: var(--font-mono); }
+.state-metrics .combat-gauge { margin: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); }
+.state-group h4 { margin: 2px 0 7px; color: var(--ink-mid); font-family: var(--font-mono); font-size: 12px; }
+.state-detail-list { display: grid; gap: 6px; }
+.state-detail-row { padding: 8px 10px; border-left: 2px solid var(--line-strong); background: var(--surface-2); color: var(--ink-mid); font-size: 12px; overflow-wrap: anywhere; }
 
 .play-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
 .play-input {
@@ -1023,7 +1050,7 @@ select:focus { border-color: var(--amber-line); }
 .combat-gauge-fill { width: var(--pct); height: 100%; background: var(--card-accent, var(--amber)); transition: width 140ms ease; }
 
 .play-input-row .primary-btn, .play-view .primary-btn { background: var(--card-accent, var(--amber)); border-color: var(--card-accent, var(--amber)); }
-.play-view .badge.engine-ok, .play-view .engine-ok { border-color: var(--card-accent, var(--amber-line)); background: var(--card-accent-soft, var(--amber-wash)); color: var(--card-accent, var(--amber)); }
+.play-view .badge.engine-ok:not(.event-chip), .play-view .engine-ok:not(.event-chip) { border-color: var(--card-accent, var(--amber-line)); background: var(--card-accent-soft, var(--amber-wash)); color: var(--card-accent, var(--amber)); }
 
 .mgmt-console { padding: 12px 14px; border-top: 1px solid var(--line); background: var(--surface-2); }
 .mgmt-console:empty { display: none; }

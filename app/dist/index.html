@@ -61,6 +61,12 @@
   --bad-wash: rgba(226, 101, 74, 0.12);
   --warn: #e0924a;
   --warn-wash: rgba(224, 146, 74, 0.1);
+  --chip-combat: #dc8068; --chip-combat-wash: rgba(220, 128, 104, 0.1);
+  --chip-resource: #d7ae55; --chip-resource-wash: rgba(215, 174, 85, 0.1);
+  --chip-pool: #d48395; --chip-pool-wash: rgba(212, 131, 149, 0.1);
+  --chip-quest: #9b91d1; --chip-quest-wash: rgba(155, 145, 209, 0.1);
+  --chip-settlement: #72a8bc; --chip-settlement-wash: rgba(114, 168, 188, 0.1);
+  --chip-system: #9b9387; --chip-system-wash: rgba(155, 147, 135, 0.1);
 
   /* 타이포 (웹폰트 금지 → 시스템 스택. 한글 자동 폴백) */
   --font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, 'JetBrains Mono', 'D2Coding', Consolas, 'Courier New', monospace;
@@ -813,6 +819,27 @@ select:focus { border-color: var(--amber-line); }
 .play-message-text { white-space: pre-wrap; }
 
 .play-chip-row, .play-button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.event-chip { display: inline-flex; align-items: center; gap: 3px; }
+.event-chip strong { color: var(--ink); font-weight: 800; }
+.event-chip.chip-combat { border-color: var(--chip-combat); background: var(--chip-combat-wash); color: var(--chip-combat); }
+.event-chip.chip-resource { border-color: var(--chip-resource); background: var(--chip-resource-wash); color: var(--chip-resource); }
+.event-chip.chip-pool { border-color: var(--chip-pool); background: var(--chip-pool-wash); color: var(--chip-pool); }
+.event-chip.chip-quest { border-color: var(--chip-quest); background: var(--chip-quest-wash); color: var(--chip-quest); }
+.event-chip.chip-settlement { border-color: var(--chip-settlement); background: var(--chip-settlement-wash); color: var(--chip-settlement); }
+.event-chip.chip-system, .event-chip.chip-info { border-color: var(--chip-system); background: var(--chip-system-wash); color: var(--chip-system); }
+.event-chip.engine-fail { border-color: var(--bad); background: var(--bad-wash); color: var(--bad); }
+.play-chip-more { width: 100%; }
+.play-chip-more summary { cursor: pointer; color: var(--ink-dim); font-family: var(--font-mono); font-size: 12px; }
+.play-chip-hidden { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+.state-metrics, .state-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.state-metric, .state-card { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); padding: 9px 10px; }
+.state-metric > span, .state-card > span { display: block; color: var(--ink-dim); font-size: 11px; }
+.state-metric > strong, .state-card > strong { display: block; margin-top: 4px; color: var(--ink); font-family: var(--font-mono); }
+.state-metrics .combat-gauge { margin: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); }
+.state-group h4 { margin: 2px 0 7px; color: var(--ink-mid); font-family: var(--font-mono); font-size: 12px; }
+.state-detail-list { display: grid; gap: 6px; }
+.state-detail-row { padding: 8px 10px; border-left: 2px solid var(--line-strong); background: var(--surface-2); color: var(--ink-mid); font-size: 12px; overflow-wrap: anywhere; }
 
 .play-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
 .play-input {
@@ -1031,7 +1058,7 @@ select:focus { border-color: var(--amber-line); }
 .combat-gauge-fill { width: var(--pct); height: 100%; background: var(--card-accent, var(--amber)); transition: width 140ms ease; }
 
 .play-input-row .primary-btn, .play-view .primary-btn { background: var(--card-accent, var(--amber)); border-color: var(--card-accent, var(--amber)); }
-.play-view .badge.engine-ok, .play-view .engine-ok { border-color: var(--card-accent, var(--amber-line)); background: var(--card-accent-soft, var(--amber-wash)); color: var(--card-accent, var(--amber)); }
+.play-view .badge.engine-ok:not(.event-chip), .play-view .engine-ok:not(.event-chip) { border-color: var(--card-accent, var(--amber-line)); background: var(--card-accent-soft, var(--amber-wash)); color: var(--card-accent, var(--amber)); }
 
 .mgmt-console { padding: 12px 14px; border-top: 1px solid var(--line); background: var(--surface-2); }
 .mgmt-console:empty { display: none; }
@@ -5281,7 +5308,7 @@ select:focus { border-color: var(--amber-line); }
         for (let roll = 1; roll <= sides; roll += 1) if (roll + mod >= dc) successes += 1;
         return Math.round(successes / sides * 100);
       }
-      function roomStatus2(schema2, state2) {
+      function roomStatus3(schema2, state2) {
         return entityList(schema2, "room").map((room) => {
           const occupants = state2.rooms && state2.rooms[String(room.no)] || [];
           const capacity = room.capacity == null ? null : Number(room.capacity);
@@ -5346,7 +5373,7 @@ select:focus { border-color: var(--amber-line); }
           });
           lines.push(`[\uC9C1\uC6D0] ${staff.length ? staff.join(", ") : "\uC5C6\uC74C"}`);
           const occupied = [];
-          for (const status of roomStatus2(schema2, state2)) {
+          for (const status of roomStatus3(schema2, state2)) {
             for (const guest of status.occupants) occupied.push(`${status.no}\uD638 ${guest.guestName}(${guest.nightsLeft}\uBC15 \uB0A8\uC74C)`);
           }
           lines.push(`[\uAC1D\uC2E4] ${occupied.length ? occupied.join(" \xB7 ") + " \xB7 \uB098\uBA38\uC9C0 \uACF5\uC2E4" : "\uC804 \uAC1D\uC2E4 \uACF5\uC2E4"}`);
@@ -5411,7 +5438,7 @@ select:focus { border-color: var(--amber-line); }
       function formatNumber(n) {
         return Number(n || 0).toLocaleString("ko-KR");
       }
-      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, menuTrade, availableManagement: availableManagement2, roomStatus: roomStatus2, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
+      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, menuTrade, availableManagement: availableManagement2, roomStatus: roomStatus3, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
     }
   });
 
@@ -9405,6 +9432,18 @@ ${Array.from(extras).join(" ")}` : text;
     if (entry.goldDelta != null) return `${type} \xB7 gold ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}`;
     return `${type} \uC2E4\uD589`;
   }
+  function summarizeEventItem(type, entry, formatMoney3) {
+    return { text: summarizeEvent(type, entry, formatMoney3), kind: eventKind(type, entry) };
+  }
+  function eventKind(type, entry) {
+    if (!entry || !entry.ok) return "system";
+    if (["start_encounter", "combat_action", "enemy_action", "enemy_turn", "end_encounter"].includes(type)) return "combat";
+    if (["use_item"].includes(type)) return "pool";
+    if (["attempt_quest"].includes(type)) return "quest";
+    if (["day_end"].includes(type)) return "settlement";
+    if (["buy_item", "reward", "upgrade", "gain_resource", "gold_delta", "resource_delta", "sale", "purchase"].includes(type)) return "resource";
+    return "info";
+  }
 
   // src/engineView.js
   var { summarize, npcSummary, roomStatus, availableMenu, staffMax } = require_selectors();
@@ -9880,7 +9919,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
 
   // src/playView.js
-  var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement } = require_selectors();
+  var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement, roomStatus: roomStatus2 } = require_selectors();
   var { estimateTokens, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
   var { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require_prompt();
   var { PROVIDERS, callProvider } = require_providers();
@@ -10165,14 +10204,39 @@ ${Array.from(extras).join(" ")}` : text;
     wrap.append(text);
     if (message.chips && message.chips.length) {
       const chips = el2("div", "play-chip-row");
-      for (const chip of message.chips) {
-        const item = el2("span", chip.ok ? "badge engine-ok" : "badge engine-fail");
-        item.textContent = chip.text;
-        chips.append(item);
+      const visible = message.chips.length >= 4 ? message.chips.slice(0, 2) : message.chips;
+      for (const chip of visible) chips.append(renderChip(chip));
+      if (message.chips.length >= 4) {
+        const more = el2("details", "play-chip-more");
+        more.open = !!message.chipsOpen;
+        more.addEventListener("toggle", () => {
+          message.chipsOpen = more.open;
+        });
+        const summary = el2("summary");
+        summary.textContent = `\uACB0\uACFC ${message.chips.length - 2}\uAC1C \uB354 \uBCF4\uAE30`;
+        const hidden = el2("div", "play-chip-hidden");
+        for (const chip of message.chips.slice(2)) hidden.append(renderChip(chip));
+        more.append(summary, hidden);
+        chips.append(more);
       }
       wrap.append(chips);
     }
     return wrap;
+  }
+  function renderChip(chip) {
+    const kind = ["combat", "resource", "pool", "quest", "settlement", "system", "info"].includes(chip.kind) ? chip.kind : "info";
+    const item = el2("span", `badge event-chip chip-${kind} ${chip.ok ? "engine-ok" : "engine-fail"}`);
+    const icon = { combat: "\u2694", resource: "\u{1F4B0}", pool: "\u2764", quest: "\u{1F4DC}", settlement: "\u{1F319}", system: "\u2699", info: "\u2139" }[kind];
+    item.append(document.createTextNode(`${icon} `));
+    const parts = String(chip.text).split(/([+-]\d[\d,]*(?:\.\d+)?|[^\s]+→[^\s]+)/g);
+    for (const part of parts) {
+      if (/^(?:[+-]\d[\d,]*(?:\.\d+)?|[^\s]+→[^\s]+)$/.test(part)) {
+        const strong = el2("strong");
+        strong.textContent = part;
+        item.append(strong);
+      } else item.append(document.createTextNode(part));
+    }
+    return item;
   }
   function characterAvatar(ctx, asset, className) {
     const wrap = el2("div", className);
@@ -10386,10 +10450,10 @@ ${Array.from(extras).join(" ")}` : text;
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       applyEmotion(parsed.emotion);
       const ignored = parsed.events.length + parsed.dropped;
-      if (ignored) chips.push({ ok: false, text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
+      if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } catch (_) {
-      chips.push({ ok: false, text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
+      chips.push({ ok: false, kind: "system", text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
       pending.content = "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } finally {
       messages.push(pending);
@@ -10474,19 +10538,84 @@ ${Array.from(extras).join(" ")}` : text;
     return details;
   }
   function renderStateBox() {
-    const section = titled("LLM\uC774 \uBCF4\uB294 \uC0C1\uD0DC");
+    const section = titled("\uC0C1\uD0DC \uB300\uC2DC\uBCF4\uB4DC");
     const state2 = getEngineState();
     const schema2 = getSchema();
-    const pre = el2("pre", "play-context-pre");
-    pre.textContent = summarize2(schema2, state2);
-    section.append(pre);
-    const npcText = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : []).map((id) => npcSummary2(schema2, state2, id)).filter(Boolean).join("\n");
-    if (npcText) {
-      const npc = el2("pre", "play-context-pre");
-      npc.textContent = npcText;
-      section.append(npc);
+    if (!schema2 || !state2) return section;
+    const metrics = el2("div", "state-metrics");
+    if (Number.isFinite(Number(state2.gold))) metrics.append(stateMetric("\u{1F4B0} \uACE8\uB4DC", formatMoney2(state2.gold)));
+    if (Number.isFinite(Number(state2.day))) metrics.append(stateMetric("\u{1F4C5} \uC77C\uCC28", Number(state2.day).toLocaleString("ko-KR")));
+    const pools = state2.player && state2.player.pools || {};
+    for (const id of ["hp", "mp", "sp"]) if (pools[id]) metrics.append(combatGauge(id.toUpperCase(), pools[id], ""));
+    if (metrics.childNodes.length) section.append(metrics);
+    appendStateGrid(section, "\uC790\uC6D0", Object.entries(state2.resources || {}).filter(([id]) => id !== "gold").map(([id, qty]) => {
+      const def = (schema2.resources || []).find((item) => item.id === id);
+      return [def && (def.label || def.name) || id, Number(qty).toLocaleString("ko-KR")];
+    }));
+    const facilities = entityInstances(schema2, "facility");
+    appendStateGrid(section, "\uC2DC\uC124", Object.entries(state2.facilities || {}).map(([id, level]) => {
+      const def = facilities.find((item) => item.id === id);
+      return [def && (def.label || def.name) || id, `Lv.${Number(level).toLocaleString("ko-KR")}`];
+    }));
+    const types = new Set((schema2.entities || []).map((entry) => entry.type));
+    if (types.has("menuItem") && types.has("room")) {
+      const npcs2 = entityInstances(schema2, "npc");
+      appendStateGrid(section, "\uC9C1\uC6D0", (state2.staff || []).map((item) => {
+        const npc = npcs2.find((entry) => entry.id === item.npcId);
+        return [npc && npc.nameKo || item.npcId, `\uC77C\uAE09 ${formatMoney2(item.dailyWage)}`];
+      }));
+      const occupied = [];
+      for (const status of roomStatus2(schema2, state2)) {
+        for (const guest of status.occupants) occupied.push([`${status.no}\uD638`, `${guest.guestName} \xB7 ${guest.nightsLeft}\uBC15 \uB0A8\uC74C`]);
+      }
+      appendStateGrid(section, "\uAC1D\uC2E4", occupied);
     }
+    const other = el2("div", "state-detail-list");
+    const claimed = new Set(state2.claimedRewards || []);
+    for (const quest of schema2.quests || []) {
+      const row3 = el2("div", "state-detail-row");
+      row3.textContent = `\u{1F4DC} ${quest.name || quest.id}${claimed.has(quest.id) ? " \xB7 \uC644\uB8CC" : ""}`;
+      other.append(row3);
+    }
+    const npcText = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : []).map((id) => npcSummary2(schema2, state2, id)).filter(Boolean);
+    for (const text of npcText) {
+      const row3 = el2("div", "state-detail-row");
+      row3.textContent = `\u{1F464} ${text}`;
+      other.append(row3);
+    }
+    if (other.childNodes.length) section.append(other);
     return section;
+  }
+  function stateMetric(label, value) {
+    const node = el2("div", "state-metric");
+    const name = el2("span");
+    name.textContent = label;
+    const strong = el2("strong");
+    strong.textContent = value;
+    node.append(name, strong);
+    return node;
+  }
+  function appendStateGrid(section, title, items) {
+    if (!items.length) return;
+    const group = el2("div", "state-group");
+    const heading = el2("h4");
+    heading.textContent = title;
+    const grid = el2("div", "state-card-grid");
+    for (const [name, value] of items) {
+      const card = el2("div", "state-card");
+      const label = el2("span");
+      label.textContent = name;
+      const strong = el2("strong");
+      strong.textContent = value;
+      card.append(label, strong);
+      grid.append(card);
+    }
+    group.append(heading, grid);
+    section.append(group);
+  }
+  function entityInstances(schema2, type) {
+    const def = (schema2.entities || []).find((item) => item.type === type);
+    return def && def.instances || [];
   }
   var BASELINE_REF = 12029;
   function renderTokenBox(ctx) {
@@ -10575,10 +10704,10 @@ ${Array.from(extras).join(" ")}` : text;
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
       const ignored = parsed.events.length + parsed.dropped;
-      if (ignored) chips.push({ ok: false, text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
+      if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } catch (_) {
-      chips.push({ ok: false, text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
+      chips.push({ ok: false, kind: "system", text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
       pending.content = "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } finally {
       busy = false;
@@ -10590,14 +10719,15 @@ ${Array.from(extras).join(" ")}` : text;
       if (type === "enemy_turn" && entry.ok) {
         for (const result of entry.results || []) {
           const text2 = `${result.enemyId} \uBC18\uACA9${result.intent === "heavy" ? "(\uAC15\uACF5\uACA9)" : ""} \u{1F3B2}${result.roll} \xB7 ${result.hit ? `${result.tier === "critical_success" ? "\uD06C\uB9AC\uD2F0\uCEEC \xB7 " : ""}\uD53C\uD574 ${result.damage}` : "\uBE57\uB098\uAC10"}`;
-          chips.push({ ok: true, text: text2 });
+          chips.push({ ok: true, kind: "combat", text: text2 });
           resultTexts.push(text2);
         }
         if (entry.playerDead) resultTexts.push("\uD50C\uB808\uC774\uC5B4 \uC804\uD22C\uBD88\uB2A5");
         continue;
       }
-      const text = summarizeEvent(type, entry, formatMoney2);
-      chips.push({ ok: !!entry.ok, text });
+      const item = summarizeEventItem(type, entry, formatMoney2);
+      const text = item.text;
+      chips.push({ ok: !!entry.ok, text, kind: item.kind });
       resultTexts.push(text);
     }
   }
@@ -10616,18 +10746,19 @@ ${Array.from(extras).join(" ")}` : text;
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       const event = parsed.events.find((item) => item.id === "start_encounter");
       if (!event) {
-        messages.push({ role: "assistant", content: parsed.narrative || "", chips: [{ ok: false, text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }] });
+        messages.push({ role: "assistant", content: parsed.narrative || "", chips: [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }] });
       } else {
         const result = runEvent(event);
         const entry = result.entries[0] || { ok: false, reason: "empty_log" };
         if (entry.ok) fastCombatLog = [];
         const ignored = parsed.events.length - 1 + parsed.dropped;
-        const chips = [{ ok: !!entry.ok, text: summarizeEvent("start_encounter", entry, formatMoney2) }];
-        if (ignored > 0) chips.push({ ok: false, text: `\uB2E4\uB978 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
+        const item = summarizeEventItem("start_encounter", entry, formatMoney2);
+        const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
+        if (ignored > 0) chips.push({ ok: false, kind: "system", text: `\uB2E4\uB978 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
         messages.push({ role: "assistant", content: parsed.narrative, chips });
       }
     } catch (_) {
-      messages.push({ role: "assistant", content: "", chips: [{ ok: false, text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }] });
+      messages.push({ role: "assistant", content: "", chips: [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }] });
     } finally {
       busy = false;
       render2();
@@ -10647,18 +10778,19 @@ ${Array.from(extras).join(" ")}` : text;
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
       const chips = [];
-      if (parsed.dropped > 0) chips.push({ ok: false, text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
+      if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       for (const event of parsed.events) {
         const result = runEvent(event);
         const first = result.entries[0] || { ok: false, reason: "empty_log" };
-        chips.push({ ok: !!first.ok, text: summarizeEvent(event.id, first, formatMoney2) });
+        const item = summarizeEventItem(event.id, first, formatMoney2);
+        chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
         if (first.ok && (event.id === "start_encounter" || event.id === "end_encounter")) fastCombatLog = [];
       }
       const combatNow = getEngineState().combat;
       if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
       messages.push({ role: "assistant", content: parsed.narrative || raw, chips });
     } catch (err) {
-      messages.push({ role: "assistant", content: safeError(err), chips: [{ ok: false, text: "API \uC624\uB958" }] });
+      messages.push({ role: "assistant", content: safeError(err), chips: [{ ok: false, kind: "system", text: "API \uC624\uB958" }] });
     } finally {
       busy = false;
       render2();

@@ -121,3 +121,17 @@ export function summarizeEvent(type, entry, formatMoney) {
   if (entry.goldDelta != null) return `${type} · gold ${entry.goldDelta >= 0 ? '+' : ''}${formatMoney(entry.goldDelta)}`;
   return `${type} 실행`;
 }
+
+export function summarizeEventItem(type, entry, formatMoney) {
+  return { text: summarizeEvent(type, entry, formatMoney), kind: eventKind(type, entry) };
+}
+
+function eventKind(type, entry) {
+  if (!entry || !entry.ok) return 'system';
+  if (['start_encounter', 'combat_action', 'enemy_action', 'enemy_turn', 'end_encounter'].includes(type)) return 'combat';
+  if (['use_item'].includes(type)) return 'pool';
+  if (['attempt_quest'].includes(type)) return 'quest';
+  if (['day_end'].includes(type)) return 'settlement';
+  if (['buy_item', 'reward', 'upgrade', 'gain_resource', 'gold_delta', 'resource_delta', 'sale', 'purchase'].includes(type)) return 'resource';
+  return 'info';
+}

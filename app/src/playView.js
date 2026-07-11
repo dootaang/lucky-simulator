@@ -1,10 +1,10 @@
-const { summarize, npcSummary, availableActions, availableManagement } = require('../../engine/core/selectors.js');
+const { summarize, npcSummary, availableActions, availableManagement, roomStatus } = require('../../engine/core/selectors.js');
 const { estimateTokens, estimateLorebookTokens } = require('../core/lorebook/tokens.js');
 const { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('./llm/prompt.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
 const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
-import { getEngineState, getSchema, runEvent, summarizeEvent } from './engineSession.js';
+import { getEngineState, getSchema, runEvent, summarizeEvent, summarizeEventItem } from './engineSession.js';
 import { buildNpcClusters, preferredEmotion, selectAsset } from './npcGallery.js';
 
 let messages = [];
@@ -238,14 +238,34 @@ function renderMessage(message, ctx, showIdentity) {
   wrap.append(text);
   if (message.chips && message.chips.length) {
     const chips = el('div', 'play-chip-row');
-    for (const chip of message.chips) {
-      const item = el('span', chip.ok ? 'badge engine-ok' : 'badge engine-fail');
-      item.textContent = chip.text;
-      chips.append(item);
+    const visible = message.chips.length >= 4 ? message.chips.slice(0, 2) : message.chips;
+    for (const chip of visible) chips.append(renderChip(chip));
+    if (message.chips.length >= 4) {
+      const more = el('details', 'play-chip-more');
+      // 전체 재렌더에도 펼침 상태가 유지되도록 메시지 객체에 기억한다.
+      more.open = !!message.chipsOpen;
+      more.addEventListener('toggle', () => { message.chipsOpen = more.open; });
+      const summary = el('summary'); summary.textContent = `결과 ${message.chips.length - 2}개 더 보기`;
+      const hidden = el('div', 'play-chip-hidden');
+      for (const chip of message.chips.slice(2)) hidden.append(renderChip(chip));
+      more.append(summary, hidden); chips.append(more);
     }
     wrap.append(chips);
   }
   return wrap;
+}
+
+function renderChip(chip) {
+  const kind = ['combat', 'resource', 'pool', 'quest', 'settlement', 'system', 'info'].includes(chip.kind) ? chip.kind : 'info';
+  const item = el('span', `badge event-chip chip-${kind} ${chip.ok ? 'engine-ok' : 'engine-fail'}`);
+  const icon = { combat: '⚔', resource: '💰', pool: '❤', quest: '📜', settlement: '🌙', system: '⚙', info: 'ℹ' }[kind];
+  item.append(document.createTextNode(`${icon} `));
+  const parts = String(chip.text).split(/([+-]\d[\d,]*(?:\.\d+)?|[^\s]+→[^\s]+)/g);
+  for (const part of parts) {
+    if (/^(?:[+-]\d[\d,]*(?:\.\d+)?|[^\s]+→[^\s]+)$/.test(part)) { const strong = el('strong'); strong.textContent = part; item.append(strong); }
+    else item.append(document.createTextNode(part));
+  }
+  return item;
 }
 
 function characterAvatar(ctx, asset, className) {
@@ -453,10 +473,10 @@ async function runManagementTurn(event, input, ctx, render) {
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     applyEmotion(parsed.emotion);
     const ignored = parsed.events.length + parsed.dropped;
-    if (ignored) chips.push({ ok: false, text: `서사화 사건 ${ignored}개 무시됨` });
+    if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
   } catch (_) {
-    chips.push({ ok: false, text: '서사화 API 오류 · 엔진 결과 유지' });
+    chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '관리 결과가 반영되었습니다.';
   } finally {
     messages.push(pending); // 서사와 칩·상태가 함께 나타난다
@@ -558,23 +578,54 @@ function renderSettings(render) {
 }
 
 function renderStateBox() {
-  const section = titled('LLM이 보는 상태');
+  const section = titled('상태 대시보드');
   const state = getEngineState();
   const schema = getSchema();
-  const pre = el('pre', 'play-context-pre');
-  pre.textContent = summarize(schema, state);
-  section.append(pre);
+  if (!schema || !state) return section;
+  const metrics = el('div', 'state-metrics');
+  if (Number.isFinite(Number(state.gold))) metrics.append(stateMetric('💰 골드', formatMoney(state.gold)));
+  if (Number.isFinite(Number(state.day))) metrics.append(stateMetric('📅 일차', Number(state.day).toLocaleString('ko-KR')));
+  const pools = (state.player && state.player.pools) || {};
+  for (const id of ['hp', 'mp', 'sp']) if (pools[id]) metrics.append(combatGauge(id.toUpperCase(), pools[id], ''));
+  if (metrics.childNodes.length) section.append(metrics);
+  // gold는 위 핵심 지표에 이미 있으므로 자원 그리드에서 제외(이중 노출 방지).
+  appendStateGrid(section, '자원', Object.entries(state.resources || {}).filter(([id]) => id !== 'gold').map(([id, qty]) => {
+    const def = (schema.resources || []).find((item) => item.id === id);
+    return [(def && (def.label || def.name)) || id, Number(qty).toLocaleString('ko-KR')];
+  }));
+  const facilities = entityInstances(schema, 'facility');
+  appendStateGrid(section, '시설', Object.entries(state.facilities || {}).map(([id, level]) => {
+    const def = facilities.find((item) => item.id === id);
+    return [((def && (def.label || def.name)) || id), `Lv.${Number(level).toLocaleString('ko-KR')}`];
+  }));
+  // 여관형 스키마: 직원·객실 현황 — 구 텍스트 요약의 [직원]/[객실] 줄을 대시보드로 승계.
+  const types = new Set((schema.entities || []).map((entry) => entry.type));
+  if (types.has('menuItem') && types.has('room')) {
+    const npcs = entityInstances(schema, 'npc');
+    appendStateGrid(section, '직원', (state.staff || []).map((item) => {
+      const npc = npcs.find((entry) => entry.id === item.npcId);
+      return [(npc && npc.nameKo) || item.npcId, `일급 ${formatMoney(item.dailyWage)}`];
+    }));
+    const occupied = [];
+    for (const status of roomStatus(schema, state)) {
+      for (const guest of status.occupants) occupied.push([`${status.no}호`, `${guest.guestName} · ${guest.nightsLeft}박 남음`]);
+    }
+    appendStateGrid(section, '객실', occupied);
+  }
+  const other = el('div', 'state-detail-list');
+  const claimed = new Set(state.claimedRewards || []);
+  for (const quest of schema.quests || []) { const row = el('div', 'state-detail-row'); row.textContent = `📜 ${quest.name || quest.id}${claimed.has(quest.id) ? ' · 완료' : ''}`; other.append(row); }
   const npcText = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : [])
     .map((id) => npcSummary(schema, state, id))
-    .filter(Boolean)
-    .join('\n');
-  if (npcText) {
-    const npc = el('pre', 'play-context-pre');
-    npc.textContent = npcText;
-    section.append(npc);
-  }
+    .filter(Boolean);
+  for (const text of npcText) { const row = el('div', 'state-detail-row'); row.textContent = `👤 ${text}`; other.append(row); }
+  if (other.childNodes.length) section.append(other);
   return section;
 }
+
+function stateMetric(label, value) { const node = el('div', 'state-metric'); const name = el('span'); name.textContent = label; const strong = el('strong'); strong.textContent = value; node.append(name, strong); return node; }
+function appendStateGrid(section, title, items) { if (!items.length) return; const group = el('div', 'state-group'); const heading = el('h4'); heading.textContent = title; const grid = el('div', 'state-card-grid'); for (const [name, value] of items) { const card = el('div', 'state-card'); const label = el('span'); label.textContent = name; const strong = el('strong'); strong.textContent = value; card.append(label, strong); grid.append(card); } group.append(heading, grid); section.append(group); }
+function entityInstances(schema, type) { const def = (schema.entities || []).find((item) => item.type === type); return (def && def.instances) || []; }
 
 const BASELINE_REF = 12029; // 용사여관 상시 로어북 실측치(앱 토큰 추정기) — 카드 미로드 시 폴백
 
@@ -676,10 +727,10 @@ async function runCombatTurn(event, input, ctx, render) {
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
     const ignored = parsed.events.length + parsed.dropped;
-    if (ignored) chips.push({ ok: false, text: `서사화 사건 ${ignored}개 무시됨` });
+    if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '전투 결과가 반영되었습니다.';
   } catch (_) {
-    chips.push({ ok: false, text: '서사화 API 오류 · 엔진 결과 유지' });
+    chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '전투 결과가 반영되었습니다.';
   } finally {
     busy = false;
@@ -692,15 +743,16 @@ function appendEventChips(type, entries, chips, resultTexts) {
     if (type === 'enemy_turn' && entry.ok) {
       for (const result of entry.results || []) {
         const text = `${result.enemyId} 반격${result.intent === 'heavy' ? '(강공격)' : ''} 🎲${result.roll} · ${result.hit ? `${result.tier === 'critical_success' ? '크리티컬 · ' : ''}피해 ${result.damage}` : '빗나감'}`;
-        chips.push({ ok: true, text });
+        chips.push({ ok: true, kind: 'combat', text });
         resultTexts.push(text);
       }
       if (entry.playerDead) resultTexts.push('플레이어 전투불능');
       continue;
     }
     // use_item 칩 포맷은 summarizeEvent(공통)가 담당 — 자유 텍스트·엔진 탭 경로와 표기 일치(감사 지적).
-    const text = summarizeEvent(type, entry, formatMoney);
-    chips.push({ ok: !!entry.ok, text });
+    const item = summarizeEventItem(type, entry, formatMoney);
+    const text = item.text;
+    chips.push({ ok: !!entry.ok, text, kind: item.kind });
     resultTexts.push(text);
   }
 }
@@ -721,18 +773,19 @@ async function startCombat(ctx, render) {
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     const event = parsed.events.find((item) => item.id === 'start_encounter');
     if (!event) {
-      messages.push({ role: 'assistant', content: parsed.narrative || '', chips: [{ ok: false, text: '적 정보를 만들지 못했습니다' }] });
+      messages.push({ role: 'assistant', content: parsed.narrative || '', chips: [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }] });
     } else {
       const result = runEvent(event);
       const entry = result.entries[0] || { ok: false, reason: 'empty_log' };
       if (entry.ok) fastCombatLog = []; // 새 전투 시작 = 이전 전투 버퍼 폐기(감사 지적: 세션·전투 간 오염 방지)
       const ignored = parsed.events.length - 1 + parsed.dropped;
-      const chips = [{ ok: !!entry.ok, text: summarizeEvent('start_encounter', entry, formatMoney) }];
-      if (ignored > 0) chips.push({ ok: false, text: `다른 사건 ${ignored}개 무시됨` });
+      const item = summarizeEventItem('start_encounter', entry, formatMoney);
+      const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
+      if (ignored > 0) chips.push({ ok: false, kind: 'system', text: `다른 사건 ${ignored}개 무시됨` });
       messages.push({ role: 'assistant', content: parsed.narrative, chips });
     }
   } catch (_) {
-    messages.push({ role: 'assistant', content: '', chips: [{ ok: false, text: '적 정보를 만들지 못했습니다' }] });
+    messages.push({ role: 'assistant', content: '', chips: [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }] });
   } finally {
     busy = false;
     render();
@@ -753,11 +806,12 @@ async function submitTurn(text, ctx, render) {
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
     const chips = [];
-    if (parsed.dropped > 0) chips.push({ ok: false, text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
+    if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
     for (const event of parsed.events) {
       const result = runEvent(event);
       const first = result.entries[0] || { ok: false, reason: 'empty_log' };
-      chips.push({ ok: !!first.ok, text: summarizeEvent(event.id, first, formatMoney) });
+      const item = summarizeEventItem(event.id, first, formatMoney);
+      chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
       // 빠른 전투 버퍼 수명: 자유 텍스트 경로로 전투가 새로 시작되거나 끝나면 버퍼를 비운다
       // (이전 전투 로그가 다음 전투 서사에 섞이는 오염 방지 — 감사 지적).
       if (first.ok && (event.id === 'start_encounter' || event.id === 'end_encounter')) fastCombatLog = [];
@@ -766,7 +820,7 @@ async function submitTurn(text, ctx, render) {
     if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
     messages.push({ role: 'assistant', content: parsed.narrative || raw, chips });
   } catch (err) {
-    messages.push({ role: 'assistant', content: safeError(err), chips: [{ ok: false, text: 'API 오류' }] });
+    messages.push({ role: 'assistant', content: safeError(err), chips: [{ ok: false, kind: 'system', text: 'API 오류' }] });
   } finally {
     busy = false;
     render();
