@@ -479,7 +479,9 @@ function renderApproval(ctx, result, render) {
   approve.addEventListener('click', () => {
     const current = currentResult(ctx);
     if (!current || !current.schema || issueCounts(current.issues).error > 0) return;
-    setActiveSchema(current.schema);
+    // 승인 시점에 한 번 더 정규화 — 배포 후 추가된 합성 규칙(traffic 등)이 기존 컴파일 결과에도 적용되게.
+    const finalized = validateSchema(current.schema);
+    setActiveSchema(finalized.schema);
     current.approved = true;
     addLog(ctx, '스키마 승인됨 · 엔진 세션이 재설정되었습니다.');
     ctx.goToPlay();

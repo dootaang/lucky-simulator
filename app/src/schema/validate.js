@@ -20,6 +20,7 @@ function validateSchema(obj) {
   const schema = clone(obj || {});
 
   normalizeAliases(schema, issues);
+  normalizeFacilityIds(schema, issues);
   normalizeMenuTrade(schema, issues);
   normalizePlayerPools(schema, issues);
   normalizeCombatHpPool(schema, issues);
@@ -38,9 +39,152 @@ function validateSchema(obj) {
   validateGather(schema, issues);
   validateSettlement(schema, issues);
   validateTraffic(schema, issues);
+  synthesizeTrafficModule(schema, issues);
   validateEvents(schema, issues);
 
   return { schema, issues };
+}
+
+// 컴파일러(LLM)는 원본 카드 변수명(lv_room 등)을 시설 id로 내는 경우가 많다.
+// 엔진의 레벨 게이트는 room/kitchen 등 표준 id를 쓰므로 lv_ 접두사를 정규화한다.
+function normalizeFacilityIds(schema, issues) {
+  const entity = findEntity(schema, 'facility');
+  const instances = entity && Array.isArray(entity.instances) ? entity.instances : [];
+  if (!instances.length) return;
+  const taken = new Set(instances.map((item) => item && item.id));
+  const renames = {};
+  for (const instance of instances) {
+    if (!instance || typeof instance.id !== 'string') continue;
+    const match = /^lv_(.+)$/.exec(instance.id);
+    if (!match || taken.has(match[1])) continue;
+    renames[instance.id] = match[1];
+    instance.id = match[1];
+    taken.add(match[1]);
+  }
+  const renamed = Object.keys(renames);
+  if (!renamed.length) return;
+  warn(issues, 'entities.facility', `Facility ids normalized: ${renamed.map((id) => `${id}→${renames[id]}`).join(', ')}.`);
+  // 시설 id를 참조하는 곳들도 함께 재명명.
+  const initial = schema.initialState && schema.initialState.facilities;
+  if (isObject(initial)) {
+    for (const [from, to] of Object.entries(renames)) {
+      if (from in initial) { initial[to] = initial[from]; delete initial[from]; }
+    }
+  }
+  for (const block of asArray(schema.settlement)) {
+    if (isObject(block) && renames[block.facility]) block.facility = renames[block.facility];
+  }
+  if (isObject(schema.traffic)) {
+    if (renames[schema.traffic.capacityFacility]) schema.traffic.capacityFacility = renames[schema.traffic.capacityFacility];
+    for (const modifier of asArray(schema.traffic.modifiers)) {
+      if (isObject(modifier) && renames[modifier.facility]) modifier.facility = renames[modifier.facility];
+    }
+  }
+}
+
+// 관리형(여관형: 판매 메뉴 + 객실) 스키마인데 컴파일러가 traffic 모듈을 내지 않았다면
+// 스키마 자체 데이터(기준표 formula·평판 축·시설)로 기본 영업 모듈을 결정론 합성한다.
+// LLM에게 모듈 문법을 가르치는 대신 후패치로 채우는 기존 원칙(채굴값 강제 적용과 동일 계열).
+function synthesizeTrafficModule(schema, issues) {
+  if (schema.traffic != null) return;
+  const menuEntity = findEntity(schema, 'menuItem');
+  const roomEntity = findEntity(schema, 'room');
+  const facilityEntity = findEntity(schema, 'facility');
+  const menus = menuEntity && Array.isArray(menuEntity.instances) ? menuEntity.instances : [];
+  const rooms = roomEntity && Array.isArray(roomEntity.instances) ? roomEntity.instances : [];
+  const facilities = facilityEntity && Array.isArray(facilityEntity.instances) ? facilityEntity.instances : [];
+  if (!menus.length || !rooms.length || !facilities.length) return;
+
+  const findFacility = (pattern) => facilities.find((item) => item && pattern.test(`${item.id} ${item.label || ''}`));
+  const tavern = findFacility(/tavern|hall|주점|홀/i) || facilities[0];
+  const kitchen = findFacility(/kitchen|주방/i);
+
+  // 기준표: 컴파일러가 낸 baseline formula(cap/customers)를 흡수, 없으면 표준 기본값.
+  let base = [[8, 15], [15, 30], [25, 50], [40, 80]];
+  let capacity = [15, 30, 50, 80];
+  const formula = asArray(schema.formulas).find((item) => isObject(item) && isObject(item.baseline));
+  if (formula) {
+    const levels = Object.keys(formula.baseline).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    const bases = [];
+    const caps = [];
+    for (const level of levels) {
+      const row = formula.baseline[String(level)];
+      if (!isObject(row) || !Array.isArray(row.customers) || row.customers.length < 2) continue;
+      const low = Number(row.customers[0]);
+      const high = Number(row.customers[1]);
+      if (!Number.isFinite(low) || !Number.isFinite(high)) continue;
+      bases.push([low, high]);
+      caps.push(Number.isFinite(Number(row.cap)) ? Number(row.cap) : high);
+    }
+    if (bases.length) { base = bases; capacity = caps; }
+  }
+
+  const repLadder = asArray(schema.ladders).find((ladder) => isObject(ladder) && ladder.id === 'reputation');
+  const axes = repLadder && Array.isArray(repLadder.axes) ? repLadder.axes.filter((axis) => typeof axis === 'string') : [];
+  const villageAxis = axes.find((axis) => /village|마을/i.test(axis)) || axes[0] || null;
+  const nobleAxis = axes.find((axis) => /noble|royal|귀족|왕실/i.test(axis)) || null;
+
+  const modifiers = [{ type: 'staff', perStaff: 0.08, max: 0.32 }];
+  if (repLadder && villageAxis) modifiers.unshift({ type: 'ladder_rank', ladder: 'reputation', axis: villageAxis, perRank: 0.06 });
+  if (kitchen) modifiers.push({ type: 'facility_level', facility: kitchen.id, perLevel: 0.05 });
+
+  const segments = [
+    { id: 'traveler', label: '여행자', weight: 4, party: [1, 2], stay: { '1': 0.6, '2': 0.3, '3': 0.1 } },
+    { id: 'adventurer', label: '모험가 일행', weight: 3, party: [2, 4], stay: { '1': 0.4, '2': 0.4, '3': 0.2 } },
+    { id: 'merchant', label: '상인', weight: 2, party: [1, 2], stay: { '2': 0.5, '3': 0.3, '5': 0.2 } },
+  ];
+  if (repLadder && nobleAxis) {
+    segments.push({ id: 'noble', label: '귀족', weight: 1, party: [1, 3], stay: { '1': 0.5, '2': 0.5 }, requires: { roomLevel: 3, ladderRank: { ladder: 'reputation', axis: nobleAxis, rank: 'C' } } });
+  }
+
+  const deck = [
+    { id: 'drunk_brawl', label: '진상 취객', desc: '만취한 손님이 홀에서 행패를 부린다.', weight: 4, choices: [
+      { id: 'subdue', label: '직접 제압한다', effects: { waveMultiplier: 0.9 } },
+      { id: 'appease', label: '술값을 물어 달랜다', effects: { gold: [-15000, -5000] } },
+      { id: 'ignore', label: '방치한다', effects: { waveMultiplier: 0.7 } },
+    ] },
+    { id: 'petty_thief', label: '좀도둑', desc: '손님 하나가 계산대 근처를 서성인다.', weight: 3, choices: [
+      { id: 'chase', label: '쫓아가 붙잡는다', effects: { gold: [-5000, 25000] } },
+      { id: 'guard', label: '계산대만 지킨다', effects: { waveMultiplier: 0.95 } },
+    ] },
+    { id: 'kitchen_fire', label: '주방 사고', desc: '주방에서 불길이 치솟는다.', weight: 2, choices: [
+      { id: 'repair', label: '즉시 수리한다', effects: { gold: [-30000, -10000] } },
+      { id: 'endure', label: '임시로 버틴다', effects: { resources: { food: -2 }, waveMultiplier: 0.85 } },
+    ] },
+  ];
+  if (repLadder && nobleAxis) {
+    deck.splice(1, 0, { id: 'noble_visit', label: '귀족의 깜짝 방문', desc: '고위 귀족 일행이 예고 없이 들어선다.', weight: 2,
+      requires: { ladderRank: { ladder: 'reputation', axis: nobleAxis, rank: 'C' } },
+      choices: [
+        { id: 'feast', label: '최고급으로 접대한다', effects: { resources: { food: -3, drink: -2 }, gold: [80000, 150000] } },
+        { id: 'decline', label: '정중히 평범하게 응대', effects: {} },
+      ] });
+  }
+
+  const traffic = {
+    id: 'auto_service',
+    capacityFacility: tavern.id,
+    base,
+    capacity,
+    waves: [
+      { id: 'lunch', label: '점심 영업', share: 0.4 },
+      { id: 'evening', label: '저녁 영업', share: 0.6 },
+    ],
+    modifiers,
+    sells: { entity: 'menuItem' },
+    lodging: { roomsEntity: 'room', base: [[1, 2], [1, 3], [2, 4], [3, 6]], segments },
+    incidents: { chance: 35, deck },
+  };
+  if (repLadder && axes.length) {
+    traffic.mail = {
+      ladder: 'reputation',
+      chances: { reward: { C: 5, B: 7, A: 10, S: 15 }, quest: { C: 2, B: 4, A: 7, S: 12 } },
+      labels: { reward: '감사 선물', quest: '의뢰 편지' },
+      reward: { gold: [30000, 80000] },
+    };
+  }
+  schema.traffic = traffic;
+  warn(issues, 'traffic', '컴파일 결과에 영업 모듈이 없어 기본 traffic(파동 영업·숙박·우편·사건)을 자동 구성했습니다.');
 }
 
 // requires.ladderRank 게이트 정합: 사다리 id가 스키마에 존재하고 rank가 E..S 안이어야 한다.
