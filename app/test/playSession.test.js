@@ -1,0 +1,72 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const schema = require('../../schema/yongsa-inn.v0.json');
+const { createSessionJournal, restoreSessionJournal } = require('../../engine/core/sessionJournal.js');
+const { buildPlaySessionExport, parsePlaySessionImport, PLAY_SESSION_CONTRACT } = require('../core/session/playSession.js');
+
+function playedJournal() {
+  const journal = createSessionJournal(schema, 7);
+  journal.append({ id: 'gold_delta', params: { amount: 500, reason: '테스트' } });
+  journal.append({ id: 'purchase', params: { resource: 'food', qty: 2 } });
+  journal.append({ id: 'day_end', params: {} });
+  return journal;
+}
+
+test('내보내기 → 파싱 → 원장 복구까지 전 계층 왕복이 성립한다', () => {
+  const journal = playedJournal();
+  const payload = buildPlaySessionExport({
+    journal: journal.toJSON(),
+    messages: [
+      { role: 'user', content: '식자재 사자' },
+      { role: 'assistant', content: '사왔다.', chips: [{ ok: true, kind: 'resource', text: '구매' }], npcIds: ['silvia'] },
+      { role: 'ledger', content: '', chips: [{ ok: true, kind: 'settlement', text: '마감' }] },
+    ],
+    promptRuns: [{ promptHash: 'h1', model: 'gemini-2.5-flash', responseText: '사왔다.', proposedEvents: ['purchase'], appliedOk: 1 }],
+    savedAt: 1760000000000,
+    title: '여관 1일차',
+  });
+  const reparsed = parsePlaySessionImport(JSON.stringify(payload));
+  assert.equal(reparsed.contract, PLAY_SESSION_CONTRACT);
+  assert.equal(reparsed.title, '여관 1일차');
+  assert.equal(reparsed.messages.length, 3);
+  assert.deepEqual(reparsed.promptRuns[0], { index: 1, promptHash: 'h1', model: 'gemini-2.5-flash', responseText: '사왔다.', proposedEvents: ['purchase'], appliedOk: 1 });
+
+  const restored = restoreSessionJournal(schema, reparsed.journal);
+  assert.deepEqual(restored.head(), journal.head());
+  assert.deepEqual(restored.state, journal.state);
+});
+
+test('오염된 메시지·PromptRun은 정제되고 형식 위반은 거부된다', () => {
+  const journal = playedJournal();
+  const payload = buildPlaySessionExport({
+    journal: journal.toJSON(),
+    messages: [
+      { role: 'user', content: '정상' },
+      { role: 'system', content: '허용 안 되는 role' },
+      'garbage',
+      { role: 'assistant', content: 123, chips: 'not-array' },
+    ],
+    promptRuns: [null, { promptHash: 1, model: null, proposedEvents: 'x' }],
+    savedAt: 'not-a-number',
+  });
+  assert.equal(payload.savedAt, 0);
+  assert.deepEqual(payload.messages.map((message) => message.role), ['user', 'assistant']);
+  assert.equal(payload.messages[1].content, '123');
+  assert.equal(Object.hasOwn(payload.messages[1], 'chips'), false);
+  assert.deepEqual(payload.promptRuns, [{ index: 1, promptHash: '1', model: '', responseText: '', proposedEvents: [], appliedOk: 0 }]);
+
+  assert.throws(() => parsePlaySessionImport('not json'), /play_session_not_json/);
+  assert.throws(() => parsePlaySessionImport('{"contract":"nope"}'), /play_session_contract_mismatch/);
+  assert.throws(() => parsePlaySessionImport(JSON.stringify({ contract: PLAY_SESSION_CONTRACT })), /play_session_journal_missing/);
+  assert.throws(() => buildPlaySessionExport({ journal: { contract: 'nope' } }), /play_session_journal_required/);
+});
+
+test('다른 스키마의 세션은 원장 복구 단계에서 지문 불일치로 거부된다', () => {
+  const journal = playedJournal();
+  const payload = buildPlaySessionExport({ journal: journal.toJSON(), messages: [], promptRuns: [], savedAt: 1 });
+  const otherSchema = JSON.parse(JSON.stringify(schema));
+  otherSchema.__other = true;
+  assert.throws(() => restoreSessionJournal(otherSchema, parsePlaySessionImport(JSON.stringify(payload)).journal), /journal_schema_mismatch/);
+});

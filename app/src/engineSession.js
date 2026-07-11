@@ -1,14 +1,17 @@
 const defaultSchema = require('../../schema/yongsa-inn.v0.json');
-const { createState } = require('../../engine/core/createState.js');
-const { applyEvent, getRegisteredEventIds } = require('../../engine/core/applyEvent.js');
-const { createRng } = require('../../engine/core/rng.js');
+const { getRegisteredEventIds } = require('../../engine/core/applyEvent.js');
+const { createSessionJournal, restoreSessionJournal, stateHash } = require('../../engine/core/sessionJournal.js');
+const { buildPlaySessionExport } = require('../core/session/playSession.js');
 
 let activeSchema = defaultSchema;
 let seedValue = 42;
-let engineState = createState(activeSchema, seedValue);
-let rng = createRng(seedValue);
+// S2: 세션의 단일 진실은 커널 원장 — 모든 이벤트(버튼·LLM·엔진 탭)가 runEvent 관문으로
+// 원장에 기록되어 저장/이어하기·타임머신·손상 감지를 공짜로 얻는다.
+let journal = createSessionJournal(activeSchema, seedValue);
+let engineState = journal.state;
 let logs = [];
 let eventCount = 0;
+let promptRuns = [];
 
 export function getEventTypes() {
   return getRegisteredEventIds();
@@ -64,21 +67,55 @@ export function getSessionEpoch() {
 
 export function resetSession(seed) {
   seedValue = Number.isFinite(Number(seed)) ? Number(seed) : 42;
-  engineState = createState(activeSchema, seedValue);
-  rng = createRng(seedValue);
+  journal = createSessionJournal(activeSchema, seedValue);
+  engineState = journal.state;
   logs = [];
   eventCount = 0;
+  promptRuns = [];
   sessionEpoch += 1;
   return engineState;
 }
 
 export function runEvent(event) {
-  const result = applyEvent(activeSchema, engineState, event, rng);
-  if (result.log.some((entry) => entry.ok)) engineState = result.state;
+  const { entries } = journal.append(event);
+  engineState = journal.state;
   eventCount += 1;
-  const item = { event, entries: result.log, index: logs.length + 1 };
+  const item = { event, entries, index: logs.length + 1 };
   logs.unshift(item);
   return item;
+}
+
+// ── S2: 세션 저장/이어하기 ─────────────────────────────────────────────
+
+export function recordPromptRun(run) {
+  promptRuns.push(run);
+}
+
+export function getPromptRuns() {
+  return promptRuns;
+}
+
+// 프롬프트 해시 — 원장과 같은 안정 직렬화+FNV(손상·중복 감지용, 보안용 아님).
+export function hashPromptPayload(value) {
+  return stateHash(value);
+}
+
+export function exportPlaySession({ messages, savedAt, title } = {}) {
+  return buildPlaySessionExport({ journal: journal.toJSON(), messages, promptRuns, savedAt, title });
+}
+
+// 가져오기 — 스키마 지문·손상 검증은 restoreSessionJournal이 수행(불일치 시 throw).
+// 성공 시 세션 epoch가 올라가므로 플레이 화면은 대화·무대를 함께 교체해야 한다.
+export function importPlaySession(payload) {
+  const restored = restoreSessionJournal(activeSchema, payload.journal);
+  journal = restored;
+  seedValue = Number(payload.journal.seed);
+  engineState = journal.state;
+  logs = [];
+  eventCount = journal.length;
+  promptRuns = Array.isArray(payload.promptRuns) ? payload.promptRuns.slice() : [];
+  sessionEpoch += 1;
+  return engineState;
 }
 
 export function summarizeEvent(type, entry, formatMoney) {

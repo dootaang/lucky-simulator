@@ -5,7 +5,8 @@ const { resolveSpeaker, resolveSpeakerList } = require('./speakerResolver.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
 const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
-import { buttonOnlyEvents, getEngineState, getSchema, getSessionEpoch, runEvent, summarizeEvent, summarizeEventItem } from './engineSession.js';
+import { buttonOnlyEvents, exportPlaySession, getEngineState, getSchema, getSessionEpoch, hashPromptPayload, importPlaySession, recordPromptRun, runEvent, summarizeEvent, summarizeEventItem } from './engineSession.js';
+const { parsePlaySessionImport } = require('../core/session/playSession.js');
 import { buildNpcClusters, preferredEmotion, selectAsset } from './npcGallery.js';
 
 let messages = [];
@@ -56,7 +57,7 @@ export function renderPlayView(container, ctx) {
   // 카드가 바뀌면 이전 카드의 대화·전투 버퍼·busy 상태를 물려받지 않는다.
   // 카드가 같아도 스키마 승인·엔진 리셋(epoch 증가)이 있었으면 대화·무대 등 UI 상태를 함께 리셋 —
   // 1일차 엔진에 옛 대화가 남아 프롬프트 시간선이 오염되는 것 방지(감사 지적).
-  const cardKey = `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : 'no-card'}#${getSessionEpoch()}`;
+  const cardKey = cardKeyOf(ctx);
   if (sessionCardKey !== cardKey) {
     sessionCardKey = cardKey;
     messages = [];
@@ -146,7 +147,7 @@ function renderBottomSheet(ctx, render) {
   const sheet = el('aside', 'play-bottom-sheet'); sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', '플레이 상태와 설정');
   const head = el('div', 'sheet-head'); const handle = button('상태 패널 닫기', 'sheet-handle'); const close = button('닫기', 'secondary-btn');
   handle.addEventListener('click', closeSheet); close.addEventListener('click', closeSheet); head.append(handle, close);
-  sheet.append(head, renderLedgerSection(render), renderSettings(render), renderStateBox(ctx, render), renderTokenBox(ctx)); overlay.append(sheet);
+  sheet.append(head, renderLedgerSection(render), renderSettings(ctx, render), renderStateBox(ctx, render), renderTokenBox(ctx)); overlay.append(sheet);
   detachSheetKeyHandler(); // 재렌더 시 이전 렌더의 리스너가 남지 않도록 항상 정리
   if (mobileSheetOpen) {
     document.body.classList.add('sheet-open');
@@ -446,13 +447,24 @@ function speakerCatalog() {
   });
 }
 function outfitOf(npcId) { const state = getEngineState(); return state && state.npcs && state.npcs[npcId] ? state.npcs[npcId].outfit : undefined; }
+function cardKeyOf(ctx) { return `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : 'no-card'}#${getSessionEpoch()}`; }
+// 모든 LLM 요청의 재현 기록(BACKLOG P1.5) — 프롬프트 해시·모델·응답·제안/적용 사건을 세션에 남긴다.
+function promptRunOf(prompt, raw, parsed, appliedOk = 0) {
+  return {
+    promptHash: hashPromptPayload({ system: prompt.system, messages: prompt.messages }),
+    model: settings.model || settings.provider,
+    responseText: String(raw == null ? '' : raw),
+    proposedEvents: ((parsed && parsed.events) || []).map((event) => event.id),
+    appliedOk,
+  };
+}
 function applyEmotion(value) { if (!value || !character || !character.group || !character.group.emotions.has(value)) return; const pick = selectAsset(character.group, value, outfitOf(character.group.charId)); if (pick) { character.asset = pick.asset; character.emotion = value; } }
 
 function renderSide(ctx, render) {
   const side = el('aside', 'play-side-panel');
   const hud = renderCombatHud();
   if (hud) side.append(hud);
-  side.append(renderLedgerSection(render), renderSettings(render), renderStateBox(ctx, render), renderTokenBox(ctx));
+  side.append(renderLedgerSection(render), renderSettings(ctx, render), renderStateBox(ctx, render), renderTokenBox(ctx));
   return side;
 }
 
@@ -785,7 +797,9 @@ async function runManagementTurn(event, input, ctx, render) {
   try {
     const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
     lastPrompt = prompt;
-    const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+    const raw = await callProvider(providerConfig(settings), prompt);
+    const parsed = parseAssistantResponse(raw);
+    recordPromptRun(promptRunOf(prompt, raw, parsed));
     applyEmotion(parsed.emotion);
     pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
@@ -825,7 +839,9 @@ async function runManagementBatch(items, input, ctx, render) {
   try {
     const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: 'lodging_batch' });
     lastPrompt = prompt;
-    const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+    const raw = await callProvider(providerConfig(settings), prompt);
+    const parsed = parseAssistantResponse(raw);
+    recordPromptRun(promptRunOf(prompt, raw, parsed));
     applyEmotion(parsed.emotion);
     pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
@@ -854,7 +870,7 @@ function decisionContextFor(type, entries) {
   return '';
 }
 
-function renderSettings(render) {
+function renderSettings(ctx, render) {
   const details = el('details', 'play-settings');
   const hasKey = settings.provider === 'mock' || !!readKey(settings.provider);
   details.open = !hasKey;
@@ -949,6 +965,41 @@ function renderSettings(render) {
   // 델타 스케일이 없는 카드에서는 빈 '배율' 제목만 남으므로 통째로 숨긴다.
   if (mults.childNodes.length <= 1) mults.replaceChildren();
 
+  // S2: 세션 저장/이어하기 — 원장(엔진 사건 전체)+대화+LLM 요청 기록을 한 파일로.
+  const exportSession = button('세션 내보내기', 'secondary-btn');
+  exportSession.disabled = busy;
+  exportSession.addEventListener('click', () => {
+    const payload = exportPlaySession({ messages, savedAt: Date.now(), title: sceneLine() });
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `simbot-session-${payload.savedAt}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+  const importFile = el('input');
+  importFile.type = 'file'; importFile.accept = '.json,application/json'; importFile.hidden = true;
+  const importSession = button('세션 가져오기', 'secondary-btn');
+  importSession.disabled = busy;
+  importSession.addEventListener('click', () => importFile.click());
+  importFile.addEventListener('change', async () => {
+    const file = importFile.files && importFile.files[0];
+    importFile.value = '';
+    if (!file || busy) return;
+    try {
+      const payload = parsePlaySessionImport(await file.text());
+      importPlaySession(payload); // 스키마 지문·해시·판정 검증 — 실패 시 throw, 기존 세션 무손상
+      messages = payload.messages;
+      stage = []; lastPrompt = null; fastCombatLog = []; ledgerDeltas = []; purchaseDraft = {};
+      lodgingSelection = new Set(); lodgingSelectionDay = null;
+      sessionCardKey = cardKeyOf(ctx); // 새 epoch 채택 — 다음 렌더가 복원한 대화를 지우지 않게
+      messages.push({ role: 'ledger', chips: [{ ok: true, kind: 'system', text: `세션 이어하기 — 대화 ${payload.messages.length}개 · 엔진 사건 ${payload.journal.events.length}개 복원` }] });
+    } catch (err) {
+      messages.push({ role: 'ledger', chips: [{ ok: false, kind: 'system', text: `세션 가져오기 거부 — ${importFailureKo(err)}` }] });
+    }
+    render();
+  });
+
   details.append(
     field('제공자', provider),
     settings.provider === 'custom' ? field('Base URL', base) : hiddenBase(base),
@@ -959,12 +1010,24 @@ function renderSettings(render) {
     mults,
     field(settings.provider === 'vertex' ? '서비스 계정 JSON' : 'API 키', key),
     row(save, del),
+    row(exportSession, importSession),
+    importFile,
     settings.provider === 'vertex'
       ? notice('서비스 계정 JSON은 GCP 전체 권한을 가질 수 있는 강력한 자격증명입니다. 공용 PC에서 저장하지 말고 사용 후 삭제하세요.')
       : notice('키는 이 브라우저의 localStorage에만 저장됩니다. 공용 PC에서는 사용 후 반드시 삭제하세요.'),
     notice('플레이 시 대화 내용·발동한 로어북·상태 요약이 선택한 LLM 제공자에게 전송됩니다.')
   );
   return details;
+}
+
+// 가져오기 거부 사유를 사용자가 겪는 증상으로 번역.
+function importFailureKo(err) {
+  const message = err && err.message ? String(err.message) : '';
+  if (message.includes('journal_schema_mismatch')) return '다른 카드/스키마의 세션입니다';
+  if (message.includes('journal_corrupt')) return '파일이 손상되었거나 변조되었습니다';
+  if (message.includes('play_session_not_json')) return 'JSON 파일이 아닙니다';
+  if (message.includes('contract')) return '시뮬봇 세션 파일이 아닙니다';
+  return '알 수 없는 형식입니다';
 }
 
 function renderStateBox(ctx, render) {
@@ -1149,6 +1212,7 @@ async function runCombatTurn(event, input, ctx, render) {
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
+    recordPromptRun(promptRunOf(prompt, raw, parsed));
     applyEmotion(parsed.emotion);
     pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
@@ -1197,7 +1261,9 @@ async function startCombat(ctx, render) {
     const instruction = '이번 장면에 어울리는 적 명부로 start_encounter 사건 하나만 JSON으로 내라. 서사는 1~2문장만 허용한다.';
     const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
     lastPrompt = prompt;
-    const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+    const raw = await callProvider(providerConfig(settings), prompt);
+    const parsed = parseAssistantResponse(raw);
+    recordPromptRun(promptRunOf(prompt, raw, parsed));
     applyEmotion(parsed.emotion);
     const speakerIds = applySpeakers(parsed);
     const event = parsed.events.find((item) => item.id === 'start_encounter');
@@ -1240,13 +1306,16 @@ async function openCannedScene(instruction, ctx, render) {
     // 버튼 전용 인텐트는 LLM 응답으로 실행하지 않는다 — 치트·이중 영업 채널 차단(감사 지적).
     const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
     if (blocked.length) chips.push({ ok: false, kind: 'system', text: `버튼 전용 사건 ${blocked.length}개 무시됨` });
+    let appliedOk = 0;
     for (const event of parsed.events) {
       if (buttonOnlyEvents.has(event.id)) continue;
       const result = runEvent(event);
       const first = result.entries[0] || { ok: false, reason: 'empty_log' };
+      if (first.ok) appliedOk += 1;
       const item = summarizeEventItem(event.id, first, formatMoney);
       chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
     }
+    recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
     messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
   } catch (err) {
     messages.push(assistantMessage(safeError(err), [{ ok: false, kind: 'system', text: 'API 오류' }]));
@@ -1277,16 +1346,19 @@ async function submitTurn(text, ctx, render) {
     // 버튼 전용 인텐트는 LLM 응답으로 실행하지 않는다 — 치트·이중 영업 채널 차단(감사 지적).
     const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
     if (blocked.length) chips.push({ ok: false, kind: 'system', text: `버튼 전용 사건 ${blocked.length}개 무시됨` });
+    let appliedOk = 0;
     for (const event of parsed.events) {
       if (buttonOnlyEvents.has(event.id)) continue;
       const result = runEvent(event);
       const first = result.entries[0] || { ok: false, reason: 'empty_log' };
+      if (first.ok) appliedOk += 1;
       const item = summarizeEventItem(event.id, first, formatMoney);
       chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
       // 빠른 전투 버퍼 수명: 자유 텍스트 경로로 전투가 새로 시작되거나 끝나면 버퍼를 비운다
       // (이전 전투 로그가 다음 전투 서사에 섞이는 오염 방지 — 감사 지적).
       if (first.ok && (event.id === 'start_encounter' || event.id === 'end_encounter')) fastCombatLog = [];
     }
+    recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
     const combatNow = getEngineState().combat;
     if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
     messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));

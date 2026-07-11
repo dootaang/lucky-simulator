@@ -5546,123 +5546,6 @@ select:focus { border-color: var(--amber-line); }
     }
   });
 
-  // ../engine/core/pools.js
-  var require_pools = __commonJS({
-    "../engine/core/pools.js"(exports, module) {
-      "use strict";
-      function normalizePool(value) {
-        if (value && typeof value === "object") {
-          const max2 = num(value.max, num(value.cur, 0));
-          const cur = clamp(num(value.cur, max2), 0, max2);
-          return { cur, max: max2 };
-        }
-        const max = num(value, 0);
-        return { cur: max, max };
-      }
-      function poolDamage(pool, n) {
-        const p = normalizePool(pool);
-        return { cur: clamp(p.cur - Math.max(0, num(n, 0)), 0, p.max), max: p.max };
-      }
-      function poolHeal(pool, n) {
-        const p = normalizePool(pool);
-        return { cur: clamp(p.cur + Math.max(0, num(n, 0)), 0, p.max), max: p.max };
-      }
-      function poolSpend(pool, n) {
-        const p = normalizePool(pool);
-        const cost = Math.max(0, num(n, 0));
-        if (p.cur < cost) return null;
-        return { cur: p.cur - cost, max: p.max };
-      }
-      function poolRestore(pool) {
-        const p = normalizePool(pool);
-        return { cur: p.max, max: p.max };
-      }
-      function isDead(pool) {
-        return normalizePool(pool).cur <= 0;
-      }
-      function num(v, fallback) {
-        const n = Number(v);
-        return Number.isFinite(n) ? n : fallback;
-      }
-      function clamp(v, lo, hi) {
-        return Math.min(hi, Math.max(lo, v));
-      }
-      module.exports = { normalizePool, poolDamage, poolHeal, poolSpend, poolRestore, isDead };
-    }
-  });
-
-  // ../engine/core/createState.js
-  var require_createState = __commonJS({
-    "../engine/core/createState.js"(exports, module) {
-      "use strict";
-      var { clone, entityList, ladderById, scaleById } = require_utils();
-      var { normalizePool } = require_pools();
-      function createState2(schema2, seed) {
-        const initial = clone(schema2.initialState || {});
-        const state2 = {
-          day: Number(initial.day || 1),
-          gold: Number(initial.gold || 0),
-          resources: clone(initial.resources || {}),
-          items: clone(initial.items || {}),
-          facilities: clone(initial.facilities || {}),
-          staff: Array.isArray(initial.staff) ? clone(initial.staff) : [],
-          rooms: clone(initial.rooms || {}),
-          player: normalizePlayer(schema2, initial.player),
-          reputation: normalizeReputation(schema2, initial.reputation || {}),
-          npcs: normalizeNpcs(schema2, initial.npcs || {}),
-          pendingCheckouts: [],
-          unpaidWages: Number(initial.unpaidWages || 0),
-          claimedRewards: Array.isArray(initial.claimedRewards) ? clone(initial.claimedRewards) : [],
-          combat: null
-        };
-        if (seed != null) state2.seed = seed;
-        return state2;
-      }
-      function normalizePlayer(schema2, initialPlayer) {
-        const player = clone(initialPlayer || { level: 1, exp: 0 });
-        const defs = Array.isArray(schema2.pools) ? schema2.pools : null;
-        const src = player.pools && typeof player.pools === "object" ? player.pools : null;
-        if (defs || src) {
-          const pools = {};
-          const ids = defs ? defs.map((d) => d.id) : Object.keys(src || {});
-          for (const id of ids) {
-            const raw = (src && src[id]) != null ? src[id] : defs && (defs.find((d) => d.id === id) || {}).max;
-            pools[id] = normalizePool(raw);
-          }
-          player.pools = pools;
-        }
-        return player;
-      }
-      function normalizeReputation(schema2, initial) {
-        const ladder = ladderById(schema2, "reputation");
-        const out = {};
-        for (const axis of ladder && ladder.axes || []) {
-          const value = initial[axis];
-          if (value && typeof value === "object") {
-            out[axis] = { rank: value.rank || "E", exp: Number(value.exp || 0) };
-          } else {
-            out[axis] = { rank: "E", exp: Number(value || 0) };
-          }
-        }
-        return out;
-      }
-      function normalizeNpcs(schema2, initial) {
-        const affinity = scaleById(schema2, "affinity");
-        const defaultAffinity = affinity ? Number(affinity.default || 0) : 0;
-        const out = {};
-        for (const npc of entityList(schema2, "npc")) {
-          const current = initial[npc.id] || {};
-          out[npc.id] = {
-            affinity: Number(current.affinity == null ? defaultAffinity : current.affinity),
-            affinityDeltaToday: Number(current.affinityDeltaToday || 0)
-          };
-        }
-        return out;
-      }
-      module.exports = { createState: createState2 };
-    }
-  });
-
   // ../engine/core/rng.js
   var require_rng = __commonJS({
     "../engine/core/rng.js"(exports, module) {
@@ -5676,7 +5559,7 @@ select:focus { border-color: var(--amber-line); }
         }
         return h >>> 0;
       }
-      function createRng2(seed) {
+      function createRng(seed) {
         let t = hashSeed(seed);
         return {
           snapshot() {
@@ -5708,9 +5591,9 @@ select:focus { border-color: var(--amber-line); }
           hash ^= value.charCodeAt(i);
           hash = Math.imul(hash, 16777619);
         }
-        return createRng2(hash >>> 0);
+        return createRng(hash >>> 0);
       }
-      module.exports = { createRng: createRng2, deriveRng };
+      module.exports = { createRng, deriveRng };
     }
   });
 
@@ -5736,10 +5619,10 @@ select:focus { border-color: var(--amber-line); }
         if (facilityLevel < Number(board.unlockLevel || 1)) return [];
         const pendingId = state2.pendingQuest && state2.pendingQuest.day === state2.day ? state2.pendingQuest.questId : null;
         const candidates = all;
-        const rng2 = deriveRng(state2.seed ?? 0, `questboard/${state2.day}/${board.facility || "none"}`);
+        const rng = deriveRng(state2.seed ?? 0, `questboard/${state2.day}/${board.facility || "none"}`);
         const shuffled = candidates.slice();
         for (let i = shuffled.length - 1; i > 0; i -= 1) {
-          const j = rng2.int(0, i);
+          const j = rng.int(0, i);
           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
         const size = Math.max(1, Math.trunc(Number(board.size) || 3));
@@ -5980,6 +5863,51 @@ select:focus { border-color: var(--amber-line); }
     }
   });
 
+  // ../engine/core/pools.js
+  var require_pools = __commonJS({
+    "../engine/core/pools.js"(exports, module) {
+      "use strict";
+      function normalizePool(value) {
+        if (value && typeof value === "object") {
+          const max2 = num(value.max, num(value.cur, 0));
+          const cur = clamp(num(value.cur, max2), 0, max2);
+          return { cur, max: max2 };
+        }
+        const max = num(value, 0);
+        return { cur: max, max };
+      }
+      function poolDamage(pool, n) {
+        const p = normalizePool(pool);
+        return { cur: clamp(p.cur - Math.max(0, num(n, 0)), 0, p.max), max: p.max };
+      }
+      function poolHeal(pool, n) {
+        const p = normalizePool(pool);
+        return { cur: clamp(p.cur + Math.max(0, num(n, 0)), 0, p.max), max: p.max };
+      }
+      function poolSpend(pool, n) {
+        const p = normalizePool(pool);
+        const cost = Math.max(0, num(n, 0));
+        if (p.cur < cost) return null;
+        return { cur: p.cur - cost, max: p.max };
+      }
+      function poolRestore(pool) {
+        const p = normalizePool(pool);
+        return { cur: p.max, max: p.max };
+      }
+      function isDead(pool) {
+        return normalizePool(pool).cur <= 0;
+      }
+      function num(v, fallback) {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : fallback;
+      }
+      function clamp(v, lo, hi) {
+        return Math.min(hi, Math.max(lo, v));
+      }
+      module.exports = { normalizePool, poolDamage, poolHeal, poolSpend, poolRestore, isDead };
+    }
+  });
+
   // ../engine/core/dayEnd.js
   var require_dayEnd = __commonJS({
     "../engine/core/dayEnd.js"(exports, module) {
@@ -5987,7 +5915,7 @@ select:focus { border-color: var(--amber-line); }
       var { clone, formulaById, findMenu, entityList } = require_utils();
       var { availableMenu: availableMenu2, rankWeight } = require_selectors();
       var { poolHeal } = require_pools();
-      function runDayEnd(schema2, state2, rng2) {
+      function runDayEnd(schema2, state2, rng) {
         const next = clone(state2);
         const report = {
           day: state2.day,
@@ -6006,19 +5934,19 @@ select:focus { border-color: var(--amber-line); }
           checkouts: []
         };
         const trafficResolved = state2.traffic && state2.traffic.day === state2.day && Object.keys(state2.traffic.resolved || {}).length > 0;
-        if (!trafficResolved) settleRevenue(schema2, next, rng2, report);
+        if (!trafficResolved) settleRevenue(schema2, next, rng, report);
         deductWages(next, report);
         checkoutDue(next, report);
-        runSettlement(schema2, next, rng2, report);
+        runSettlement(schema2, next, rng, report);
         advanceDay(next);
         return { state: next, report };
       }
-      function runSettlement(schema2, state2, rng2, report) {
+      function runSettlement(schema2, state2, rng, report) {
         if (!Array.isArray(schema2.settlement)) return;
         report.settlement = [];
         for (const step of schema2.settlement) {
           if (!step) continue;
-          if (step.type === "facility_yield") runFacilityYield(schema2, state2, rng2, report, step);
+          if (step.type === "facility_yield") runFacilityYield(schema2, state2, rng, report, step);
           else if (step.type === "pool_recover") runPoolRecover(state2, report, step);
           else if (step.type === "upkeep") runUpkeep(state2, report, step);
         }
@@ -6029,12 +5957,12 @@ select:focus { border-color: var(--amber-line); }
         const key = Object.keys(perLevel).map(Number).filter((n) => Number.isFinite(n) && n <= level).sort((a, b) => b - a)[0];
         return key == null ? void 0 : perLevel[String(key)];
       }
-      function runFacilityYield(schema2, state2, rng2, report, step) {
+      function runFacilityYield(schema2, state2, rng, report, step) {
         const level = Number(state2.facilities && state2.facilities[step.facility] || 1);
         const value = levelValue(step.perLevel, level);
         const base = { type: step.type, facility: step.facility, level };
         if (value == null) return report.settlement.push({ ...base, skipped: "no_level_entry" });
-        const amount = Array.isArray(value) ? rng2.int(value[0], value[1]) : Number(value);
+        const amount = Array.isArray(value) ? rng.int(value[0], value[1]) : Number(value);
         if (step.resource) {
           const declared = (schema2.resources || []).some((resource) => resource && resource.id === step.resource);
           const existing = state2.resources && Object.prototype.hasOwnProperty.call(state2.resources, step.resource);
@@ -6067,13 +5995,13 @@ select:focus { border-color: var(--amber-line); }
         state2.gold = Number(state2.gold || 0) - paid;
         report.settlement.push({ type: step.type, gold, paid, shortfall: gold - paid });
       }
-      function settleRevenue(schema2, state2, rng2, report) {
+      function settleRevenue(schema2, state2, rng, report) {
         const daily = formulaById(schema2, "daily_revenue");
         const level = String(state2.facilities && state2.facilities.tavern || 1);
         const baseline = daily && daily.baseline && daily.baseline[level];
         if (!baseline) return;
         const range = baseline.customers || [0, 0];
-        const baseCustomers = rng2.int(range[0], range[1]);
+        const baseCustomers = rng.int(range[0], range[1]);
         const staffBonus = Math.min(0.25, (state2.staff || []).length * 0.05);
         const repBonus = (rankWeight(schema2, state2, "village") + rankWeight(schema2, state2, "advent")) * 0.2;
         const customers = Math.min(Number(baseline.cap || baseCustomers), Math.max(0, Math.round(baseCustomers * (1 + staffBonus + repBonus))));
@@ -6081,14 +6009,14 @@ select:focus { border-color: var(--amber-line); }
         const foodMenus = availableMenu2(schema2, state2, "\uC694\uB9AC");
         const drinkMenus = availableMenu2(schema2, state2, "\uC8FC\uB958");
         for (let i = 0; i < customers; i++) {
-          const foodSold = sellRandomMenu(state2, rng2, foodMenus, "food", report);
-          const drinkSold = sellRandomMenu(state2, rng2, drinkMenus, "drink", report);
+          const foodSold = sellRandomMenu(state2, rng, foodMenus, "food", report);
+          const drinkSold = sellRandomMenu(state2, rng, drinkMenus, "drink", report);
           if (!foodSold || !drinkSold) report.turnedAway += 1;
         }
       }
-      function sellRandomMenu(state2, rng2, menus, resource, report) {
+      function sellRandomMenu(state2, rng, menus, resource, report) {
         if (!menus.length || Number(state2.resources && state2.resources[resource] || 0) <= 0) return false;
-        const menu = menus[rng2.int(0, menus.length - 1)];
+        const menu = menus[rng.int(0, menus.length - 1)];
         const consumes = Number(menu.consumes && menu.consumes[resource] || 0);
         if (consumes <= 0) return false;
         if (Number(state2.resources[resource] || 0) < consumes) return false;
@@ -6156,15 +6084,15 @@ select:focus { border-color: var(--amber-line); }
   var require_resolveCheck = __commonJS({
     "../engine/core/resolveCheck.js"(exports, module) {
       "use strict";
-      function resolveCheck(rng2, spec) {
+      function resolveCheck(rng, spec) {
         const mode = spec && spec.mode === "rate" ? "rate" : "dc";
-        return mode === "rate" ? rateCheck(rng2, spec) : dcCheck(rng2, spec);
+        return mode === "rate" ? rateCheck(rng, spec) : dcCheck(rng, spec);
       }
-      function dcCheck(rng2, spec) {
+      function dcCheck(rng, spec) {
         const sides = intOr(spec.sides, 20);
         const dc = intOr(spec.dc, 10);
         const mod = intOr(spec.mod, 0);
-        const rand = rng2.int(1, Math.max(1, sides));
+        const rand = rng.int(1, Math.max(1, sides));
         const total = rand + mod;
         const success = total >= dc;
         let tier;
@@ -6172,9 +6100,9 @@ select:focus { border-color: var(--amber-line); }
         else tier = rand === 1 ? "critical_failure" : "failure";
         return { mode: "dc", rand, total, success, tier };
       }
-      function rateCheck(rng2, spec) {
+      function rateCheck(rng, spec) {
         const rate = clampInt(spec.rate, 0, 100, 50);
-        const rand = rng2.int(1, 100);
+        const rand = rng.int(1, 100);
         const success = rand <= rate;
         let tier;
         if (success) tier = rand <= 5 ? "critical_success" : "success";
@@ -6228,7 +6156,7 @@ select:focus { border-color: var(--amber-line); }
       function hasNumberParam(params) {
         return ["power", "damage", "dmg", "roll", "amount", "hp"].some((k) => k in (params || {}));
       }
-      function startEncounter(schema2, state2, params, rng2, ok, fail) {
+      function startEncounter(schema2, state2, params, rng, ok, fail) {
         if (state2.combat && state2.combat.active) return fail("encounter_active");
         const roster = Array.isArray(params.enemies) ? params.enemies : [];
         if (!roster.length) return fail("no_enemies");
@@ -6252,10 +6180,10 @@ select:focus { border-color: var(--amber-line); }
         if (!state2.player || !state2.player.pools || typeof state2.player.pools !== "object" || !state2.player.pools.hp) {
           return fail("player_hp_pool_missing", "pools\uC5D0 hp\uAC00 \uC5C6\uC5B4 \uC804\uD22C\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4");
         }
-        state2.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false, intents: rollIntents(schema2, enemies, rng2) };
+        state2.combat = { active: true, round: 1, enemies, guard: false, cleared: false, fled: false, intents: rollIntents(schema2, enemies, rng) };
         return ok({ enemies: enemies.map(publicEnemy) });
       }
-      function combatAction(schema2, state2, params, rng2, ok, fail) {
+      function combatAction(schema2, state2, params, rng, ok, fail) {
         const combat = state2.combat;
         if (!combat || !combat.active) return fail("no_encounter");
         if (state2.player.dead) return fail("player_dead");
@@ -6267,7 +6195,7 @@ select:focus { border-color: var(--amber-line); }
         }
         if (action === "flee") {
           const cfg2 = combatConfig(schema2);
-          const check = resolveCheck(rng2, { mode: "rate", rate: cfg2.fleeRate });
+          const check = resolveCheck(rng, { mode: "rate", rate: cfg2.fleeRate });
           if (check.success) {
             combat.active = false;
             combat.fled = true;
@@ -6292,7 +6220,7 @@ select:focus { border-color: var(--amber-line); }
         }
         const skillPower = intOr(skill && skill.power, 0);
         const skillAcc = intOr(skill && skill.acc, 0);
-        const hit = resolveCheck(rng2, { mode: "dc", sides: cfg.d, dc: enemy.evade, mod: pc.acc + skillAcc });
+        const hit = resolveCheck(rng, { mode: "dc", sides: cfg.d, dc: enemy.evade, mod: pc.acc + skillAcc });
         let dmg = 0;
         if (hit.success) {
           const base = pc.atk + skillPower;
@@ -6314,7 +6242,7 @@ select:focus { border-color: var(--amber-line); }
           cleared: combat.cleared
         });
       }
-      function enemyAction(schema2, state2, params, rng2, ok, fail) {
+      function enemyAction(schema2, state2, params, rng, ok, fail) {
         const combat = state2.combat;
         if (!combat || !combat.active) return fail("no_encounter");
         if (state2.player.dead) return fail("player_dead");
@@ -6323,7 +6251,7 @@ select:focus { border-color: var(--amber-line); }
         if (!enemy) return fail("unknown_enemy", params.enemyId);
         if (enemy.dead) return fail("enemy_dead", enemy.id);
         const skill = params.skill ? (schema2.skills || {})[params.skill] : null;
-        const result = resolveEnemyAttack(schema2, state2, enemy, skill, rng2);
+        const result = resolveEnemyAttack(schema2, state2, enemy, skill, rng);
         combat.guard = false;
         return ok(Object.assign({
           enemyId: enemy.id,
@@ -6331,7 +6259,7 @@ select:focus { border-color: var(--amber-line); }
           skill: params.skill || null
         }, result));
       }
-      function enemyTurn(schema2, state2, params, rng2, ok, fail) {
+      function enemyTurn(schema2, state2, params, rng, ok, fail) {
         const combat = state2.combat;
         if (!combat) return fail("no_encounter");
         if (combat.cleared || combat.fled) return ok({ results: [], playerHp: normalizePool(state2.player.pools && state2.player.pools.hp), playerDead: !!state2.player.dead });
@@ -6341,21 +6269,21 @@ select:focus { border-color: var(--amber-line); }
         for (const enemy of combat.enemies || []) {
           if (enemy.dead || Number(enemy.hp && enemy.hp.cur) <= 0) continue;
           const intent = combat.intents && combat.intents[enemy.id] === "heavy" ? "heavy" : "attack";
-          const result = resolveEnemyAttack(schema2, state2, enemy, null, rng2, intent);
+          const result = resolveEnemyAttack(schema2, state2, enemy, null, rng, intent);
           results.push({ enemyId: enemy.id, intent, hit: result.hit, tier: result.tier, roll: result.roll, damage: result.damage });
           if (result.hit) combat.guard = false;
           if (result.playerDead) break;
         }
         combat.guard = false;
-        combat.intents = state2.player.dead ? {} : rollIntents(schema2, (combat.enemies || []).filter((enemy) => !enemy.dead && Number(enemy.hp && enemy.hp.cur) > 0), rng2);
+        combat.intents = state2.player.dead ? {} : rollIntents(schema2, (combat.enemies || []).filter((enemy) => !enemy.dead && Number(enemy.hp && enemy.hp.cur) > 0), rng);
         return ok({ results, playerHp: normalizePool(state2.player.pools && state2.player.pools.hp), playerDead: !!state2.player.dead });
       }
-      function resolveEnemyAttack(schema2, state2, enemy, skill, rng2, intent = "attack") {
+      function resolveEnemyAttack(schema2, state2, enemy, skill, rng, intent = "attack") {
         const combat = state2.combat;
         const cfg = combatConfig(schema2);
         const pc = playerCombat(state2);
         const heavy = intent === "heavy";
-        const hit = resolveCheck(rng2, { mode: "dc", sides: cfg.d, dc: pc.evade, mod: enemy.acc + intOr(skill && skill.acc, 0) + (heavy ? cfg.heavyAcc : 0) });
+        const hit = resolveCheck(rng, { mode: "dc", sides: cfg.d, dc: pc.evade, mod: enemy.acc + intOr(skill && skill.acc, 0) + (heavy ? cfg.heavyAcc : 0) });
         let damage = 0;
         if (hit.success) {
           damage = Math.max(cfg.minDamage, enemy.atk + intOr(skill && skill.power, 0) - pc.def);
@@ -6369,13 +6297,13 @@ select:focus { border-color: var(--amber-line); }
         }
         return { hit: hit.success, tier: hit.tier, roll: hit.rand, damage, playerHp: normalizePool(state2.player.pools && state2.player.pools.hp), playerDead: !!state2.player.dead };
       }
-      function rollIntents(schema2, enemies, rng2) {
+      function rollIntents(schema2, enemies, rng) {
         const cfg = combatConfig(schema2);
         const intents = {};
-        for (const enemy of enemies) intents[enemy.id] = rng2.int(1, 100) <= cfg.heavyRate ? "heavy" : "attack";
+        for (const enemy of enemies) intents[enemy.id] = rng.int(1, 100) <= cfg.heavyRate ? "heavy" : "attack";
         return intents;
       }
-      function endEncounter(schema2, state2, params, rng2, ok, fail) {
+      function endEncounter(schema2, state2, params, rng, ok, fail) {
         const combat = state2.combat;
         if (!combat) return fail("no_encounter_to_end");
         if (combat.active && !combat.cleared && !combat.fled && !state2.player.dead) return fail("encounter_unresolved");
@@ -6386,9 +6314,9 @@ select:focus { border-color: var(--amber-line); }
         if (combat.cleared) {
           for (const enemy of combat.enemies) {
             const expRange = cfg.expTable[enemy.rank] || cfg.expTable.default;
-            if (isRange(expRange)) expGained += rng2.int(expRange[0], expRange[1]);
+            if (isRange(expRange)) expGained += rng.int(expRange[0], expRange[1]);
             const goldRange = cfg.lootGold[enemy.rank] || cfg.lootGold.default;
-            if (isRange(goldRange)) goldGained += rng2.int(goldRange[0], goldRange[1]);
+            if (isRange(goldRange)) goldGained += rng.int(goldRange[0], goldRange[1]);
           }
           if (expGained) applyExp(schema2, state2, expGained, levelUps);
           if (goldGained) state2.gold = Number(state2.gold || 0) + goldGained;
@@ -6466,8 +6394,8 @@ select:focus { border-color: var(--amber-line); }
         const chance = Number(quest && quest.encounterChance || 0);
         const pool = schema2 && schema2.encounters && schema2.encounters.pool;
         if (!(chance > 0) || !schema2.combat || !Array.isArray(pool) || !pool.length) return null;
-        const rng2 = deriveRng(state2.seed ?? 0, `questenc/${state2.day}/${quest.id}`);
-        if (rng2.next() * 100 >= chance) return null;
+        const rng = deriveRng(state2.seed ?? 0, `questenc/${state2.day}/${quest.id}`);
+        if (rng.next() * 100 >= chance) return null;
         const target = Math.max(0, RANKS.indexOf(quest.rewardTier));
         let picked = pool[0];
         let distance = Infinity;
@@ -6480,7 +6408,7 @@ select:focus { border-color: var(--amber-line); }
           }
         }
         const range = picked.count || [1, 1];
-        const count2 = rng2.int(range[0], range[1]);
+        const count2 = rng.int(range[0], range[1]);
         const stats = STATS[picked.rank] || STATS.E;
         return {
           encounter: picked,
@@ -6525,8 +6453,8 @@ select:focus { border-color: var(--amber-line); }
         const level = Math.max(1, Math.min(base.length, Math.round(rawLevel)));
         const range = base[level - 1];
         const share = Number(wave.share);
-        const rng2 = deriveRng(state2.seed ?? 0, `traffic/${state2.day}/${traffic.id}/${waveId}`);
-        let potential = rng2.int(Math.round(Number(range[0]) * share), Math.round(Number(range[1]) * share));
+        const rng = deriveRng(state2.seed ?? 0, `traffic/${state2.day}/${traffic.id}/${waveId}`);
+        let potential = rng.int(Math.round(Number(range[0]) * share), Math.round(Number(range[1]) * share));
         let multiplier = 1;
         for (const modifier of traffic.modifiers || []) {
           if (modifier.type === "ladder_rank") {
@@ -6563,7 +6491,7 @@ select:focus { border-color: var(--amber-line); }
           const candidates = instances.filter(canSell);
           if (!candidates.length) break;
           const weights = candidates.map(weightOf);
-          const target = rng2.next() * weights.reduce((sum, weight) => sum + weight, 0);
+          const target = rng.next() * weights.reduce((sum, weight) => sum + weight, 0);
           let cursor = 0;
           let chosen = candidates[candidates.length - 1];
           for (let i = 0; i < candidates.length; i += 1) {
@@ -6619,11 +6547,11 @@ select:focus { border-color: var(--amber-line); }
         if (skip) return resolveTrafficWave(schema2, state2, waveId, 1, true);
         const incidents = traffic.incidents;
         if (!incidents) return resolveTrafficWave(schema2, state2, waveId);
-        const rng2 = deriveRng(state2.seed ?? 0, `incident/${state2.day}/${traffic.id}/${waveId}`);
-        if (rng2.next() * 100 >= Number(incidents.chance || 0)) return resolveTrafficWave(schema2, state2, waveId);
+        const rng = deriveRng(state2.seed ?? 0, `incident/${state2.day}/${traffic.id}/${waveId}`);
+        if (rng.next() * 100 >= Number(incidents.chance || 0)) return resolveTrafficWave(schema2, state2, waveId);
         const deck = (incidents.deck || []).filter((incident2) => eligibleIncident(state2, incident2));
         if (!deck.length) return resolveTrafficWave(schema2, state2, waveId);
-        const incident = weightedPick(rng2, deck, (item) => item.weight);
+        const incident = weightedPick(rng, deck, (item) => item.weight);
         state2.pendingIncident = { day: state2.day, waveId, incidentId: incident.id };
         return { ok: true, entries: [{ ok: true, incident: { id: incident.id, label: incident.label, desc: incident.desc }, choices: incident.choices.map((choice) => ({ id: choice.id, label: choice.label })), awaitingChoice: true }] };
       }
@@ -6641,8 +6569,8 @@ select:focus { border-color: var(--amber-line); }
         const effects = choice.effects || {};
         const entry = { ok: true, incidentId: incident.id, label: incident.label, choice: choice.id, choiceLabel: choice.label };
         if (effects.gold) {
-          const rng2 = deriveRng(state2.seed ?? 0, `incident/${state2.day}/${pending.waveId}/${incident.id}/${choice.id}`);
-          const rolled = rng2.int(Number(effects.gold[0]), Number(effects.gold[1]));
+          const rng = deriveRng(state2.seed ?? 0, `incident/${state2.day}/${pending.waveId}/${incident.id}/${choice.id}`);
+          const rolled = rng.int(Number(effects.gold[0]), Number(effects.gold[1]));
           const before = Number(state2.gold || 0);
           state2.gold = Math.max(0, before + rolled);
           entry.goldDelta = state2.gold - before;
@@ -6705,9 +6633,9 @@ select:focus { border-color: var(--amber-line); }
         } while (n >= 0);
         return suffix;
       }
-      function weightedPick(rng2, items, weightOf) {
+      function weightedPick(rng, items, weightOf) {
         const total = items.reduce((sum, item) => sum + Math.max(0, Number(weightOf(item) || 0)), 0);
-        let target = rng2.next() * total;
+        let target = rng.next() * total;
         for (const item of items) {
           target -= Math.max(0, Number(weightOf(item) || 0));
           if (target < 0) return item;
@@ -6736,15 +6664,15 @@ select:focus { border-color: var(--amber-line); }
           const rankValue = Math.max(0, rankOrder.indexOf(rank));
           return rankValue >= requiredIndex;
         });
-        const rng2 = deriveRng(state2.seed ?? 0, `lodging/${state2.day}/${traffic.id}`);
-        const count2 = rng2.int(range[0], range[1]);
+        const rng = deriveRng(state2.seed ?? 0, `lodging/${state2.day}/${traffic.id}`);
+        const count2 = rng.int(range[0], range[1]);
         const requests = [];
         for (let index = 0; index < count2 && eligible.length; index += 1) {
-          const segment = weightedPick(rng2, eligible, (item) => item.weight);
+          const segment = weightedPick(rng, eligible, (item) => item.weight);
           const partyRange = Array.isArray(segment.party) && segment.party.length >= 2 ? segment.party : [1, 1];
-          const party = Math.max(1, rng2.int(Number(partyRange[0]) || 1, Number(partyRange[1]) || 1));
+          const party = Math.max(1, rng.int(Number(partyRange[0]) || 1, Number(partyRange[1]) || 1));
           const stays = Object.keys(segment.stay || {}).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
-          const stayDays = Number(weightedPick(rng2, stays, (days) => segment.stay[String(days)])) || 1;
+          const stayDays = Number(weightedPick(rng, stays, (days) => segment.stay[String(days)])) || 1;
           const suffix = guestSuffix(index);
           requests.push({ id: `req_${state2.day}_${index + 1}`, segment: segment.id, label: segment.label, name: `${segment.label} ${suffix}`, party, stayDays, status: "pending" });
         }
@@ -6807,8 +6735,8 @@ select:focus { border-color: var(--amber-line); }
             if (existing.some((letter) => letter.axis === axis && letter.type === type)) continue;
             const chance = mail.chances && mail.chances[type] && mail.chances[type][rank];
             if (chance == null) continue;
-            const rng2 = deriveRng(state2.seed ?? 0, `mail/${state2.day}/${axis}/${type}`);
-            if (rng2.next() * 100 < Number(chance)) letters.push({ id: `mail_${state2.day}_${axis}_${type}`, axis, type, day: state2.day });
+            const rng = deriveRng(state2.seed ?? 0, `mail/${state2.day}/${axis}/${type}`);
+            if (rng.next() * 100 < Number(chance)) letters.push({ id: `mail_${state2.day}_${axis}_${type}`, axis, type, day: state2.day });
           }
         }
         state2.mail = { checkedDay: state2.day, letters };
@@ -6869,12 +6797,12 @@ select:focus { border-color: var(--amber-line); }
           for (const path of module2.stateAccess.owns) this.stateOwners.set(path, module2.id);
           return this;
         }
-        dispatch(schema2, state2, event, rng2) {
+        dispatch(schema2, state2, event, rng) {
           const type = event && event.id;
           const route = this.events.get(type);
           if (!route) return unknownEvent(state2, type);
           const workingState = clone(state2);
-          const rngSnapshot = snapshotRng(rng2);
+          const rngSnapshot = snapshotRng(rng);
           let result;
           try {
             result = route.handler({
@@ -6882,20 +6810,20 @@ select:focus { border-color: var(--amber-line); }
               state: workingState,
               event,
               params: event && event.params || event || {},
-              rng: rng2,
+              rng,
               registry: this,
               module: route.module
             });
           } catch (error) {
-            restoreRng(rng2, rngSnapshot);
+            restoreRng(rng, rngSnapshot);
             return moduleFailure(state2, type, "module_exception", error && error.message);
           }
           if (!validResult(result)) {
-            restoreRng(rng2, rngSnapshot);
+            restoreRng(rng, rngSnapshot);
             return moduleFailure(state2, type, "module_contract", "Module must return { state, log[] }.");
           }
           if (!result.log.some((entry) => entry && entry.ok === true)) {
-            restoreRng(rng2, rngSnapshot);
+            restoreRng(rng, rngSnapshot);
             return { state: state2, log: result.log };
           }
           return result;
@@ -7010,11 +6938,11 @@ select:focus { border-color: var(--amber-line); }
       function unknownEvent(state2, type) {
         return { state: state2, log: [{ ok: false, event: type, reason: "unknown_event", detail: `Unknown event id: ${type}` }] };
       }
-      function snapshotRng(rng2) {
-        return rng2 && typeof rng2.snapshot === "function" && typeof rng2.restore === "function" ? { supported: true, value: rng2.snapshot() } : { supported: false };
+      function snapshotRng(rng) {
+        return rng && typeof rng.snapshot === "function" && typeof rng.restore === "function" ? { supported: true, value: rng.snapshot() } : { supported: false };
       }
-      function restoreRng(rng2, snapshot) {
-        if (snapshot && snapshot.supported) rng2.restore(snapshot.value);
+      function restoreRng(rng, snapshot) {
+        if (snapshot && snapshot.supported) rng.restore(snapshot.value);
       }
       function validResult(result) {
         return !!result && typeof result === "object" && result.state != null && typeof result.state === "object" && Array.isArray(result.log) && result.log.length > 0 && result.log.every((entry) => entry && typeof entry === "object" && typeof entry.ok === "boolean");
@@ -7055,7 +6983,7 @@ select:focus { border-color: var(--amber-line); }
         if (typeof applyLegacyEvent !== "function") throw new TypeError("legacy_handler_required");
         const events = {};
         for (const id of LEGACY_EVENT_IDS) {
-          events[id] = ({ schema: schema2, state: state2, event, rng: rng2 }) => applyLegacyEvent(schema2, state2, event, rng2);
+          events[id] = ({ schema: schema2, state: state2, event, rng }) => applyLegacyEvent(schema2, state2, event, rng);
         }
         return {
           id: "legacy.monolith",
@@ -7120,8 +7048,8 @@ select:focus { border-color: var(--amber-line); }
           events: {
             scale_delta: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => scaleDelta(schema2, state2, params, ok, fail)),
             set_scale_mult: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => setScaleMult(schema2, state2, params, ok, fail)),
-            rep_event: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => repEvent(schema2, state2, params, rng2, ok, fail)),
-            exp_gain: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => expGain(schema2, state2, params, rng2, ok, fail))
+            rep_event: scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => repEvent(schema2, state2, params, rng, ok, fail)),
+            exp_gain: scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => expGain(schema2, state2, params, rng, ok, fail))
           },
           selectors: {
             "stats/tier": tierOf
@@ -7173,7 +7101,7 @@ select:focus { border-color: var(--amber-line); }
         state2.scaleMults[scale] = mult;
         return ok({ scale, before, mult });
       }
-      function repEvent(schema2, state2, params, rng2, ok, fail) {
+      function repEvent(schema2, state2, params, rng, ok, fail) {
         const ladder = ladderById(schema2, "reputation");
         const axis = params.axis;
         const category = params.category;
@@ -7181,7 +7109,7 @@ select:focus { border-color: var(--amber-line); }
         const table = ladder.categories && ladder.categories[axis];
         const range = table && table[category];
         if (!range) return fail("unknown_reputation_category", `${axis}:${category}`);
-        const delta = Array.isArray(range) ? rng2.int(range[0], range[1]) : Number(range);
+        const delta = Array.isArray(range) ? rng.int(range[0], range[1]) : Number(range);
         const current = state2.reputation[axis] || { rank: "E", exp: 0 };
         const before = { rank: current.rank, exp: current.exp };
         let rank = current.rank;
@@ -7216,12 +7144,12 @@ select:focus { border-color: var(--amber-line); }
         state2.reputation[axis] = { rank, exp };
         return ok({ axis, category, delta, before, after: state2.reputation[axis], rankChanged: changed, reason: params.reason || "" });
       }
-      function expGain(schema2, state2, params, rng2, ok, fail) {
+      function expGain(schema2, state2, params, rng, ok, fail) {
         const ladder = ladderById(schema2, "player_level");
         if (!ladder) return fail("missing_player_level_ladder");
         const source = ladder.sources && ladder.sources[params.category];
         if (!source) return fail("unknown_exp_category", params.category);
-        const amount = Array.isArray(source) ? rng2.int(source[0], source[1]) : Number(source.value == null ? source : source.value);
+        const amount = Array.isArray(source) ? rng.int(source[0], source[1]) : Number(source.value == null ? source : source.value);
         const before = { level: state2.player.level, exp: state2.player.exp };
         state2.player.exp = Number(state2.player.exp || 0) + amount;
         const levelUps = [];
@@ -7258,7 +7186,7 @@ select:focus { border-color: var(--amber-line); }
             writes: ["gold", "player.pools.*"]
           },
           events: {
-            gain_resource: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => gainResource(schema2, state2, params, rng2, ok, fail)),
+            gain_resource: scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => gainResource(schema2, state2, params, rng, ok, fail)),
             resource_delta: scopedEvent(({ state: state2, params, ok, fail }) => resourceDelta(state2, params, ok, fail)),
             use_item: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => useItem(schema2, state2, params, ok, fail)),
             buy_item: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => buyItem(schema2, state2, params, ok, fail)),
@@ -7290,7 +7218,7 @@ select:focus { border-color: var(--amber-line); }
         state2.resources[itemId] = count2 - 1;
         return ok({ itemId, pool: item.effect.pool, amount: healed.cur - before, before, after: healed.cur, remaining: state2.resources[itemId] });
       }
-      function gainResource(schema2, state2, params, rng2, ok, fail) {
+      function gainResource(schema2, state2, params, rng, ok, fail) {
         const resource = params.resource || params.resourceId;
         if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
         const table = schema2 && schema2.gather || {};
@@ -7298,7 +7226,7 @@ select:focus { border-color: var(--amber-line); }
         const scale = table[requestedScale] ? requestedScale : "small";
         const range = table[scale];
         if (!isNumberRange(range)) return fail("unknown_gather_scale", scale);
-        const qty = rng2.int(range[0], range[1]);
+        const qty = rng.int(range[0], range[1]);
         const before = Number(state2.resources[resource] || 0);
         state2.resources[resource] = before + qty;
         return ok({ resource, qty, scale, before, after: state2.resources[resource], reason: params.reason || "" });
@@ -7388,10 +7316,10 @@ select:focus { border-color: var(--amber-line); }
             writes: ["player.*", "gold", "pendingQuest.cleared"]
           },
           events: {
-            start_encounter: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => startEncounter(schema2, state2, params, rng2, ok, fail)),
-            combat_action: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => combatAction(schema2, state2, params, rng2, ok, fail)),
-            enemy_action: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => enemyAction(schema2, state2, params, rng2, ok, fail)),
-            enemy_turn: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => enemyTurn(schema2, state2, params, rng2, ok, fail)),
+            start_encounter: scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => startEncounter(schema2, state2, params, rng, ok, fail)),
+            combat_action: scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => combatAction(schema2, state2, params, rng, ok, fail)),
+            enemy_action: scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => enemyAction(schema2, state2, params, rng, ok, fail)),
+            enemy_turn: scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => enemyTurn(schema2, state2, params, rng, ok, fail)),
             end_encounter: scopedEvent(endEncounterEvent)
           },
           selectors: {
@@ -7401,9 +7329,9 @@ select:focus { border-color: var(--amber-line); }
           migrations: {}
         };
       }
-      function endEncounterEvent({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) {
+      function endEncounterEvent({ schema: schema2, state: state2, params, rng, ok, fail }) {
         const combatQuestId = state2.combat && state2.combat.questId;
-        const result = endEncounter(schema2, state2, params, rng2, ok, fail);
+        const result = endEncounter(schema2, state2, params, rng, ok, fail);
         const logEntry = result.log && result.log[0];
         if (logEntry && logEntry.ok && logEntry.outcome === "victory" && result.state.pendingQuest && result.state.pendingQuest.questId === combatQuestId) {
           result.state.pendingQuest.cleared = true;
@@ -7438,11 +7366,11 @@ select:focus { border-color: var(--amber-line); }
         normalizeInt,
         saleConsumes
       } = require_utils();
-      function applyLegacyEvent(schema2, state2, event, rng2) {
+      function applyLegacyEvent(schema2, state2, event, rng) {
         const type = event && event.id;
         const params = event && event.params || event || {};
         if (type === "day_end") {
-          const result = runDayEnd(schema2, state2, rng2);
+          const result = runDayEnd(schema2, state2, rng);
           if (result.state.pendingQuest && result.state.pendingQuest.day !== result.state.day) delete result.state.pendingQuest;
           if (result.state.questAttempts && result.state.questAttempts.day !== result.state.day) delete result.state.questAttempts;
           for (const scale of schema2 && schema2.scales || []) {
@@ -7464,9 +7392,9 @@ select:focus { border-color: var(--amber-line); }
           case "upgrade":
             return upgrade(schema2, next, params, ok, fail);
           case "reward":
-            return reward(schema2, next, params, rng2, ok, fail);
+            return reward(schema2, next, params, rng, ok, fail);
           case "attempt_quest":
-            return attemptQuest(schema2, next, params, rng2, ok, fail);
+            return attemptQuest(schema2, next, params, rng, ok, fail);
           case "set_outfit":
             return setOutfit(next, params, ok, fail);
           case "checkin":
@@ -7520,7 +7448,7 @@ select:focus { border-color: var(--amber-line); }
         state2.gold = Math.max(0, Number(state2.gold || 0) + amount);
         return ok({ amount, before, after: state2.gold, reason: params.reason || "" });
       }
-      function reward(schema2, state2, params, rng2, ok, fail) {
+      function reward(schema2, state2, params, rng, ok, fail) {
         const questId = params.questId;
         if (questId == null || String(questId).trim() === "") return fail("missing_questId");
         const normalizedQuestId = String(questId);
@@ -7529,13 +7457,13 @@ select:focus { border-color: var(--amber-line); }
         const range = schema2 && schema2.rewards && schema2.rewards.gold && schema2.rewards.gold[tier];
         if (!isRewardRange(range)) return fail("unknown_reward_tier", tier);
         if ("amount" in params || "goldDelta" in params) return fail("reward_amount_not_allowed");
-        const amount = rng2.int(range[0], range[1]);
+        const amount = rng.int(range[0], range[1]);
         const before = state2.gold;
         state2.gold = Number(state2.gold || 0) + amount;
         state2.claimedRewards = (state2.claimedRewards || []).concat([normalizedQuestId]);
         return ok({ questId: normalizedQuestId, tier, goldDelta: amount, before, after: state2.gold, reason: params.reason || "" });
       }
-      function attemptQuest(schema2, state2, params, rng2, ok, fail) {
+      function attemptQuest(schema2, state2, params, rng, ok, fail) {
         if (["amount", "gold", "goldDelta", "roll", "tier"].some((key) => key in params)) return fail("quest_number_not_allowed");
         if (state2.combat && state2.combat.active) return fail("in_combat");
         const questId = params.questId == null ? "" : String(params.questId);
@@ -7551,7 +7479,7 @@ select:focus { border-color: var(--amber-line); }
         } else {
           const encounter = rollQuestEncounter(schema2, state2, quest);
           if (encounter) {
-            const started = startEncounter(schema2, state2, { enemies: encounter.enemies }, rng2, (entry) => ({ state: state2, log: [Object.assign({ ok: true, event: "start_encounter" }, entry)] }), fail);
+            const started = startEncounter(schema2, state2, { enemies: encounter.enemies }, rng, (entry) => ({ state: state2, log: [Object.assign({ ok: true, event: "start_encounter" }, entry)] }), fail);
             if (!started.log[0].ok) return started;
             if (state2.combat) state2.combat.questId = questId;
             state2.pendingQuest = { questId, day: state2.day };
@@ -7564,10 +7492,10 @@ select:focus { border-color: var(--amber-line); }
         }
         if (!(state2.questAttempts && state2.questAttempts.day === state2.day && Array.isArray(state2.questAttempts.ids))) state2.questAttempts = { day: state2.day, ids: [] };
         if (!state2.questAttempts.ids.includes(questId)) state2.questAttempts.ids.push(questId);
-        const result = resolveCheck(rng2, check);
+        const result = resolveCheck(rng, check);
         const base = { questId, name: quest.name || questId, roll: result.rand, tier: result.tier, success: result.success };
         if (!result.success) return ok(base);
-        const goldDelta2 = rng2.int(range[0], range[1]);
+        const goldDelta2 = rng.int(range[0], range[1]);
         state2.gold = Number(state2.gold || 0) + goldDelta2;
         if (!quest.repeatable) state2.claimedRewards = (state2.claimedRewards || []).concat([questId]);
         return ok(Object.assign(base, { goldDelta: goldDelta2, claimed: !quest.repeatable }));
@@ -7686,8 +7614,8 @@ select:focus { border-color: var(--amber-line); }
       defaultModuleRegistry.register(createInventoryModule());
       defaultModuleRegistry.register(createCombatModule());
       defaultModuleRegistry.register(createLegacyModule(applyLegacyEvent));
-      function applyEvent2(schema2, state2, event, rng2) {
-        return defaultModuleRegistry.dispatch(schema2, state2, event, rng2);
+      function applyEvent(schema2, state2, event, rng) {
+        return defaultModuleRegistry.dispatch(schema2, state2, event, rng);
       }
       function getDefaultModuleRegistry() {
         return defaultModuleRegistry;
@@ -7695,7 +7623,262 @@ select:focus { border-color: var(--amber-line); }
       function getRegisteredEventIds2() {
         return defaultModuleRegistry.eventIds();
       }
-      module.exports = { applyEvent: applyEvent2, getDefaultModuleRegistry, getRegisteredEventIds: getRegisteredEventIds2 };
+      module.exports = { applyEvent, getDefaultModuleRegistry, getRegisteredEventIds: getRegisteredEventIds2 };
+    }
+  });
+
+  // ../engine/core/createState.js
+  var require_createState = __commonJS({
+    "../engine/core/createState.js"(exports, module) {
+      "use strict";
+      var { clone, entityList, ladderById, scaleById } = require_utils();
+      var { normalizePool } = require_pools();
+      function createState(schema2, seed) {
+        const initial = clone(schema2.initialState || {});
+        const state2 = {
+          day: Number(initial.day || 1),
+          gold: Number(initial.gold || 0),
+          resources: clone(initial.resources || {}),
+          items: clone(initial.items || {}),
+          facilities: clone(initial.facilities || {}),
+          staff: Array.isArray(initial.staff) ? clone(initial.staff) : [],
+          rooms: clone(initial.rooms || {}),
+          player: normalizePlayer(schema2, initial.player),
+          reputation: normalizeReputation(schema2, initial.reputation || {}),
+          npcs: normalizeNpcs(schema2, initial.npcs || {}),
+          pendingCheckouts: [],
+          unpaidWages: Number(initial.unpaidWages || 0),
+          claimedRewards: Array.isArray(initial.claimedRewards) ? clone(initial.claimedRewards) : [],
+          combat: null
+        };
+        if (seed != null) state2.seed = seed;
+        return state2;
+      }
+      function normalizePlayer(schema2, initialPlayer) {
+        const player = clone(initialPlayer || { level: 1, exp: 0 });
+        const defs = Array.isArray(schema2.pools) ? schema2.pools : null;
+        const src = player.pools && typeof player.pools === "object" ? player.pools : null;
+        if (defs || src) {
+          const pools = {};
+          const ids = defs ? defs.map((d) => d.id) : Object.keys(src || {});
+          for (const id of ids) {
+            const raw = (src && src[id]) != null ? src[id] : defs && (defs.find((d) => d.id === id) || {}).max;
+            pools[id] = normalizePool(raw);
+          }
+          player.pools = pools;
+        }
+        return player;
+      }
+      function normalizeReputation(schema2, initial) {
+        const ladder = ladderById(schema2, "reputation");
+        const out = {};
+        for (const axis of ladder && ladder.axes || []) {
+          const value = initial[axis];
+          if (value && typeof value === "object") {
+            out[axis] = { rank: value.rank || "E", exp: Number(value.exp || 0) };
+          } else {
+            out[axis] = { rank: "E", exp: Number(value || 0) };
+          }
+        }
+        return out;
+      }
+      function normalizeNpcs(schema2, initial) {
+        const affinity = scaleById(schema2, "affinity");
+        const defaultAffinity = affinity ? Number(affinity.default || 0) : 0;
+        const out = {};
+        for (const npc of entityList(schema2, "npc")) {
+          const current = initial[npc.id] || {};
+          out[npc.id] = {
+            affinity: Number(current.affinity == null ? defaultAffinity : current.affinity),
+            affinityDeltaToday: Number(current.affinityDeltaToday || 0)
+          };
+        }
+        return out;
+      }
+      module.exports = { createState };
+    }
+  });
+
+  // ../engine/core/sessionJournal.js
+  var require_sessionJournal = __commonJS({
+    "../engine/core/sessionJournal.js"(exports, module) {
+      "use strict";
+      var { createState } = require_createState();
+      var { applyEvent } = require_applyEvent();
+      var { createRng } = require_rng();
+      var { clone } = require_utils();
+      var JOURNAL_CONTRACT = "session-journal/0.1";
+      function fnv1a(text) {
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i += 1) {
+          hash ^= text.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, "0");
+      }
+      function stableStringify(value) {
+        if (value === null || typeof value !== "object") return JSON.stringify(value);
+        if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+        const keys = Object.keys(value).sort();
+        return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+      }
+      function stateHash2(state2) {
+        return fnv1a(stableStringify(state2));
+      }
+      function createSessionJournal2(schema2, seed, options = {}) {
+        const snapshotInterval = Math.max(1, Math.trunc(Number(options.snapshotInterval) || 50));
+        const normalizedSeed = Number.isFinite(Number(seed)) ? Number(seed) : 42;
+        let state2 = createState(schema2, normalizedSeed);
+        const rng = createRng(normalizedSeed);
+        const events = [];
+        const snapshots = [{ index: 0, state: clone(state2), rng: rng.snapshot() }];
+        function append(event) {
+          const result = applyEvent(schema2, state2, event, rng);
+          const ok = result.log.some((entry) => entry && entry.ok === true);
+          if (ok) state2 = result.state;
+          events.push({ index: events.length + 1, event: clone(event), ok });
+          if (events.length % snapshotInterval === 0) {
+            snapshots.push({ index: events.length, state: clone(state2), rng: rng.snapshot() });
+          }
+          return { ok, entries: result.log };
+        }
+        function assertIndex(index) {
+          if (!Number.isInteger(index) || index < 0 || index > events.length) {
+            throw new RangeError(`journal_index_out_of_range:${index}`);
+          }
+        }
+        function stateAt(index) {
+          assertIndex(index);
+          let base = snapshots[0];
+          for (const snapshot of snapshots) {
+            if (snapshot.index <= index) base = snapshot;
+            else break;
+          }
+          let workState = clone(base.state);
+          const workRng = createRng(normalizedSeed);
+          workRng.restore(base.rng);
+          for (let i = base.index; i < index; i += 1) {
+            const result = applyEvent(schema2, workState, events[i].event, workRng);
+            if (result.log.some((entry) => entry && entry.ok === true)) workState = result.state;
+          }
+          return { index, state: workState, rng: workRng.snapshot() };
+        }
+        function truncateTo(index) {
+          assertIndex(index);
+          const restored = stateAt(index);
+          events.length = index;
+          while (snapshots.length > 1 && snapshots[snapshots.length - 1].index > index) snapshots.pop();
+          state2 = restored.state;
+          rng.restore(restored.rng);
+          return head();
+        }
+        function head() {
+          return { index: events.length, stateHash: stateHash2(state2), rng: rng.snapshot() };
+        }
+        function toJSON() {
+          return {
+            contract: JOURNAL_CONTRACT,
+            schemaHash: fnv1a(stableStringify(schema2)),
+            seed: normalizedSeed,
+            snapshotInterval,
+            events: events.map((entry) => ({ index: entry.index, event: clone(entry.event), ok: entry.ok })),
+            head: head()
+          };
+        }
+        return {
+          get length() {
+            return events.length;
+          },
+          get state() {
+            return state2;
+          },
+          events: () => events.map((entry) => ({ index: entry.index, event: clone(entry.event), ok: entry.ok })),
+          snapshots: () => snapshots.map((snapshot) => ({ index: snapshot.index })),
+          append,
+          stateAt,
+          truncateTo,
+          head,
+          toJSON
+        };
+      }
+      function restoreSessionJournal2(schema2, data) {
+        if (!data || data.contract !== JOURNAL_CONTRACT) throw new TypeError("journal_contract_mismatch");
+        if (data.schemaHash !== fnv1a(stableStringify(schema2))) throw new TypeError("journal_schema_mismatch");
+        const journal2 = createSessionJournal2(schema2, data.seed, { snapshotInterval: data.snapshotInterval });
+        const records = Array.isArray(data.events) ? data.events : [];
+        for (const record of records) {
+          const { ok } = journal2.append(record.event);
+          if (typeof record.ok === "boolean" && record.ok !== ok) throw new TypeError(`journal_corrupt:event_${record.index}_verdict`);
+        }
+        const restoredHead = journal2.head();
+        const savedHead = data.head || {};
+        if (savedHead.stateHash !== restoredHead.stateHash) throw new TypeError("journal_corrupt:state_hash");
+        if (Number.isFinite(Number(savedHead.rng)) && Number(savedHead.rng) !== restoredHead.rng) throw new TypeError("journal_corrupt:rng");
+        return journal2;
+      }
+      module.exports = { JOURNAL_CONTRACT, createSessionJournal: createSessionJournal2, restoreSessionJournal: restoreSessionJournal2, stateHash: stateHash2, stableStringify };
+    }
+  });
+
+  // core/session/playSession.js
+  var require_playSession = __commonJS({
+    "core/session/playSession.js"(exports, module) {
+      "use strict";
+      var PLAY_SESSION_CONTRACT = "play-session/0.1";
+      function buildPlaySessionExport2({ journal: journal2, messages: messages2, promptRuns: promptRuns2, savedAt, title }) {
+        if (!journal2 || journal2.contract !== "session-journal/0.1") throw new TypeError("play_session_journal_required");
+        return {
+          contract: PLAY_SESSION_CONTRACT,
+          title: typeof title === "string" ? title : "",
+          savedAt: Number.isFinite(Number(savedAt)) ? Number(savedAt) : 0,
+          journal: journal2,
+          messages: sanitizeMessages(messages2),
+          promptRuns: sanitizePromptRuns(promptRuns2)
+        };
+      }
+      function sanitizeMessages(messages2) {
+        if (!Array.isArray(messages2)) return [];
+        return messages2.filter((message) => message && typeof message === "object" && ["user", "assistant", "ledger"].includes(message.role)).map((message) => JSON.parse(JSON.stringify({
+          role: message.role,
+          content: String(message.content == null ? "" : message.content),
+          ...Array.isArray(message.chips) ? { chips: message.chips } : {},
+          ...Array.isArray(message.npcIds) ? { npcIds: message.npcIds } : {}
+        })));
+      }
+      function sanitizePromptRuns(promptRuns2) {
+        if (!Array.isArray(promptRuns2)) return [];
+        return promptRuns2.filter((run) => run && typeof run === "object").map((run, index) => JSON.parse(JSON.stringify({
+          index: index + 1,
+          promptHash: String(run.promptHash || ""),
+          model: String(run.model || ""),
+          responseText: String(run.responseText == null ? "" : run.responseText),
+          proposedEvents: Array.isArray(run.proposedEvents) ? run.proposedEvents.map((id) => String(id)) : [],
+          appliedOk: Number.isFinite(Number(run.appliedOk)) ? Number(run.appliedOk) : 0
+        })));
+      }
+      function parsePlaySessionImport2(text) {
+        let parsed;
+        try {
+          parsed = JSON.parse(String(text));
+        } catch (_) {
+          throw new TypeError("play_session_not_json");
+        }
+        if (!parsed || typeof parsed !== "object" || parsed.contract !== PLAY_SESSION_CONTRACT) {
+          throw new TypeError("play_session_contract_mismatch");
+        }
+        if (!parsed.journal || parsed.journal.contract !== "session-journal/0.1") {
+          throw new TypeError("play_session_journal_missing");
+        }
+        return {
+          contract: PLAY_SESSION_CONTRACT,
+          title: typeof parsed.title === "string" ? parsed.title : "",
+          savedAt: Number.isFinite(Number(parsed.savedAt)) ? Number(parsed.savedAt) : 0,
+          journal: parsed.journal,
+          messages: sanitizeMessages(parsed.messages),
+          promptRuns: sanitizePromptRuns(parsed.promptRuns)
+        };
+      }
+      module.exports = { PLAY_SESSION_CONTRACT, buildPlaySessionExport: buildPlaySessionExport2, parsePlaySessionImport: parsePlaySessionImport2 };
     }
   });
 
@@ -11618,15 +11801,16 @@ ${Array.from(extras).join(" ")}` : text;
 
   // src/engineSession.js
   var defaultSchema = require_yongsa_inn_v0();
-  var { createState } = require_createState();
-  var { applyEvent, getRegisteredEventIds } = require_applyEvent();
-  var { createRng } = require_rng();
+  var { getRegisteredEventIds } = require_applyEvent();
+  var { createSessionJournal, restoreSessionJournal, stateHash } = require_sessionJournal();
+  var { buildPlaySessionExport } = require_playSession();
   var activeSchema = defaultSchema;
   var seedValue = 42;
-  var engineState = createState(activeSchema, seedValue);
-  var rng = createRng(seedValue);
+  var journal = createSessionJournal(activeSchema, seedValue);
+  var engineState = journal.state;
   var logs = [];
   var eventCount = 0;
+  var promptRuns = [];
   function getEventTypes() {
     return getRegisteredEventIds();
   }
@@ -11667,20 +11851,41 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function resetSession(seed) {
     seedValue = Number.isFinite(Number(seed)) ? Number(seed) : 42;
-    engineState = createState(activeSchema, seedValue);
-    rng = createRng(seedValue);
+    journal = createSessionJournal(activeSchema, seedValue);
+    engineState = journal.state;
     logs = [];
     eventCount = 0;
+    promptRuns = [];
     sessionEpoch += 1;
     return engineState;
   }
   function runEvent(event) {
-    const result = applyEvent(activeSchema, engineState, event, rng);
-    if (result.log.some((entry) => entry.ok)) engineState = result.state;
+    const { entries } = journal.append(event);
+    engineState = journal.state;
     eventCount += 1;
-    const item = { event, entries: result.log, index: logs.length + 1 };
+    const item = { event, entries, index: logs.length + 1 };
     logs.unshift(item);
     return item;
+  }
+  function recordPromptRun(run) {
+    promptRuns.push(run);
+  }
+  function hashPromptPayload(value) {
+    return stateHash(value);
+  }
+  function exportPlaySession({ messages: messages2, savedAt, title } = {}) {
+    return buildPlaySessionExport({ journal: journal.toJSON(), messages: messages2, promptRuns, savedAt, title });
+  }
+  function importPlaySession(payload) {
+    const restored = restoreSessionJournal(activeSchema, payload.journal);
+    journal = restored;
+    seedValue = Number(payload.journal.seed);
+    engineState = journal.state;
+    logs = [];
+    eventCount = journal.length;
+    promptRuns = Array.isArray(payload.promptRuns) ? payload.promptRuns.slice() : [];
+    sessionEpoch += 1;
+    return engineState;
   }
   function summarizeEvent(type, entry, formatMoney3) {
     if (entry.ok && type === "traffic_wave" && entry.skipped) return `${entry.label} \uC601\uC5C5 \uAC74\uB108\uB700`;
@@ -12239,6 +12444,7 @@ ${Array.from(extras).join(" ")}` : text;
   var { PROVIDERS, callProvider } = require_providers();
   var { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require_byokSettings();
   var { el: el2, button: button2, field: field2, row, notice, hiddenBase, namedInput: namedInput2, namedTextarea, namedSelect: namedSelect2, appendOption: appendOption2, copyFallback: fallbackCopy } = require_dom();
+  var { parsePlaySessionImport } = require_playSession();
   var messages = [];
   var busy = false;
   var settings = loadSettings();
@@ -12298,7 +12504,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderPlayView(container, ctx) {
     registerCustomOrigin(settings);
-    const cardKey2 = `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : "no-card"}#${getSessionEpoch()}`;
+    const cardKey2 = cardKeyOf(ctx);
     if (sessionCardKey !== cardKey2) {
       sessionCardKey = cardKey2;
       messages = [];
@@ -12406,7 +12612,7 @@ ${Array.from(extras).join(" ")}` : text;
     handle.addEventListener("click", closeSheet);
     close.addEventListener("click", closeSheet);
     head.append(handle, close);
-    sheet.append(head, renderLedgerSection(render2), renderSettings(render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
+    sheet.append(head, renderLedgerSection(render2), renderSettings(ctx, render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
     overlay.append(sheet);
     detachSheetKeyHandler();
     if (mobileSheetOpen) {
@@ -12762,6 +12968,18 @@ ${Array.from(extras).join(" ")}` : text;
     const state2 = getEngineState();
     return state2 && state2.npcs && state2.npcs[npcId] ? state2.npcs[npcId].outfit : void 0;
   }
+  function cardKeyOf(ctx) {
+    return `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : "no-card"}#${getSessionEpoch()}`;
+  }
+  function promptRunOf(prompt, raw, parsed, appliedOk = 0) {
+    return {
+      promptHash: hashPromptPayload({ system: prompt.system, messages: prompt.messages }),
+      model: settings.model || settings.provider,
+      responseText: String(raw == null ? "" : raw),
+      proposedEvents: (parsed && parsed.events || []).map((event) => event.id),
+      appliedOk
+    };
+  }
   function applyEmotion(value) {
     if (!value || !character || !character.group || !character.group.emotions.has(value)) return;
     const pick = selectAsset(character.group, value, outfitOf(character.group.charId));
@@ -12774,7 +12992,7 @@ ${Array.from(extras).join(" ")}` : text;
     const side = el2("aside", "play-side-panel");
     const hud = renderCombatHud();
     if (hud) side.append(hud);
-    side.append(renderLedgerSection(render2), renderSettings(render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
+    side.append(renderLedgerSection(render2), renderSettings(ctx, render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
     return side;
   }
   function renderCombatHud() {
@@ -13144,7 +13362,9 @@ ${Array.from(extras).join(" ")}` : text;
     try {
       const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
       lastPrompt = prompt;
-      const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+      const raw = await callProvider(providerConfig(settings), prompt);
+      const parsed = parseAssistantResponse(raw);
+      recordPromptRun(promptRunOf(prompt, raw, parsed));
       applyEmotion(parsed.emotion);
       pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
@@ -13184,7 +13404,9 @@ ${Array.from(extras).join(" ")}` : text;
     try {
       const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: "lodging_batch" });
       lastPrompt = prompt;
-      const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+      const raw = await callProvider(providerConfig(settings), prompt);
+      const parsed = parseAssistantResponse(raw);
+      recordPromptRun(promptRunOf(prompt, raw, parsed));
       applyEmotion(parsed.emotion);
       pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
@@ -13214,7 +13436,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     }
     return "";
   }
-  function renderSettings(render2) {
+  function renderSettings(ctx, render2) {
     const details = el2("details", "play-settings");
     const hasKey = settings.provider === "mock" || !!readKey(settings.provider);
     details.open = !hasKey;
@@ -13303,6 +13525,46 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       mults.append(field2(label.textContent, input2));
     }
     if (mults.childNodes.length <= 1) mults.replaceChildren();
+    const exportSession = button2("\uC138\uC158 \uB0B4\uBCF4\uB0B4\uAE30", "secondary-btn");
+    exportSession.disabled = busy;
+    exportSession.addEventListener("click", () => {
+      const payload = exportPlaySession({ messages, savedAt: Date.now(), title: sceneLine() });
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `simbot-session-${payload.savedAt}.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1e3);
+    });
+    const importFile = el2("input");
+    importFile.type = "file";
+    importFile.accept = ".json,application/json";
+    importFile.hidden = true;
+    const importSession = button2("\uC138\uC158 \uAC00\uC838\uC624\uAE30", "secondary-btn");
+    importSession.disabled = busy;
+    importSession.addEventListener("click", () => importFile.click());
+    importFile.addEventListener("change", async () => {
+      const file = importFile.files && importFile.files[0];
+      importFile.value = "";
+      if (!file || busy) return;
+      try {
+        const payload = parsePlaySessionImport(await file.text());
+        importPlaySession(payload);
+        messages = payload.messages;
+        stage = [];
+        lastPrompt = null;
+        fastCombatLog = [];
+        ledgerDeltas = [];
+        purchaseDraft = {};
+        lodgingSelection = /* @__PURE__ */ new Set();
+        lodgingSelectionDay = null;
+        sessionCardKey = cardKeyOf(ctx);
+        messages.push({ role: "ledger", chips: [{ ok: true, kind: "system", text: `\uC138\uC158 \uC774\uC5B4\uD558\uAE30 \u2014 \uB300\uD654 ${payload.messages.length}\uAC1C \xB7 \uC5D4\uC9C4 \uC0AC\uAC74 ${payload.journal.events.length}\uAC1C \uBCF5\uC6D0` }] });
+      } catch (err) {
+        messages.push({ role: "ledger", chips: [{ ok: false, kind: "system", text: `\uC138\uC158 \uAC00\uC838\uC624\uAE30 \uAC70\uBD80 \u2014 ${importFailureKo(err)}` }] });
+      }
+      render2();
+    });
     details.append(
       field2("\uC81C\uACF5\uC790", provider),
       settings.provider === "custom" ? field2("Base URL", base) : hiddenBase(base),
@@ -13313,10 +13575,20 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       mults,
       field2(settings.provider === "vertex" ? "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON" : "API \uD0A4", key),
       row(save, del),
+      row(exportSession, importSession),
+      importFile,
       settings.provider === "vertex" ? notice("\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON\uC740 GCP \uC804\uCCB4 \uAD8C\uD55C\uC744 \uAC00\uC9C8 \uC218 \uC788\uB294 \uAC15\uB825\uD55C \uC790\uACA9\uC99D\uBA85\uC785\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C \uC800\uC7A5\uD558\uC9C0 \uB9D0\uACE0 \uC0AC\uC6A9 \uD6C4 \uC0AD\uC81C\uD558\uC138\uC694.") : notice("\uD0A4\uB294 \uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 localStorage\uC5D0\uB9CC \uC800\uC7A5\uB429\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C\uB294 \uC0AC\uC6A9 \uD6C4 \uBC18\uB4DC\uC2DC \uC0AD\uC81C\uD558\uC138\uC694."),
       notice("\uD50C\uB808\uC774 \uC2DC \uB300\uD654 \uB0B4\uC6A9\xB7\uBC1C\uB3D9\uD55C \uB85C\uC5B4\uBD81\xB7\uC0C1\uD0DC \uC694\uC57D\uC774 \uC120\uD0DD\uD55C LLM \uC81C\uACF5\uC790\uC5D0\uAC8C \uC804\uC1A1\uB429\uB2C8\uB2E4.")
     );
     return details;
+  }
+  function importFailureKo(err) {
+    const message = err && err.message ? String(err.message) : "";
+    if (message.includes("journal_schema_mismatch")) return "\uB2E4\uB978 \uCE74\uB4DC/\uC2A4\uD0A4\uB9C8\uC758 \uC138\uC158\uC785\uB2C8\uB2E4";
+    if (message.includes("journal_corrupt")) return "\uD30C\uC77C\uC774 \uC190\uC0C1\uB418\uC5C8\uAC70\uB098 \uBCC0\uC870\uB418\uC5C8\uC2B5\uB2C8\uB2E4";
+    if (message.includes("play_session_not_json")) return "JSON \uD30C\uC77C\uC774 \uC544\uB2D9\uB2C8\uB2E4";
+    if (message.includes("contract")) return "\uC2DC\uBBAC\uBD07 \uC138\uC158 \uD30C\uC77C\uC774 \uC544\uB2D9\uB2C8\uB2E4";
+    return "\uC54C \uC218 \uC5C6\uB294 \uD615\uC2DD\uC785\uB2C8\uB2E4";
   }
   function renderStateBox(ctx, render2) {
     const section = titled("\uC0C1\uD0DC \uB300\uC2DC\uBCF4\uB4DC");
@@ -13524,6 +13796,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
+      recordPromptRun(promptRunOf(prompt, raw, parsed));
       applyEmotion(parsed.emotion);
       pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
@@ -13568,7 +13841,9 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const instruction = "\uC774\uBC88 \uC7A5\uBA74\uC5D0 \uC5B4\uC6B8\uB9AC\uB294 \uC801 \uBA85\uBD80\uB85C start_encounter \uC0AC\uAC74 \uD558\uB098\uB9CC JSON\uC73C\uB85C \uB0B4\uB77C. \uC11C\uC0AC\uB294 1~2\uBB38\uC7A5\uB9CC \uD5C8\uC6A9\uD55C\uB2E4.";
       const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
       lastPrompt = prompt;
-      const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+      const raw = await callProvider(providerConfig(settings), prompt);
+      const parsed = parseAssistantResponse(raw);
+      recordPromptRun(promptRunOf(prompt, raw, parsed));
       applyEmotion(parsed.emotion);
       const speakerIds = applySpeakers(parsed);
       const event = parsed.events.find((item) => item.id === "start_encounter");
@@ -13609,13 +13884,16 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
       if (blocked.length) chips.push({ ok: false, kind: "system", text: `\uBC84\uD2BC \uC804\uC6A9 \uC0AC\uAC74 ${blocked.length}\uAC1C \uBB34\uC2DC\uB428` });
+      let appliedOk = 0;
       for (const event of parsed.events) {
         if (buttonOnlyEvents.has(event.id)) continue;
         const result = runEvent(event);
         const first = result.entries[0] || { ok: false, reason: "empty_log" };
+        if (first.ok) appliedOk += 1;
         const item = summarizeEventItem(event.id, first, formatMoney2);
         chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
       }
+      recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
       messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
     } catch (err) {
       messages.push(assistantMessage(safeError(err), [{ ok: false, kind: "system", text: "API \uC624\uB958" }]));
@@ -13644,14 +13922,17 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
       if (blocked.length) chips.push({ ok: false, kind: "system", text: `\uBC84\uD2BC \uC804\uC6A9 \uC0AC\uAC74 ${blocked.length}\uAC1C \uBB34\uC2DC\uB428` });
+      let appliedOk = 0;
       for (const event of parsed.events) {
         if (buttonOnlyEvents.has(event.id)) continue;
         const result = runEvent(event);
         const first = result.entries[0] || { ok: false, reason: "empty_log" };
+        if (first.ok) appliedOk += 1;
         const item = summarizeEventItem(event.id, first, formatMoney2);
         chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
         if (first.ok && (event.id === "start_encounter" || event.id === "end_encounter")) fastCombatLog = [];
       }
+      recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
       const combatNow = getEngineState().combat;
       if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
       messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
