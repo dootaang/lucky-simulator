@@ -183,6 +183,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     itemList ? '[소모품 목록]\n' + itemList + '\n' : '',
     questList ? '[의뢰 목록]\n' + questList + '\n' : '',
     Array.isArray(emotions) && emotions.length ? `응답 JSON에는 events 배열을 반드시 그대로 유지한 채, 선택 필드 "emotion"(주인공의 현재 표정)을 함께 넣어도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
+    '등장 인물이 있으면 "speakers":[{"npcId","emotion","focus"}]도 넣어라(최대 3, focus는 주 화자 1인). npcId는 [직원 관계 상태]·[NPC]에 나온 id 그대로. emotion은 스프라이트 감정명(주인공 감정 목록과 같은 어휘, 확신 없으면 생략).',
     '[세계 정보]',
     loreText || (lore ? '없음' : '카드를 드롭하면 세계관 로어북이 자동 주입됩니다'),
     '',
@@ -241,6 +242,7 @@ function buildNarrationPrompt({ schema, state, results, flavorText, recentMessag
     narrationNpcText ? `[직원 관계 상태 — 수치나 단계가 변했을 때만 서사에 언급하고, 변화가 없으면 관계 묘사를 생략하라. 이전 서사에서 쓴 관계 묘사 문구를 그대로 반복하지 마라]\n${narrationNpcText}` : '',
     flavorText ? `플레이어의 연출 의도: ${flavorText}` : '',
     Array.isArray(emotions) && emotions.length ? `서사 뒤에 \`\`\`json {"emotion":"값"} \`\`\` 블록을 덧붙여도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
+    '등장 인물이 있으면 "speakers":[{"npcId","emotion","focus"}]도 넣어라(최대 3, focus는 주 화자 1인). npcId는 [직원 관계 상태]·[NPC]에 나온 id 그대로. emotion은 스프라이트 감정명(주인공 감정 목록과 같은 어휘, 확신 없으면 생략).',
   ].filter(Boolean).join('\n');
   const messages = conversationMessages([...(recentMessages || []).slice(-4), { role: 'user', content: context }]);
   const injectedState = combatActive ? combatLine : managementLines;
@@ -284,6 +286,7 @@ function parseAssistantResponse(text) {
   const blocks = Array.from(source.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
   let events = [];
   let emotion;
+  let speakers;
   let jsonBlock = null;
   let removeBlock = null;
   if (blocks.length) {
@@ -293,6 +296,7 @@ function parseAssistantResponse(text) {
       const parsed = JSON.parse(jsonBlock);
       events = Array.isArray(parsed.events) ? parsed.events : [];
       if (typeof parsed.emotion === 'string') emotion = parsed.emotion;
+      if (Array.isArray(parsed.speakers)) speakers = parsed.speakers;
     } catch (_) {
       events = [];
     }
@@ -303,14 +307,25 @@ function parseAssistantResponse(text) {
       removeBlock = terminal.raw;
       events = Array.isArray(terminal.parsed.events) ? terminal.parsed.events : [];
       if (typeof terminal.parsed.emotion === 'string') emotion = terminal.parsed.emotion;
+      if (Array.isArray(terminal.parsed.speakers)) speakers = terminal.parsed.speakers;
     }
   }
   const validEvents = events.filter((event) => event && typeof event.id === 'string' && event.id.trim());
   const dropped = events.length - validEvents.length;
+  const validSpeakers = [];
+  const seenNpcIds = new Set();
+  for (const item of speakers || []) {
+    if (!item || typeof item !== 'object' || typeof item.npcId !== 'string' || !item.npcId.trim()) continue;
+    const npcId = item.npcId.trim();
+    if (seenNpcIds.has(npcId)) continue;
+    seenNpcIds.add(npcId);
+    validSpeakers.push({ npcId, ...(typeof item.emotion === 'string' ? { emotion: item.emotion } : {}), focus: item.focus === true });
+    if (validSpeakers.length === 3) break;
+  }
   const rawNarrative = jsonBlock
     ? source.slice(0, source.lastIndexOf(removeBlock)).trim()
     : source.trim();
-  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...(emotion !== undefined ? { emotion } : {}) };
+  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...(emotion !== undefined ? { emotion } : {}), ...(validSpeakers.length ? { speakers: validSpeakers } : {}) };
 }
 
 function terminalJson(source) {
@@ -320,7 +335,7 @@ function terminalJson(source) {
     const raw = source.slice(starts[i]).trim();
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && (Array.isArray(parsed.events) || typeof parsed.emotion === 'string')) return { raw, json: raw, parsed };
+      if (parsed && typeof parsed === 'object' && (Array.isArray(parsed.events) || typeof parsed.emotion === 'string' || Array.isArray(parsed.speakers))) return { raw, json: raw, parsed };
     } catch (_) {}
   }
   return null;

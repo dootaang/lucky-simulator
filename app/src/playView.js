@@ -20,6 +20,7 @@ let activeRender = null;
 let sessionCardKey = null;
 let character = null;
 let npcGroups = [];
+let stage = [];
 let mgmtConsoleOpen = false;
 let lodgingSelection = new Set();
 let lodgingSelectionDay = null;
@@ -67,6 +68,7 @@ export function renderPlayView(container, ctx) {
     lodgingSelectionDay = null;
     ledgerDeltas = [];
     purchaseDraft = {};
+    stage = [];
     detachSheetKeyHandler();
     npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
     character = primaryCharacter(ctx.parsed, ctx.lore, npcGroups);
@@ -192,6 +194,7 @@ function renderChat(ctx, render) {
     ledgerDeltas = [];
     lastPrompt = null;
     fastCombatLog = [];
+    stage = [];
     render();
   });
   const actions = el('div', 'engine-header-controls');
@@ -236,7 +239,10 @@ function renderChat(ctx, render) {
     await submitTurn(text, ctx, render);
   });
 
-  panel.append(header, list, renderCombatConsole(input, ctx, render), renderManagementConsole(input, ctx, render), form);
+  const standing = renderStage(ctx);
+  panel.append(header);
+  if (standing) panel.append(standing);
+  panel.append(list, renderCombatConsole(input, ctx, render), renderManagementConsole(input, ctx, render), form);
   return panel;
 }
 
@@ -361,10 +367,52 @@ function characterAvatar(ctx, asset, className, initialName) {
 }
 function npcPresentation(schema, npcId) {
   const npc = entityInstances(schema, 'npc').find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
-  const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
-  const group = npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+  const group = stageGroup(npcId);
   const pick = group && selectAsset(group, preferredEmotion(group), outfitOf(npcId));
   return { name: (npc && (npc.nameKo || npc.name || npc.nameEn)) || String(npcId), asset: pick && pick.asset, group };
+}
+function stageGroup(npcId) {
+  const npc = entityInstances(getSchema() || {}, 'npc').find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
+  const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
+  return npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+}
+function applySpeakers(parsed) {
+  if (!parsed || !Array.isArray(parsed.speakers)) return;
+  stage = parsed.speakers.slice(0, 3).filter((item) => stageGroup(item.npcId)).map((item) => ({
+    npcId: item.npcId,
+    ...(typeof item.emotion === 'string' ? { emotion: item.emotion } : {}),
+    focus: item.focus === true,
+  }));
+  if (stage.length && !stage.some((item) => item.focus)) stage[stage.length - 1].focus = true;
+}
+function renderStage(ctx) {
+  let entries = stage.map((item) => {
+    const presentation = npcPresentation(getSchema() || {}, item.npcId);
+    const emotion = presentation.group.emotions.has(item.emotion) ? item.emotion : preferredEmotion(presentation.group);
+    const pick = selectAsset(presentation.group, emotion, outfitOf(item.npcId));
+    return pick && { name: presentation.name, asset: pick.asset, focus: item.focus };
+  }).filter(Boolean);
+  if (!entries.length) {
+    if (!character || !character.group || !character.asset) return null;
+    entries = [{ name: character.name, asset: character.asset, focus: true }];
+  }
+  if (entries.length === 3) {
+    const focused = entries.find((item) => item.focus);
+    if (focused) { const others = entries.filter((item) => item !== focused); entries = [others[0], focused, others[1]]; }
+  } else if (entries.length === 2) entries.sort((a, b) => Number(b.focus) - Number(a.focus));
+  const section = el('section', 'play-stage');
+  for (const entry of entries) {
+    const url = ctx.objectUrlFor(entry.asset);
+    if (!url) continue;
+    const slot = el('figure', `play-stage-slot${entry.focus ? ' focus' : ''}`);
+    const img = document.createElement('img');
+    img.alt = entry.name;
+    img.addEventListener('error', () => slot.remove());
+    img.src = url;
+    const caption = el('figcaption'); caption.textContent = entry.name;
+    slot.append(img, caption); section.append(slot);
+  }
+  return section.childNodes.length ? section : null;
 }
 function renderNpcAvatars(npcIds, ctx) {
   const row = el('div', 'npc-avatar-row');
@@ -731,6 +779,7 @@ async function runManagementTurn(event, input, ctx, render) {
     pending.npcIds = promptNpcIds(prompt);
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     applyEmotion(parsed.emotion);
+    applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
@@ -771,6 +820,7 @@ async function runManagementBatch(items, input, ctx, render) {
     pending.npcIds = promptNpcIds(prompt);
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     applyEmotion(parsed.emotion);
+    applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
@@ -1093,6 +1143,7 @@ async function runCombatTurn(event, input, ctx, render) {
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
+    applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '전투 결과가 반영되었습니다.';
@@ -1174,6 +1225,7 @@ async function openCannedScene(instruction, ctx, render) {
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
+    applySpeakers(parsed);
     const chips = [];
     if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
     for (const event of parsed.events) {
@@ -1206,6 +1258,7 @@ async function submitTurn(text, ctx, render) {
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
+    applySpeakers(parsed);
     const chips = [];
     if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
     for (const event of parsed.events) {

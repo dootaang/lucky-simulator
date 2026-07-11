@@ -87,6 +87,28 @@ test('parseAssistantResponse remains compatible when emotion is absent', () => {
   assert.equal(parsed.narrative, '그대로 바라본다.');
 });
 
+test('parseAssistantResponse sanitizes fenced speakers, deduplicates npcIds, and caps the list at three', () => {
+  const parsed = parseAssistantResponse('장면\n```json\n{"events":[],"speakers":[{"npcId":"silvia","emotion":"smile","focus":true},{"npcId":"silvia","emotion":"angry","focus":false},{"npcId":"iris","focus":false},{"npcId":"lis","emotion":"normal"},{"npcId":"extra"}]}\n```');
+  assert.deepEqual(parsed.speakers, [
+    { npcId: 'silvia', emotion: 'smile', focus: true },
+    { npcId: 'iris', focus: false },
+    { npcId: 'lis', emotion: 'normal', focus: false },
+  ]);
+});
+
+test('parseAssistantResponse accepts terminal unfenced speakers without events or emotion', () => {
+  const parsed = parseAssistantResponse('둘이 마주 선다.\n{"speakers":[{"npcId":"silvia","focus":true}]}');
+  assert.equal(parsed.narrative, '둘이 마주 선다.');
+  assert.deepEqual(parsed.speakers, [{ npcId: 'silvia', focus: true }]);
+});
+
+test('parseAssistantResponse drops invalid speakers and omits an empty speakers field', () => {
+  const mixed = parseAssistantResponse('```json\n{"speakers":["silvia",{}, {"npcId":"  "},{"npcId":"iris","emotion":3,"focus":"yes"}]}\n```');
+  assert.deepEqual(mixed.speakers, [{ npcId: 'iris', focus: false }]);
+  const invalid = parseAssistantResponse('```json\n{"speakers":[null,"silvia",{}, {"npcId":""}]}\n```');
+  assert.equal(Object.hasOwn(invalid, 'speakers'), false);
+});
+
 test('parseAssistantResponse accepts and removes terminal unfenced event JSON', () => {
   const parsed = parseAssistantResponse('고용 계약이 성립됐다.\n{"events":[{"id":"hire","params":{"npcId":"silvia","dailyWage":10000}}],"emotion":"default"}');
   assert.equal(parsed.narrative, '고용 계약이 성립됐다.');

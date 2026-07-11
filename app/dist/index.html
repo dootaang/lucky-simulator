@@ -795,6 +795,23 @@ select:focus { border-color: var(--amber-line); }
 .npc-avatar-more { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; background: var(--surface-2); color: var(--ink-mid); display: grid; place-items: center; font-size: 10px; }
 .play-speaker.user-label { justify-content: flex-end; color: var(--ink-mid); }
 
+.play-stage {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 24px);
+  height: clamp(240px, 46vh, 55vh);
+  overflow: hidden;
+  padding: 10px 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.play-stage-slot { position: relative; display: flex; flex: 1 1 0; justify-content: center; align-items: flex-end; min-width: 0; height: 100%; margin: 0; filter: brightness(.72) saturate(.85); transform: scale(.92); transform-origin: center bottom; }
+.play-stage-slot.focus { z-index: 1; filter: none; transform: none; }
+.play-stage-slot img { display: block; width: auto; max-width: 100%; height: 100%; object-fit: contain; }
+.play-stage-slot figcaption { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 12px); padding: 3px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink-dim); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 .play-message-list {
   display: grid;
   gap: 10px;
@@ -1046,6 +1063,8 @@ select:focus { border-color: var(--amber-line); }
   .mobile-mini-gauge .combat-gauge-track { height: 5px; }
   .mobile-state-button { flex: 0 0 auto; margin: 0; padding: 7px 9px; }
   .play-chat-panel { flex: 1; min-height: 0; padding: 10px; border-top: 0; }
+  .play-stage { height: clamp(200px, 38vh, 44vh); }
+  .play-stage-slot:not(.focus) { display: none; }
   .play-message-list { flex: 1; min-height: 45dvh; max-height: none; }
   .play-input-row { position: sticky; bottom: 0; z-index: 18; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; padding: 8px 0 env(safe-area-inset-bottom); background: var(--surface); }
   .play-input { min-height: 46px; max-height: 96px; }
@@ -7286,6 +7305,7 @@ ${lines.join("\n")}`;
           itemList ? "[\uC18C\uBAA8\uD488 \uBAA9\uB85D]\n" + itemList + "\n" : "",
           questList ? "[\uC758\uB8B0 \uBAA9\uB85D]\n" + questList + "\n" : "",
           Array.isArray(emotions2) && emotions2.length ? `\uC751\uB2F5 JSON\uC5D0\uB294 events \uBC30\uC5F4\uC744 \uBC18\uB4DC\uC2DC \uADF8\uB300\uB85C \uC720\uC9C0\uD55C \uCC44, \uC120\uD0DD \uD544\uB4DC "emotion"(\uC8FC\uC778\uACF5\uC758 \uD604\uC7AC \uD45C\uC815)\uC744 \uD568\uAED8 \uB123\uC5B4\uB3C4 \uB41C\uB2E4. \uAC12\uC740 \uBC18\uB4DC\uC2DC \uB2E4\uC74C \uC911 \uD558\uB098: ${emotions2.join(", ")}` : "",
+          '\uB4F1\uC7A5 \uC778\uBB3C\uC774 \uC788\uC73C\uBA74 "speakers":[{"npcId","emotion","focus"}]\uB3C4 \uB123\uC5B4\uB77C(\uCD5C\uB300 3, focus\uB294 \uC8FC \uD654\uC790 1\uC778). npcId\uB294 [\uC9C1\uC6D0 \uAD00\uACC4 \uC0C1\uD0DC]\xB7[NPC]\uC5D0 \uB098\uC628 id \uADF8\uB300\uB85C. emotion\uC740 \uC2A4\uD504\uB77C\uC774\uD2B8 \uAC10\uC815\uBA85(\uC8FC\uC778\uACF5 \uAC10\uC815 \uBAA9\uB85D\uACFC \uAC19\uC740 \uC5B4\uD718, \uD655\uC2E0 \uC5C6\uC73C\uBA74 \uC0DD\uB7B5).',
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -7339,7 +7359,8 @@ ${lines.join("\n")}`;
           narrationNpcText ? `[\uC9C1\uC6D0 \uAD00\uACC4 \uC0C1\uD0DC \u2014 \uC218\uCE58\uB098 \uB2E8\uACC4\uAC00 \uBCC0\uD588\uC744 \uB54C\uB9CC \uC11C\uC0AC\uC5D0 \uC5B8\uAE09\uD558\uACE0, \uBCC0\uD654\uAC00 \uC5C6\uC73C\uBA74 \uAD00\uACC4 \uBB18\uC0AC\uB97C \uC0DD\uB7B5\uD558\uB77C. \uC774\uC804 \uC11C\uC0AC\uC5D0\uC11C \uC4F4 \uAD00\uACC4 \uBB18\uC0AC \uBB38\uAD6C\uB97C \uADF8\uB300\uB85C \uBC18\uBCF5\uD558\uC9C0 \uB9C8\uB77C]
 ${narrationNpcText}` : "",
           flavorText ? `\uD50C\uB808\uC774\uC5B4\uC758 \uC5F0\uCD9C \uC758\uB3C4: ${flavorText}` : "",
-          Array.isArray(emotions2) && emotions2.length ? `\uC11C\uC0AC \uB4A4\uC5D0 \`\`\`json {"emotion":"\uAC12"} \`\`\` \uBE14\uB85D\uC744 \uB367\uBD99\uC5EC\uB3C4 \uB41C\uB2E4. \uAC12\uC740 \uBC18\uB4DC\uC2DC \uB2E4\uC74C \uC911 \uD558\uB098: ${emotions2.join(", ")}` : ""
+          Array.isArray(emotions2) && emotions2.length ? `\uC11C\uC0AC \uB4A4\uC5D0 \`\`\`json {"emotion":"\uAC12"} \`\`\` \uBE14\uB85D\uC744 \uB367\uBD99\uC5EC\uB3C4 \uB41C\uB2E4. \uAC12\uC740 \uBC18\uB4DC\uC2DC \uB2E4\uC74C \uC911 \uD558\uB098: ${emotions2.join(", ")}` : "",
+          '\uB4F1\uC7A5 \uC778\uBB3C\uC774 \uC788\uC73C\uBA74 "speakers":[{"npcId","emotion","focus"}]\uB3C4 \uB123\uC5B4\uB77C(\uCD5C\uB300 3, focus\uB294 \uC8FC \uD654\uC790 1\uC778). npcId\uB294 [\uC9C1\uC6D0 \uAD00\uACC4 \uC0C1\uD0DC]\xB7[NPC]\uC5D0 \uB098\uC628 id \uADF8\uB300\uB85C. emotion\uC740 \uC2A4\uD504\uB77C\uC774\uD2B8 \uAC10\uC815\uBA85(\uC8FC\uC778\uACF5 \uAC10\uC815 \uBAA9\uB85D\uACFC \uAC19\uC740 \uC5B4\uD718, \uD655\uC2E0 \uC5C6\uC73C\uBA74 \uC0DD\uB7B5).'
         ].filter(Boolean).join("\n");
         const messages2 = conversationMessages([...(recentMessages || []).slice(-4), { role: "user", content: context }]);
         const injectedState = combatActive ? combatLine : managementLines;
@@ -7378,6 +7399,7 @@ ${narrationNpcText}` : "",
         const blocks = Array.from(source.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
         let events = [];
         let emotion;
+        let speakers;
         let jsonBlock = null;
         let removeBlock = null;
         if (blocks.length) {
@@ -7387,6 +7409,7 @@ ${narrationNpcText}` : "",
             const parsed = JSON.parse(jsonBlock);
             events = Array.isArray(parsed.events) ? parsed.events : [];
             if (typeof parsed.emotion === "string") emotion = parsed.emotion;
+            if (Array.isArray(parsed.speakers)) speakers = parsed.speakers;
           } catch (_) {
             events = [];
           }
@@ -7397,12 +7420,23 @@ ${narrationNpcText}` : "",
             removeBlock = terminal.raw;
             events = Array.isArray(terminal.parsed.events) ? terminal.parsed.events : [];
             if (typeof terminal.parsed.emotion === "string") emotion = terminal.parsed.emotion;
+            if (Array.isArray(terminal.parsed.speakers)) speakers = terminal.parsed.speakers;
           }
         }
         const validEvents = events.filter((event) => event && typeof event.id === "string" && event.id.trim());
         const dropped = events.length - validEvents.length;
+        const validSpeakers = [];
+        const seenNpcIds = /* @__PURE__ */ new Set();
+        for (const item of speakers || []) {
+          if (!item || typeof item !== "object" || typeof item.npcId !== "string" || !item.npcId.trim()) continue;
+          const npcId = item.npcId.trim();
+          if (seenNpcIds.has(npcId)) continue;
+          seenNpcIds.add(npcId);
+          validSpeakers.push({ npcId, ...typeof item.emotion === "string" ? { emotion: item.emotion } : {}, focus: item.focus === true });
+          if (validSpeakers.length === 3) break;
+        }
         const rawNarrative = jsonBlock ? source.slice(0, source.lastIndexOf(removeBlock)).trim() : source.trim();
-        return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...emotion !== void 0 ? { emotion } : {} };
+        return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...emotion !== void 0 ? { emotion } : {}, ...validSpeakers.length ? { speakers: validSpeakers } : {} };
       }
       function terminalJson(source) {
         const starts = [];
@@ -7411,7 +7445,7 @@ ${narrationNpcText}` : "",
           const raw = source.slice(starts[i]).trim();
           try {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === "object" && (Array.isArray(parsed.events) || typeof parsed.emotion === "string")) return { raw, json: raw, parsed };
+            if (parsed && typeof parsed === "object" && (Array.isArray(parsed.events) || typeof parsed.emotion === "string" || Array.isArray(parsed.speakers))) return { raw, json: raw, parsed };
           } catch (_) {
           }
         }
@@ -11216,6 +11250,7 @@ ${Array.from(extras).join(" ")}` : text;
   var sessionCardKey = null;
   var character = null;
   var npcGroups = [];
+  var stage = [];
   var mgmtConsoleOpen = false;
   var lodgingSelection = /* @__PURE__ */ new Set();
   var lodgingSelectionDay = null;
@@ -11276,6 +11311,7 @@ ${Array.from(extras).join(" ")}` : text;
       lodgingSelectionDay = null;
       ledgerDeltas = [];
       purchaseDraft = {};
+      stage = [];
       detachSheetKeyHandler();
       npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
       character = primaryCharacter(ctx.parsed, ctx.lore, npcGroups);
@@ -11433,6 +11469,7 @@ ${Array.from(extras).join(" ")}` : text;
       ledgerDeltas = [];
       lastPrompt = null;
       fastCombatLog = [];
+      stage = [];
       render2();
     });
     const actions = el2("div", "engine-header-controls");
@@ -11474,7 +11511,10 @@ ${Array.from(extras).join(" ")}` : text;
       if (!text || busy) return;
       await submitTurn(text, ctx, render2);
     });
-    panel.append(header, list, renderCombatConsole(input2, ctx, render2), renderManagementConsole(input2, ctx, render2), form);
+    const standing = renderStage(ctx);
+    panel.append(header);
+    if (standing) panel.append(standing);
+    panel.append(list, renderCombatConsole(input2, ctx, render2), renderManagementConsole(input2, ctx, render2), form);
     return panel;
   }
   function renderDecisionCard(input2, ctx, render2) {
@@ -11624,10 +11664,57 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function npcPresentation(schema2, npcId) {
     const npc = entityInstances(schema2, "npc").find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
-    const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
-    const group = npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+    const group = stageGroup(npcId);
     const pick = group && selectAsset(group, preferredEmotion(group), outfitOf(npcId));
     return { name: npc && (npc.nameKo || npc.name || npc.nameEn) || String(npcId), asset: pick && pick.asset, group };
+  }
+  function stageGroup(npcId) {
+    const npc = entityInstances(getSchema() || {}, "npc").find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
+    const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
+    return npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+  }
+  function applySpeakers(parsed) {
+    if (!parsed || !Array.isArray(parsed.speakers)) return;
+    stage = parsed.speakers.slice(0, 3).filter((item) => stageGroup(item.npcId)).map((item) => ({
+      npcId: item.npcId,
+      ...typeof item.emotion === "string" ? { emotion: item.emotion } : {},
+      focus: item.focus === true
+    }));
+    if (stage.length && !stage.some((item) => item.focus)) stage[stage.length - 1].focus = true;
+  }
+  function renderStage(ctx) {
+    let entries = stage.map((item) => {
+      const presentation = npcPresentation(getSchema() || {}, item.npcId);
+      const emotion = presentation.group.emotions.has(item.emotion) ? item.emotion : preferredEmotion(presentation.group);
+      const pick = selectAsset(presentation.group, emotion, outfitOf(item.npcId));
+      return pick && { name: presentation.name, asset: pick.asset, focus: item.focus };
+    }).filter(Boolean);
+    if (!entries.length) {
+      if (!character || !character.group || !character.asset) return null;
+      entries = [{ name: character.name, asset: character.asset, focus: true }];
+    }
+    if (entries.length === 3) {
+      const focused = entries.find((item) => item.focus);
+      if (focused) {
+        const others = entries.filter((item) => item !== focused);
+        entries = [others[0], focused, others[1]];
+      }
+    } else if (entries.length === 2) entries.sort((a, b) => Number(b.focus) - Number(a.focus));
+    const section = el2("section", "play-stage");
+    for (const entry of entries) {
+      const url = ctx.objectUrlFor(entry.asset);
+      if (!url) continue;
+      const slot = el2("figure", `play-stage-slot${entry.focus ? " focus" : ""}`);
+      const img = document.createElement("img");
+      img.alt = entry.name;
+      img.addEventListener("error", () => slot.remove());
+      img.src = url;
+      const caption = el2("figcaption");
+      caption.textContent = entry.name;
+      slot.append(img, caption);
+      section.append(slot);
+    }
+    return section.childNodes.length ? section : null;
   }
   function renderNpcAvatars(npcIds, ctx) {
     const row3 = el2("div", "npc-avatar-row");
@@ -12052,6 +12139,7 @@ ${Array.from(extras).join(" ")}` : text;
       pending.npcIds = promptNpcIds(prompt);
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       applyEmotion(parsed.emotion);
+      applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -12092,6 +12180,7 @@ ${Array.from(extras).join(" ")}` : text;
       pending.npcIds = promptNpcIds(prompt);
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       applyEmotion(parsed.emotion);
+      applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -12429,6 +12518,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
+      applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -12505,6 +12595,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
+      applySpeakers(parsed);
       const chips = [];
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       for (const event of parsed.events) {
@@ -12536,6 +12627,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
+      applySpeakers(parsed);
       const chips = [];
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       for (const event of parsed.events) {
