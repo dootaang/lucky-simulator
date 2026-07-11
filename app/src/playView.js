@@ -1,4 +1,4 @@
-const { summarize, npcSummary, availableActions, availableManagement, roomStatus } = require('../../engine/core/selectors.js');
+const { summarize, npcSummary, availableActions, availableManagement, roomStatus, staffMax } = require('../../engine/core/selectors.js');
 const { estimateTokens, estimateLorebookTokens } = require('../core/lorebook/tokens.js');
 const { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('./llm/prompt.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
@@ -138,7 +138,7 @@ function renderBottomSheet(ctx, render) {
   const sheet = el('aside', 'play-bottom-sheet'); sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', '플레이 상태와 설정');
   const head = el('div', 'sheet-head'); const handle = button('상태 패널 닫기', 'sheet-handle'); const close = button('닫기', 'secondary-btn');
   handle.addEventListener('click', closeSheet); close.addEventListener('click', closeSheet); head.append(handle, close);
-  sheet.append(head, renderLedgerSection(render), renderSettings(render), renderStateBox(), renderTokenBox(ctx)); overlay.append(sheet);
+  sheet.append(head, renderLedgerSection(render), renderSettings(render), renderStateBox(ctx, render), renderTokenBox(ctx)); overlay.append(sheet);
   detachSheetKeyHandler(); // 재렌더 시 이전 렌더의 리스너가 남지 않도록 항상 정리
   if (mobileSheetOpen) {
     document.body.classList.add('sheet-open');
@@ -332,12 +332,12 @@ function renderChip(chip) {
   return item;
 }
 
-function characterAvatar(ctx, asset, className) {
+function characterAvatar(ctx, asset, className, initialName) {
   const wrap = el('div', className);
   const showInitial = () => {
     wrap.replaceChildren();
     wrap.classList.add('initial');
-    wrap.textContent = ((character && character.name) || '시').trim().charAt(0).toUpperCase();
+    wrap.textContent = (initialName || (character && character.name) || '시').trim().charAt(0).toUpperCase();
   };
   const url = asset ? ctx.objectUrlFor(asset) : '';
   if (url) {
@@ -357,7 +357,7 @@ function renderSide(ctx, render) {
   const side = el('aside', 'play-side-panel');
   const hud = renderCombatHud();
   if (hud) side.append(hud);
-  side.append(renderLedgerSection(render), renderSettings(render), renderStateBox(), renderTokenBox(ctx));
+  side.append(renderLedgerSection(render), renderSettings(render), renderStateBox(ctx, render), renderTokenBox(ctx));
   return side;
 }
 
@@ -460,14 +460,26 @@ function renderCombatConsole(input, ctx, render) {
 }
 
 function renderManagementConsole(input, ctx, render) {
-  const descriptor = availableManagement(getSchema(), getEngineState());
+  const schema = getSchema();
+  const state = getEngineState();
+  const descriptor = availableManagement(schema, state);
   const details = el('details', 'mgmt-console');
-  if (!descriptor.sections.length) return details;
+  const hasStaff = !!(state && Array.isArray(state.staff));
+  if (!descriptor.sections.length && !hasStaff) return details;
   details.open = mgmtConsoleOpen;
   details.addEventListener('toggle', () => { mgmtConsoleOpen = details.open; });
   const summary = el('summary');
   summary.textContent = '⚔ 현장 행동';
   details.append(summary);
+  if (hasStaff) {
+    const group = el('div', 'mgmt-section staff-recruit-action');
+    const max = staffMax(schema, state);
+    const recruit = button(state.staff.length < max ? '👥 직원 모집' : '직원 숙소 증축 필요', 'secondary-btn');
+    recruit.disabled = busy || state.staff.length >= max;
+    recruit.addEventListener('click', () => openCannedScene('여관에 있는 인물 중 고용 후보와의 자연스러운 협상 장면을 열어라. 임금 합의가 대화로 완료되기 전에는 hire 사건을 내지 마라.', ctx, render));
+    group.append(recruit);
+    details.append(group);
+  }
   for (const section of descriptor.sections) {
     if (['sell', 'buy', 'purchase', 'upgrade'].includes(section.type)) continue;
     const group = el('div', 'mgmt-section');
@@ -816,7 +828,7 @@ function renderSettings(render) {
   return details;
 }
 
-function renderStateBox() {
+function renderStateBox(ctx, render) {
   const section = titled('상태 대시보드');
   const state = getEngineState();
   const schema = getSchema();
@@ -841,10 +853,7 @@ function renderStateBox() {
   const types = new Set((schema.entities || []).map((entry) => entry.type));
   if (types.has('menuItem') && types.has('room')) {
     const npcs = entityInstances(schema, 'npc');
-    appendStateGrid(section, '직원', (state.staff || []).map((item) => {
-      const npc = npcs.find((entry) => entry.id === item.npcId);
-      return [(npc && npc.nameKo) || item.npcId, `일급 ${formatMoney(item.dailyWage)}`];
-    }));
+    appendStaffGrid(section, ctx, render, schema, state, npcs);
     const occupied = [];
     for (const status of roomStatus(schema, state)) {
       for (const guest of status.occupants) occupied.push([`${status.no}호`, `${guest.guestName} · ${guest.nightsLeft}박 남음`]);
@@ -864,6 +873,33 @@ function renderStateBox() {
 
 function stateMetric(label, value) { const node = el('div', 'state-metric'); const name = el('span'); name.textContent = label; const strong = el('strong'); strong.textContent = value; node.append(name, strong); return node; }
 function appendStateGrid(section, title, items) { if (!items.length) return; const group = el('div', 'state-group'); const heading = el('h4'); heading.textContent = title; const grid = el('div', 'state-card-grid'); for (const [name, value] of items) { const card = el('div', 'state-card'); const label = el('span'); label.textContent = name; const strong = el('strong'); strong.textContent = value; card.append(label, strong); grid.append(card); } group.append(heading, grid); section.append(group); }
+function appendStaffGrid(section, ctx, render, schema, state, npcs) {
+  const group = el('div', 'state-group staff-group');
+  const heading = el('h4'); heading.textContent = '직원';
+  const grid = el('div', 'staff-card-grid');
+  const clusters = buildNpcClusters(ctx.parsed, ctx.lore).groups;
+  for (const item of state.staff || []) {
+    const npc = npcs.find((entry) => entry.id === item.npcId);
+    const name = (npc && npc.nameKo) || item.npcId;
+    const cluster = clusters.find((entry) => entry.charId.toLowerCase() === String(item.npcId).toLowerCase());
+    const pick = cluster && selectAsset(cluster, preferredEmotion(cluster));
+    const card = el('div', 'staff-card');
+    card.append(characterAvatar(ctx, pick && pick.asset, 'staff-avatar', name));
+    const copy = el('div', 'staff-card-copy');
+    const label = el('strong'); label.textContent = name;
+    const wage = el('span'); wage.textContent = `일급 ${formatMoney(item.dailyWage)}`;
+    copy.append(label, wage);
+    const fire = button('해고', 'secondary-btn staff-fire-btn');
+    fire.disabled = busy;
+    fire.addEventListener('click', () => openCannedScene(`'${name}'에게 해고를 통보하는 장면을 열어라. 대화가 마무리되면 fire 사건을 내라.`, ctx, render));
+    card.append(copy, fire); grid.append(card);
+  }
+  const capacity = el('div', 'staff-capacity');
+  capacity.textContent = `빈 자리 ${(state.staff || []).length}/${staffMax(schema, state)}`;
+  const help = el('p', 'staff-help');
+  help.textContent = "채팅으로 고용 협상을 할 수 있어요 (예: '실비아에게 일해보지 않겠냐고 제안한다')";
+  group.append(heading, grid, capacity, help); section.append(group);
+}
 function entityInstances(schema, type) { const def = (schema.entities || []).find((item) => item.type === type); return (def && def.instances) || []; }
 
 const BASELINE_REF = 12029; // 용사여관 상시 로어북 실측치(앱 토큰 추정기) — 카드 미로드 시 폴백
@@ -1028,6 +1064,36 @@ async function startCombat(ctx, render) {
     }
   } catch (_) {
     messages.push({ role: 'assistant', content: '', chips: [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }] });
+  } finally {
+    ledgerDeltas = [];
+    busy = false;
+    render();
+  }
+}
+
+async function openCannedScene(instruction, ctx, render) {
+  if (busy) return;
+  busy = true;
+  render();
+  const recentChanges = ledgerDeltas.slice();
+  try {
+    const schema = getSchema();
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), recentChanges });
+    lastPrompt = prompt;
+    const raw = await callProvider(providerConfig(settings), prompt);
+    const parsed = parseAssistantResponse(raw);
+    applyEmotion(parsed.emotion);
+    const chips = [];
+    if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
+    for (const event of parsed.events) {
+      const result = runEvent(event);
+      const first = result.entries[0] || { ok: false, reason: 'empty_log' };
+      const item = summarizeEventItem(event.id, first, formatMoney);
+      chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
+    }
+    messages.push({ role: 'assistant', content: parsed.narrative || raw, chips });
+  } catch (err) {
+    messages.push({ role: 'assistant', content: safeError(err), chips: [{ ok: false, kind: 'system', text: 'API 오류' }] });
   } finally {
     ledgerDeltas = [];
     busy = false;

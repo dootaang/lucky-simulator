@@ -852,6 +852,16 @@ select:focus { border-color: var(--amber-line); }
 .state-group h4 { margin: 2px 0 7px; color: var(--ink-mid); font-family: var(--font-mono); font-size: 12px; }
 .state-detail-list { display: grid; gap: 6px; }
 .state-detail-row { padding: 8px 10px; border-left: 2px solid var(--line-strong); background: var(--surface-2); color: var(--ink-mid); font-size: 12px; overflow-wrap: anywhere; }
+.staff-card-grid { display: grid; gap: 8px; }
+.staff-card { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); padding: 8px; }
+.staff-avatar { width: 36px; height: 36px; overflow: hidden; border-radius: 50%; border: 1px solid var(--amber-line); background: var(--amber); color: var(--on-amber); display: grid; place-items: center; font-weight: 800; }
+.staff-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.staff-card-copy { min-width: 0; display: grid; gap: 2px; }
+.staff-card-copy strong { overflow-wrap: anywhere; color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+.staff-card-copy span, .staff-capacity, .staff-help { color: var(--ink-dim); font-size: 11px; }
+.staff-fire-btn { padding: 5px 8px; font-size: 11px; }
+.staff-capacity { margin-top: 8px; font-family: var(--font-mono); }
+.staff-help { margin: 4px 0 0; line-height: 1.45; }
 
 .play-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
 .play-input {
@@ -5346,7 +5356,7 @@ select:focus { border-color: var(--amber-line); }
     "../engine/core/selectors.js"(exports, module) {
       "use strict";
       var { entityList, findRoom, scaleById, ladderById, rankIndex } = require_utils();
-      function staffMax2(schema2, state2) {
+      function staffMax3(schema2, state2) {
         const level = String(state2.facilities && state2.facilities.quarters || 1);
         const table = schema2.gates && schema2.gates.staffMaxByQuartersLevel;
         return Number(table && table[level] || 0);
@@ -5556,7 +5566,7 @@ select:focus { border-color: var(--amber-line); }
       function formatNumber(n) {
         return Number(n || 0).toLocaleString("ko-KR");
       }
-      module.exports = { staffMax: staffMax2, availableMenu: availableMenu2, menuTrade, availableManagement: availableManagement2, roomStatus: roomStatus3, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
+      module.exports = { staffMax: staffMax3, availableMenu: availableMenu2, menuTrade, availableManagement: availableManagement2, roomStatus: roomStatus3, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
     }
   });
 
@@ -6370,7 +6380,7 @@ select:focus { border-color: var(--amber-line); }
       "use strict";
       var { runDayEnd } = require_dayEnd();
       var { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require_combat();
-      var { staffMax: staffMax2, tierOf, menuTrade } = require_selectors();
+      var { staffMax: staffMax3, tierOf, menuTrade } = require_selectors();
       var { poolHeal } = require_pools();
       var { resolveCheck } = require_resolveCheck();
       var { rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require_traffic();
@@ -6753,7 +6763,7 @@ select:focus { border-color: var(--amber-line); }
         const wage = normalizeInt(params.dailyWage);
         if (!findById(schema2, "npc", npcId)) return fail("unknown_npc", npcId);
         if ((state2.staff || []).some((staff) => staff.npcId === npcId)) return fail("already_hired", npcId);
-        if ((state2.staff || []).length >= staffMax2(schema2, state2)) return fail("staff_full", npcId);
+        if ((state2.staff || []).length >= staffMax3(schema2, state2)) return fail("staff_full", npcId);
         state2.staff = (state2.staff || []).concat([{ npcId, dailyWage: wage }]);
         return ok({ npcId, dailyWage: wage });
       }
@@ -10762,7 +10772,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
 
   // src/playView.js
-  var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement, roomStatus: roomStatus2 } = require_selectors();
+  var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement, roomStatus: roomStatus2, staffMax: staffMax2 } = require_selectors();
   var { estimateTokens, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
   var { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require_prompt();
   var { PROVIDERS, callProvider } = require_providers();
@@ -10930,7 +10940,7 @@ ${Array.from(extras).join(" ")}` : text;
     handle.addEventListener("click", closeSheet);
     close.addEventListener("click", closeSheet);
     head.append(handle, close);
-    sheet.append(head, renderLedgerSection(render2), renderSettings(render2), renderStateBox(), renderTokenBox(ctx));
+    sheet.append(head, renderLedgerSection(render2), renderSettings(render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
     overlay.append(sheet);
     detachSheetKeyHandler();
     if (mobileSheetOpen) {
@@ -11161,12 +11171,12 @@ ${Array.from(extras).join(" ")}` : text;
     }
     return item;
   }
-  function characterAvatar(ctx, asset, className) {
+  function characterAvatar(ctx, asset, className, initialName) {
     const wrap = el2("div", className);
     const showInitial = () => {
       wrap.replaceChildren();
       wrap.classList.add("initial");
-      wrap.textContent = (character && character.name || "\uC2DC").trim().charAt(0).toUpperCase();
+      wrap.textContent = (initialName || character && character.name || "\uC2DC").trim().charAt(0).toUpperCase();
     };
     const url = asset ? ctx.objectUrlFor(asset) : "";
     if (url) {
@@ -11198,7 +11208,7 @@ ${Array.from(extras).join(" ")}` : text;
     const side = el2("aside", "play-side-panel");
     const hud = renderCombatHud();
     if (hud) side.append(hud);
-    side.append(renderLedgerSection(render2), renderSettings(render2), renderStateBox(), renderTokenBox(ctx));
+    side.append(renderLedgerSection(render2), renderSettings(render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
     return side;
   }
   function renderCombatHud() {
@@ -11300,9 +11310,12 @@ ${Array.from(extras).join(" ")}` : text;
     return consoleBox;
   }
   function renderManagementConsole(input2, ctx, render2) {
-    const descriptor = availableManagement(getSchema(), getEngineState());
+    const schema2 = getSchema();
+    const state2 = getEngineState();
+    const descriptor = availableManagement(schema2, state2);
     const details = el2("details", "mgmt-console");
-    if (!descriptor.sections.length) return details;
+    const hasStaff = !!(state2 && Array.isArray(state2.staff));
+    if (!descriptor.sections.length && !hasStaff) return details;
     details.open = mgmtConsoleOpen;
     details.addEventListener("toggle", () => {
       mgmtConsoleOpen = details.open;
@@ -11310,6 +11323,15 @@ ${Array.from(extras).join(" ")}` : text;
     const summary = el2("summary");
     summary.textContent = "\u2694 \uD604\uC7A5 \uD589\uB3D9";
     details.append(summary);
+    if (hasStaff) {
+      const group = el2("div", "mgmt-section staff-recruit-action");
+      const max = staffMax2(schema2, state2);
+      const recruit = button2(state2.staff.length < max ? "\u{1F465} \uC9C1\uC6D0 \uBAA8\uC9D1" : "\uC9C1\uC6D0 \uC219\uC18C \uC99D\uCD95 \uD544\uC694", "secondary-btn");
+      recruit.disabled = busy || state2.staff.length >= max;
+      recruit.addEventListener("click", () => openCannedScene("\uC5EC\uAD00\uC5D0 \uC788\uB294 \uC778\uBB3C \uC911 \uACE0\uC6A9 \uD6C4\uBCF4\uC640\uC758 \uC790\uC5F0\uC2A4\uB7EC\uC6B4 \uD611\uC0C1 \uC7A5\uBA74\uC744 \uC5F4\uC5B4\uB77C. \uC784\uAE08 \uD569\uC758\uAC00 \uB300\uD654\uB85C \uC644\uB8CC\uB418\uAE30 \uC804\uC5D0\uB294 hire \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C.", ctx, render2));
+      group.append(recruit);
+      details.append(group);
+    }
     for (const section of descriptor.sections) {
       if (["sell", "buy", "purchase", "upgrade"].includes(section.type)) continue;
       const group = el2("div", "mgmt-section");
@@ -11673,7 +11695,7 @@ ${Array.from(extras).join(" ")}` : text;
     );
     return details;
   }
-  function renderStateBox() {
+  function renderStateBox(ctx, render2) {
     const section = titled("\uC0C1\uD0DC \uB300\uC2DC\uBCF4\uB4DC");
     const state2 = getEngineState();
     const schema2 = getSchema();
@@ -11696,10 +11718,7 @@ ${Array.from(extras).join(" ")}` : text;
     const types = new Set((schema2.entities || []).map((entry) => entry.type));
     if (types.has("menuItem") && types.has("room")) {
       const npcs2 = entityInstances(schema2, "npc");
-      appendStateGrid(section, "\uC9C1\uC6D0", (state2.staff || []).map((item) => {
-        const npc = npcs2.find((entry) => entry.id === item.npcId);
-        return [npc && npc.nameKo || item.npcId, `\uC77C\uAE09 ${formatMoney2(item.dailyWage)}`];
-      }));
+      appendStaffGrid(section, ctx, render2, schema2, state2, npcs2);
       const occupied = [];
       for (const status of roomStatus2(schema2, state2)) {
         for (const guest of status.occupants) occupied.push([`${status.no}\uD638`, `${guest.guestName} \xB7 ${guest.nightsLeft}\uBC15 \uB0A8\uC74C`]);
@@ -11747,6 +11766,38 @@ ${Array.from(extras).join(" ")}` : text;
       grid.append(card);
     }
     group.append(heading, grid);
+    section.append(group);
+  }
+  function appendStaffGrid(section, ctx, render2, schema2, state2, npcs2) {
+    const group = el2("div", "state-group staff-group");
+    const heading = el2("h4");
+    heading.textContent = "\uC9C1\uC6D0";
+    const grid = el2("div", "staff-card-grid");
+    const clusters = buildNpcClusters(ctx.parsed, ctx.lore).groups;
+    for (const item of state2.staff || []) {
+      const npc = npcs2.find((entry) => entry.id === item.npcId);
+      const name = npc && npc.nameKo || item.npcId;
+      const cluster = clusters.find((entry) => entry.charId.toLowerCase() === String(item.npcId).toLowerCase());
+      const pick = cluster && selectAsset(cluster, preferredEmotion(cluster));
+      const card = el2("div", "staff-card");
+      card.append(characterAvatar(ctx, pick && pick.asset, "staff-avatar", name));
+      const copy = el2("div", "staff-card-copy");
+      const label = el2("strong");
+      label.textContent = name;
+      const wage = el2("span");
+      wage.textContent = `\uC77C\uAE09 ${formatMoney2(item.dailyWage)}`;
+      copy.append(label, wage);
+      const fire = button2("\uD574\uACE0", "secondary-btn staff-fire-btn");
+      fire.disabled = busy;
+      fire.addEventListener("click", () => openCannedScene(`'${name}'\uC5D0\uAC8C \uD574\uACE0\uB97C \uD1B5\uBCF4\uD558\uB294 \uC7A5\uBA74\uC744 \uC5F4\uC5B4\uB77C. \uB300\uD654\uAC00 \uB9C8\uBB34\uB9AC\uB418\uBA74 fire \uC0AC\uAC74\uC744 \uB0B4\uB77C.`, ctx, render2));
+      card.append(copy, fire);
+      grid.append(card);
+    }
+    const capacity = el2("div", "staff-capacity");
+    capacity.textContent = `\uBE48 \uC790\uB9AC ${(state2.staff || []).length}/${staffMax2(schema2, state2)}`;
+    const help = el2("p", "staff-help");
+    help.textContent = "\uCC44\uD305\uC73C\uB85C \uACE0\uC6A9 \uD611\uC0C1\uC744 \uD560 \uC218 \uC788\uC5B4\uC694 (\uC608: '\uC2E4\uBE44\uC544\uC5D0\uAC8C \uC77C\uD574\uBCF4\uC9C0 \uC54A\uACA0\uB0D0\uACE0 \uC81C\uC548\uD55C\uB2E4')";
+    group.append(heading, grid, capacity, help);
     section.append(group);
   }
   function entityInstances(schema2, type) {
@@ -11898,6 +11949,35 @@ ${Array.from(extras).join(" ")}` : text;
       }
     } catch (_) {
       messages.push({ role: "assistant", content: "", chips: [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }] });
+    } finally {
+      ledgerDeltas = [];
+      busy = false;
+      render2();
+    }
+  }
+  async function openCannedScene(instruction, ctx, render2) {
+    if (busy) return;
+    busy = true;
+    render2();
+    const recentChanges = ledgerDeltas.slice();
+    try {
+      const schema2 = getSchema();
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), recentChanges });
+      lastPrompt = prompt;
+      const raw = await callProvider(providerConfig(settings), prompt);
+      const parsed = parseAssistantResponse(raw);
+      applyEmotion(parsed.emotion);
+      const chips = [];
+      if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
+      for (const event of parsed.events) {
+        const result = runEvent(event);
+        const first = result.entries[0] || { ok: false, reason: "empty_log" };
+        const item = summarizeEventItem(event.id, first, formatMoney2);
+        chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
+      }
+      messages.push({ role: "assistant", content: parsed.narrative || raw, chips });
+    } catch (err) {
+      messages.push({ role: "assistant", content: safeError(err), chips: [{ ok: false, kind: "system", text: "API \uC624\uB958" }] });
     } finally {
       ledgerDeltas = [];
       busy = false;
