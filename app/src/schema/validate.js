@@ -7,6 +7,11 @@ const ENTITY_FIELDS = {
   npc: ['id', 'nameKo', 'nameEn', 'class', 'group'],
   facility: ['id', 'label', 'maxLevel'],
 };
+// 선택 필드: 없으면 기본값으로 정규화(경고). requiresKitchenLevel은 여관 전용 게이트라
+// 상점형 카드(trade:buy)엔 무의미 — 엔진도 || 1 기본값을 쓴다(소전 실측: 에러 19개로 승인 잠김).
+const ENTITY_OPTIONAL_DEFAULTS = {
+  menuItem: { requiresKitchenLevel: 1 },
+};
 const ROOM_ALIASES = { number: 'no', roomNo: 'no', price: 'pricePerNight' };
 const NPC_ALIASES = { name: 'nameKo' };
 
@@ -400,15 +405,31 @@ function validateEntities(schema, issues) {
 
     const required = ENTITY_FIELDS[entity.type];
     if (!required) return;
+    const optionalDefaults = ENTITY_OPTIONAL_DEFAULTS[entity.type] || {};
     const fieldSet = new Set(asArray(entity.fields));
+    let optionalFieldWarned = false;
     for (const field of required) {
-      if (!fieldSet.has(field)) error(issues, `${path}.fields`, `Missing canonical field ${field}.`);
+      if (fieldSet.has(field)) continue;
+      if (field in optionalDefaults) {
+        if (Array.isArray(entity.fields)) entity.fields.push(field);
+        if (!optionalFieldWarned) {
+          warn(issues, `${path}.fields`, `${field} 누락 — 기본값 ${optionalDefaults[field]}으로 정규화했습니다(선택 필드).`);
+          optionalFieldWarned = true;
+        }
+        continue;
+      }
+      error(issues, `${path}.fields`, `Missing canonical field ${field}.`);
     }
     asArray(entity.instances).forEach((instance, instanceIndex) => {
       const itemPath = `${path}.instances[${instanceIndex}]`;
       if (!isObject(instance)) return error(issues, itemPath, 'Entity instance must be an object.');
       for (const field of required) {
-        if (!(field in instance)) error(issues, `${itemPath}.${field}`, `Missing required field ${field}.`);
+        if (field in instance) continue;
+        if (field in optionalDefaults) {
+          instance[field] = optionalDefaults[field];
+          continue;
+        }
+        error(issues, `${itemPath}.${field}`, `Missing required field ${field}.`);
       }
       if (entity.type === 'facility' && instance.upgradeCosts != null) {
         validateUpgradeCosts(instance.upgradeCosts, `${itemPath}.upgradeCosts`, issues);

@@ -7756,6 +7756,9 @@ ${row3.content}`;
         npc: ["id", "nameKo", "nameEn", "class", "group"],
         facility: ["id", "label", "maxLevel"]
       };
+      var ENTITY_OPTIONAL_DEFAULTS = {
+        menuItem: { requiresKitchenLevel: 1 }
+      };
       var ROOM_ALIASES = { number: "no", roomNo: "no", price: "pricePerNight" };
       var NPC_ALIASES = { name: "nameKo" };
       function validateSchema2(obj) {
@@ -8111,15 +8114,31 @@ ${row3.content}`;
           requireArray(entity.instances, `${path}.instances`, issues);
           const required = ENTITY_FIELDS[entity.type];
           if (!required) return;
+          const optionalDefaults = ENTITY_OPTIONAL_DEFAULTS[entity.type] || {};
           const fieldSet = new Set(asArray(entity.fields));
+          let optionalFieldWarned = false;
           for (const field4 of required) {
-            if (!fieldSet.has(field4)) error(issues, `${path}.fields`, `Missing canonical field ${field4}.`);
+            if (fieldSet.has(field4)) continue;
+            if (field4 in optionalDefaults) {
+              if (Array.isArray(entity.fields)) entity.fields.push(field4);
+              if (!optionalFieldWarned) {
+                warn(issues, `${path}.fields`, `${field4} \uB204\uB77D \u2014 \uAE30\uBCF8\uAC12 ${optionalDefaults[field4]}\uC73C\uB85C \uC815\uADDC\uD654\uD588\uC2B5\uB2C8\uB2E4(\uC120\uD0DD \uD544\uB4DC).`);
+                optionalFieldWarned = true;
+              }
+              continue;
+            }
+            error(issues, `${path}.fields`, `Missing canonical field ${field4}.`);
           }
           asArray(entity.instances).forEach((instance, instanceIndex) => {
             const itemPath = `${path}.instances[${instanceIndex}]`;
             if (!isObject(instance)) return error(issues, itemPath, "Entity instance must be an object.");
             for (const field4 of required) {
-              if (!(field4 in instance)) error(issues, `${itemPath}.${field4}`, `Missing required field ${field4}.`);
+              if (field4 in instance) continue;
+              if (field4 in optionalDefaults) {
+                instance[field4] = optionalDefaults[field4];
+                continue;
+              }
+              error(issues, `${itemPath}.${field4}`, `Missing required field ${field4}.`);
             }
             if (entity.type === "facility" && instance.upgradeCosts != null) {
               validateUpgradeCosts(instance.upgradeCosts, `${itemPath}.upgradeCosts`, issues);
