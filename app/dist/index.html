@@ -1178,6 +1178,18 @@ select:focus { border-color: var(--amber-line); }
 .combat-gauge-fill { width: var(--pct); height: 100%; background: var(--card-accent, var(--amber)); transition: width 140ms ease; }
 
 .play-input-row .primary-btn, .play-view .primary-btn { background: var(--card-accent, var(--amber)); border-color: var(--card-accent, var(--amber)); }
+.editor-workspace { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 18px; }
+.editor-sections { display: flex; flex-direction: column; gap: 6px; align-self: start; position: sticky; top: 12px; }
+.editor-sections .tab { width: 100%; text-align: left; }
+.editor-active { border-color: var(--card-accent, var(--amber)); background: var(--amber-wash); }
+.editor-body { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.editor-field { display: grid; gap: 6px; color: var(--ink-mid); }
+.editor-field input, .editor-field textarea, .editor-body select { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
+.editor-field textarea { resize: vertical; font-family: var(--font-mono); }
+.editor-check { display: flex; gap: 8px; align-items: center; }
+.editor-note { padding: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-mid); }
+.editor-body details pre { max-height: 420px; overflow: auto; }
+@media (max-width: 760px) { .editor-workspace { grid-template-columns: 1fr; } .editor-sections { position: static; flex-direction: row; overflow-x: auto; } .editor-sections .tab { width: auto; white-space: nowrap; } }
 .play-view .badge.engine-ok:not(.event-chip), .play-view .engine-ok:not(.event-chip) { border-color: var(--card-accent, var(--amber-line)); background: var(--card-accent-soft, var(--amber-wash)); color: var(--card-accent, var(--amber)); }
 
 .mgmt-console { padding: 12px 14px; border-top: 1px solid var(--line); background: var(--surface-2); }
@@ -6432,28 +6444,28 @@ ${bodies}`;
         if (!combat || !combat.active) return fail("no_encounter");
         if (state2.player.dead) return fail("player_dead");
         if (hasNumberParam(params)) return fail("combat_number_not_allowed");
-        const action = params.action;
-        if (action === "defend") {
+        const action2 = params.action;
+        if (action2 === "defend") {
           combat.guard = true;
-          return ok({ action, guard: true });
+          return ok({ action: action2, guard: true });
         }
-        if (action === "flee") {
+        if (action2 === "flee") {
           const cfg2 = combatConfig(schema2);
           const check = resolveCheck(rng, { mode: "rate", rate: cfg2.fleeRate });
           if (check.success) {
             combat.active = false;
             combat.fled = true;
           }
-          return ok({ action, check, fled: check.success });
+          return ok({ action: action2, check, fled: check.success });
         }
-        if (action !== "attack" && action !== "skill") return fail("unknown_combat_action", action);
+        if (action2 !== "attack" && action2 !== "skill") return fail("unknown_combat_action", action2);
         const enemy = findEnemy(combat, params.target);
         if (!enemy) return fail("unknown_target", params.target);
         if (enemy.dead) return fail("target_dead", enemy.id);
         const cfg = combatConfig(schema2);
         const pc = playerCombat(state2);
         let skill = null;
-        if (action === "skill") {
+        if (action2 === "skill") {
           skill = (schema2.skills || {})[params.skill];
           if (!skill) return fail("unknown_skill", params.skill);
           const poolId = skill.pool || "mp";
@@ -6475,7 +6487,7 @@ ${bodies}`;
         }
         if (combat.enemies.every((e) => e.dead)) combat.cleared = true;
         return ok({
-          action,
+          action: action2,
           skill: params.skill || null,
           target: enemy.id,
           hit: hit.success,
@@ -8633,7 +8645,7 @@ ${bodies}`;
         wrap.append(node);
         return wrap;
       }
-      function field4(label, child) {
+      function field5(label, child) {
         const wrap = el5("label", "field");
         const span = el5("span");
         span.textContent = label;
@@ -8702,7 +8714,7 @@ ${bodies}`;
       module.exports = {
         el: el5,
         button: button5,
-        field: field4,
+        field: field5,
         row: row3,
         notice: notice3,
         hiddenBase: hiddenBase3,
@@ -8770,9 +8782,9 @@ ${bodies}`;
         if (key.startsWith("state.") || key.startsWith("schema.") || key.startsWith("content.") || key.startsWith("selection.")) return clone3(safePath(context, key));
         return null;
       }
-      function resolveEvent2(action, context) {
-        if (!action || typeof action !== "object" || typeof action.id !== "string" || !action.id.trim()) return null;
-        return { id: action.id.trim(), params: resolveValue(action.params || {}, context) };
+      function resolveEvent2(action2, context) {
+        if (!action2 || typeof action2 !== "object" || typeof action2.id !== "string" || !action2.id.trim()) return null;
+        return { id: action2.id.trim(), params: resolveValue(action2.params || {}, context) };
       }
       function resolveValue(value, context) {
         if (Array.isArray(value)) return value.map((item) => resolveValue(item, context));
@@ -9030,7 +9042,7 @@ Circumstances and context of the dialogue: ${card.scenario}`;
         }
         const messages2 = emitted.map((item) => item.message);
         if (pendingNotes.length && lastChatSegment) {
-          pendingNotes.map((note) => ({ ...note, at: lastChatSegment.startInEmitted + Math.max(0, lastChatSegment.length - note.depth) })).sort((a, b) => a.at - b.at).forEach((note, i2) => messages2.splice(note.at + i2, 0, note.message));
+          pendingNotes.map((note2) => ({ ...note2, at: lastChatSegment.startInEmitted + Math.max(0, lastChatSegment.length - note2.depth) })).sort((a, b) => a.at - b.at).forEach((note2, i2) => messages2.splice(note2.at + i2, 0, note2.message));
         }
         let finalMessages = messages2;
         if (options.mergeConsecutiveRoles === true) {
@@ -9236,12 +9248,12 @@ ${lines.join("\n")}`;
       function availableActionText(schema2, state2) {
         const descriptor = availableActions3(schema2, state2);
         if (!descriptor || !descriptor.active || !Array.isArray(descriptor.actions)) return "";
-        return descriptor.actions.map((action) => {
-          if (action.type === "attack") return `attack \u2192 ${(action.targets || []).map((target2) => target2.id).join(", ") || "\uB300\uC0C1 \uC5C6\uC74C"}`;
-          if (action.type === "skill") return `skill:${action.skill} (${action.affordable ? "\uC0AC\uC6A9 \uAC00\uB2A5" : `${action.pool} \uBD80\uC871`})`;
-          if (action.type === "item") return `item:${action.itemId} (\uBCF4\uC720 ${action.count})`;
-          if (action.type === "flee") return `flee (\uC5D4\uC9C4 \uD655\uB960 ${action.rate}%)`;
-          return String(action.type || "");
+        return descriptor.actions.map((action2) => {
+          if (action2.type === "attack") return `attack \u2192 ${(action2.targets || []).map((target2) => target2.id).join(", ") || "\uB300\uC0C1 \uC5C6\uC74C"}`;
+          if (action2.type === "skill") return `skill:${action2.skill} (${action2.affordable ? "\uC0AC\uC6A9 \uAC00\uB2A5" : `${action2.pool} \uBD80\uC871`})`;
+          if (action2.type === "item") return `item:${action2.itemId} (\uBCF4\uC720 ${action2.count})`;
+          if (action2.type === "flee") return `flee (\uC5D4\uC9C4 \uD655\uB960 ${action2.rate}%)`;
+          return String(action2.type || "");
         }).filter(Boolean).join("\n");
       }
       function buildPrompt2({ schema: schema2, state: state2, lore, card, persona, promptPreset, recentMessages, userInput, lastVerdicts, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges, groundedMemory, currentMessageId }) {
@@ -11158,14 +11170,14 @@ ${entry.content || ""}`
           if (!isPlainObject(t)) continue;
           const rankKeys = Object.keys(t).filter((k) => isRank(k) && isPlainObject(t[k]));
           if (rankKeys.length < 2) continue;
-          const field4 = pickPayField(t, rankKeys);
-          if (!field4) continue;
+          const field5 = pickPayField(t, rankKeys);
+          if (!field5) continue;
           const byRank = {};
           for (const k of rankKeys) {
-            const v = t[k][field4];
+            const v = t[k][field5];
             if (isNumberRange(v)) byRank[normalizeRank(k)] = v;
           }
-          const score = Object.keys(byRank).length + (/pay|reward|gold/i.test(field4) ? 1 : 0);
+          const score = Object.keys(byRank).length + (/pay|reward|gold/i.test(field5) ? 1 : 0);
           if (Object.keys(byRank).length >= 2 && (!best || score > best.score)) best = { byRank, score };
         }
         return best;
@@ -12088,14 +12100,14 @@ ${entry.content || ""}`
           const optionalDefaults = ENTITY_OPTIONAL_DEFAULTS[entity.type] || {};
           const fieldSet = new Set(asArray(entity.fields));
           const missingOptionalFields = [];
-          for (const field4 of required) {
-            if (fieldSet.has(field4)) continue;
-            if (field4 in optionalDefaults) {
-              if (Array.isArray(entity.fields)) entity.fields.push(field4);
-              missingOptionalFields.push(field4);
+          for (const field5 of required) {
+            if (fieldSet.has(field5)) continue;
+            if (field5 in optionalDefaults) {
+              if (Array.isArray(entity.fields)) entity.fields.push(field5);
+              missingOptionalFields.push(field5);
               continue;
             }
-            error(issues, `${path}.fields`, `Missing canonical field ${field4}.`);
+            error(issues, `${path}.fields`, `Missing canonical field ${field5}.`);
           }
           if (missingOptionalFields.length) {
             warn(issues, `${path}.fields`, `${missingOptionalFields.join(", ")} \uB204\uB77D \u2014 \uAE30\uBCF8\uAC12\uC73C\uB85C \uC815\uADDC\uD654\uD588\uC2B5\uB2C8\uB2E4(\uC120\uD0DD \uD544\uB4DC).`);
@@ -12103,13 +12115,13 @@ ${entry.content || ""}`
           asArray(entity.instances).forEach((instance, instanceIndex) => {
             const itemPath = `${path}.instances[${instanceIndex}]`;
             if (!isObject2(instance)) return error(issues, itemPath, "Entity instance must be an object.");
-            for (const field4 of required) {
-              if (field4 in instance) continue;
-              if (field4 in optionalDefaults) {
-                instance[field4] = clone3(optionalDefaults[field4]);
+            for (const field5 of required) {
+              if (field5 in instance) continue;
+              if (field5 in optionalDefaults) {
+                instance[field5] = clone3(optionalDefaults[field5]);
                 continue;
               }
-              error(issues, `${itemPath}.${field4}`, `Missing required field ${field4}.`);
+              error(issues, `${itemPath}.${field5}`, `Missing required field ${field5}.`);
             }
             if (entity.type === "facility" && instance.upgradeCosts != null) {
               validateUpgradeCosts(instance.upgradeCosts, `${itemPath}.upgradeCosts`, issues);
@@ -12355,12 +12367,12 @@ ${entry.content || ""}`
       }
       function normalizeFieldList(fields, aliases, path, issues) {
         if (!Array.isArray(fields)) return fields;
-        return fields.map((field4) => {
-          if (aliases[field4]) {
-            warn(issues, path, `Normalized field ${field4} -> ${aliases[field4]}.`);
-            return aliases[field4];
+        return fields.map((field5) => {
+          if (aliases[field5]) {
+            warn(issues, path, `Normalized field ${field5} -> ${aliases[field5]}.`);
+            return aliases[field5];
           }
-          return field4;
+          return field5;
         });
       }
       function normalizeObjectFields(obj, aliases, path, issues) {
@@ -12486,6 +12498,82 @@ ${entry.content || ""}`
           }
         }
       };
+    }
+  });
+
+  // core/editor/projectEditor.js
+  var require_projectEditor = __commonJS({
+    "core/editor/projectEditor.js"(exports, module) {
+      "use strict";
+      function cloneProject(project) {
+        return { manifest: JSON.parse(JSON.stringify(project.manifest)), files: Object.fromEntries(Object.entries(project.files || {}).map(([key, value]) => [key, Uint8Array.from(value)])) };
+      }
+      function editProject(project, edit2) {
+        const next = cloneProject(project);
+        edit2(next.manifest);
+        next.manifest.revision = Number(next.manifest.revision || 0) + 1;
+        return next;
+      }
+      function setBasics2(project, values) {
+        return editProject(project, (manifest) => {
+          manifest.title = String(values.title || manifest.title);
+          const character2 = manifest.content.characters[0] || (manifest.content.characters[0] = { id: "character", name: "" });
+          character2.name = String(values.name ?? character2.name ?? "");
+          character2.description = String(values.description ?? character2.description ?? "");
+        });
+      }
+      function setInitialState2(project, value) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("initial_state_object_required");
+        return editProject(project, (manifest) => {
+          manifest.runtime.schema = manifest.runtime.schema || {};
+          manifest.runtime.schema.initialState = JSON.parse(JSON.stringify(value));
+          manifest.runtime.initialState = JSON.parse(JSON.stringify(value));
+        });
+      }
+      function setModuleEnabled2(project, id, enabled) {
+        return editProject(project, (manifest) => {
+          const module2 = manifest.modules.installed.find((item) => item.id === id);
+          if (module2) module2.enabled = !!enabled;
+          else manifest.modules.installed.push({ id, version: "1.0.0", enabled: !!enabled });
+        });
+      }
+      function setScreenPreset2(project, preset) {
+        const value = SCREEN_PRESETS2[preset];
+        if (!value) throw new Error("unknown_screen_preset");
+        return editProject(project, (manifest) => {
+          manifest.runtime.screens = JSON.parse(JSON.stringify(value.screens));
+          manifest.runtime.navigation = JSON.parse(JSON.stringify(value.navigation));
+        });
+      }
+      function updateLoreEntries2(project, updates) {
+        return editProject(project, (manifest) => {
+          const book = manifest.content.lorebooks[0] || (manifest.content.lorebooks[0] = { entries: [] });
+          const byId = new Map((updates || []).map((item) => [String(item.id), item]));
+          book.entries = (book.entries || []).map((entry, index) => {
+            const update = byId.get(String(entry.id ?? index));
+            return update ? { ...entry, keys: String(update.keys || "").split(",").map((key) => key.trim()).filter(Boolean), content: String(update.content ?? entry.content ?? ""), enabled: update.enabled !== false } : entry;
+          });
+        });
+      }
+      function validateEditorProject2(project) {
+        const issues = [];
+        const manifest = project && project.manifest;
+        if (!manifest) return [{ path: "$", reason: "project_missing" }];
+        if (!manifest.title.trim()) issues.push({ path: "title", reason: "required" });
+        if (!manifest.runtime.schema) issues.push({ path: "runtime.schema", reason: "required" });
+        const ids = /* @__PURE__ */ new Set();
+        for (const screen of manifest.runtime.screens || []) {
+          if (!screen.id || ids.has(screen.id)) issues.push({ path: "runtime.screens", reason: "screen_id_invalid" });
+          ids.add(screen.id);
+        }
+        return issues;
+      }
+      var SCREEN_PRESETS2 = {
+        chat: { screens: [{ id: "play", title: "\uB300\uD654", layout: "stage-chat-hud", presentation: "page", regions: { main: [{ widget: "chat" }], side: [{ widget: "sidebar" }] } }], navigation: [{ id: "play", screenId: "play", label: "\uB300\uD654" }] },
+        adventure: { screens: [{ id: "field", title: "\uD604\uC7A5", layout: "stage-chat-hud", presentation: "page", regions: { hud: [{ widget: "stat-strip", source: "core.summary" }], main: [{ widget: "chat" }], side: [{ widget: "map-nodes", source: "location.map" }] } }, { id: "party", title: "\uD30C\uD2F0", layout: "dashboard", presentation: "page", regions: { main: [{ widget: "detail-panel", source: "party.formation" }] } }], navigation: [{ id: "field", screenId: "field", label: "\uD604\uC7A5" }, { id: "party", screenId: "party", label: "\uD30C\uD2F0" }] },
+        management: { screens: [{ id: "management", title: "\uACBD\uC601", layout: "dashboard", presentation: "page", regions: { hud: [{ widget: "stat-strip", source: "core.summary" }], main: [{ widget: "facility-grid", source: "core.facilities" }], side: [{ widget: "inventory-grid", source: "core.resources" }] } }], navigation: [{ id: "management", screenId: "management", label: "\uACBD\uC601" }] }
+      };
+      module.exports = { SCREEN_PRESETS: SCREEN_PRESETS2, cloneProject, setBasics: setBasics2, setInitialState: setInitialState2, setModuleEnabled: setModuleEnabled2, setScreenPreset: setScreenPreset2, updateLoreEntries: updateLoreEntries2, validateEditorProject: validateEditorProject2 };
     }
   });
 
@@ -17695,10 +17783,10 @@ ${Array.from(extras).join(" ")}` : text;
       "combat.actions": ({ schema: schema2, state: state2 }) => {
         const selected = (0, import_selectors.availableActions)(schema2, state2);
         if (!selected.active) return [];
-        return (selected.actions || []).map((action) => {
-          if (action.type === "item") return { ...action, label: action.label, event: { id: "use_item", params: { itemId: action.itemId } } };
-          const params = { action: action.type, ...action.skill ? { skill: action.skill } : {}, ...action.targets && action.targets[0] ? { target: action.targets[0].id } : {} };
-          return { ...action, label: action.name || action.type, event: { id: "combat_action", params } };
+        return (selected.actions || []).map((action2) => {
+          if (action2.type === "item") return { ...action2, label: action2.label, event: { id: "use_item", params: { itemId: action2.itemId } } };
+          const params = { action: action2.type, ...action2.skill ? { skill: action2.skill } : {}, ...action2.targets && action2.targets[0] ? { target: action2.targets[0].id } : {} };
+          return { ...action2, label: action2.name || action2.type, event: { id: "combat_action", params } };
         });
       },
       "core.management": ({ schema: schema2, state: state2 }) => (0, import_selectors.availableManagement)(schema2, state2)
@@ -17793,10 +17881,10 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderActions(box, actions, context, api) {
     const row3 = (0, import_dom.el)("div", "declarative-actions");
-    for (const action of actions || []) {
-      const control = (0, import_dom.button)(String(action.label || action.name || action.id || action.type || "\uD589\uB3D9"), "primary-btn");
-      control.disabled = action.enabled === false || action.affordable === false;
-      control.addEventListener("click", () => runAction(action.event || action, context, api));
+    for (const action2 of actions || []) {
+      const control = (0, import_dom.button)(String(action2.label || action2.name || action2.id || action2.type || "\uD589\uB3D9"), "primary-btn");
+      control.disabled = action2.enabled === false || action2.affordable === false;
+      control.addEventListener("click", () => runAction(action2.event || action2, context, api));
       row3.append(control);
     }
     box.append(row3);
@@ -17806,8 +17894,8 @@ ${Array.from(extras).join(" ")}` : text;
     pre.textContent = data == null ? "\uC120\uD0DD \uC5C6\uC74C" : JSON.stringify(data, null, 2);
     box.append(pre);
   }
-  function runAction(action, context, api) {
-    const event = (0, import_runtime.resolveEvent)(action, context);
+  function runAction(action2, context, api) {
+    const event = (0, import_runtime.resolveEvent)(action2, context);
     if (event) api.event(event);
   }
   function asList(value) {
@@ -18797,7 +18885,7 @@ ${Array.from(extras).join(" ")}` : text;
       }
       return consoleBox;
     }
-    const attack = descriptor.actions.find((action) => action.type === "attack");
+    const attack = descriptor.actions.find((action2) => action2.type === "attack");
     const targets = attack ? attack.targets : [];
     if (!targets.some((target2) => target2.id === selectedTarget)) selectedTarget = targets.length ? targets[0].id : null;
     const targetRow = el3("div", "combat-command-row");
@@ -18819,22 +18907,22 @@ ${Array.from(extras).join(" ")}` : text;
     attackButton.disabled = busy || !selectedTarget;
     attackButton.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "attack", target: selectedTarget } }, input2, ctx, render2));
     commands.append(attackButton);
-    for (const action of descriptor.actions.filter((item) => item.type === "skill")) {
-      const skill = button3(`${action.name} (${action.pool.toUpperCase()} ${action.cost})`, "secondary-btn");
-      skill.disabled = busy || !action.affordable || !selectedTarget;
-      skill.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "skill", target: selectedTarget, skill: action.skill } }, input2, ctx, render2));
+    for (const action2 of descriptor.actions.filter((item) => item.type === "skill")) {
+      const skill = button3(`${action2.name} (${action2.pool.toUpperCase()} ${action2.cost})`, "secondary-btn");
+      skill.disabled = busy || !action2.affordable || !selectedTarget;
+      skill.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "skill", target: selectedTarget, skill: action2.skill } }, input2, ctx, render2));
       commands.append(skill);
     }
-    for (const action of descriptor.actions.filter((item) => item.type === "item")) {
-      const item = button3(`\u{1F9EA} ${action.label} \xD7${action.count} (+${action.amount} ${action.pool.toUpperCase()})`, "secondary-btn");
+    for (const action2 of descriptor.actions.filter((item) => item.type === "item")) {
+      const item = button3(`\u{1F9EA} ${action2.label} \xD7${action2.count} (+${action2.amount} ${action2.pool.toUpperCase()})`, "secondary-btn");
       item.disabled = busy;
-      item.addEventListener("click", () => runCombatTurn({ id: "use_item", params: { itemId: action.itemId } }, input2, ctx, render2));
+      item.addEventListener("click", () => runCombatTurn({ id: "use_item", params: { itemId: action2.itemId } }, input2, ctx, render2));
       commands.append(item);
     }
     const defend = button3("\u{1F6E1} \uBC29\uC5B4", "secondary-btn");
     defend.disabled = busy;
     defend.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "defend" } }, input2, ctx, render2));
-    const flee = descriptor.actions.find((action) => action.type === "flee");
+    const flee = descriptor.actions.find((action2) => action2.type === "flee");
     const fleeButton = button3(`\u{1F3C3} \uB3C4\uC8FC ${flee.rate}%`, "secondary-btn");
     fleeButton.disabled = busy;
     fleeButton.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "flee" } }, input2, ctx, render2));
@@ -19620,9 +19708,9 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
     }
     if (!ctx.lore) {
-      const note = el3("p", "muted-line");
-      note.textContent = "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4.";
-      section.append(note);
+      const note2 = el3("p", "muted-line");
+      note2.textContent = "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4.";
+      section.append(note2);
     }
     return section;
   }
@@ -20575,10 +20663,10 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       addLog(ctx, "\uC2A4\uD0A4\uB9C8 \uC2B9\uC778\uB428 \xB7 \uC5D4\uC9C4 \uC138\uC158\uC774 \uC7AC\uC124\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
       ctx.goToPlay();
     });
-    const note = el4("p", "muted-line");
+    const note2 = el4("p", "muted-line");
     const hasJsonError = (result.issues || []).some((issue) => issue.source === "advanced-json");
-    note.textContent = pendingDrafts.length > 0 ? `\uACE0\uAE09 \uD3B8\uC9D1\uC5D0 \uC800\uC7A5\uB418\uC9C0 \uC54A\uC740 \uC218\uC815\uC774 \uC788\uC5B4\uC694(${pendingDrafts.join(", ")}) \u2014 \uAC01 \uC139\uC158\uC758 "\uC139\uC158 \uC7AC\uAC80\uC99D"\uC744 \uBA3C\uC800 \uB20C\uB7EC\uC8FC\uC138\uC694.` : hasJsonError ? "\uACE0\uAE09 \uD3B8\uC9D1\uC758 JSON\uC5D0 \uC624\uB958\uAC00 \uC788\uC5B4\uC694 \u2014 \uB418\uB3CC\uB9AC\uB824\uBA74 \uB2E4\uC2DC \uCEF4\uD30C\uC77C" : counts.error > 0 ? "\uD50C\uB808\uC774\uB97C \uC2DC\uC791\uD558\uB824\uBA74 \uD655\uC778\uC774 \uD544\uC694\uD55C \uC624\uB958\uB97C \uD574\uACB0\uD574 \uC8FC\uC138\uC694." : "\uC2B9\uC778\uD558\uBA74 \uD65C\uC131 \uC5D4\uC9C4 \uC138\uC158\uC774 \uC774 \uC815\uADDC\uD654\uB41C \uC2A4\uD0A4\uB9C8\uB85C \uC7AC\uC124\uC815\uB429\uB2C8\uB2E4.";
-    section.append(approve, note);
+    note2.textContent = pendingDrafts.length > 0 ? `\uACE0\uAE09 \uD3B8\uC9D1\uC5D0 \uC800\uC7A5\uB418\uC9C0 \uC54A\uC740 \uC218\uC815\uC774 \uC788\uC5B4\uC694(${pendingDrafts.join(", ")}) \u2014 \uAC01 \uC139\uC158\uC758 "\uC139\uC158 \uC7AC\uAC80\uC99D"\uC744 \uBA3C\uC800 \uB20C\uB7EC\uC8FC\uC138\uC694.` : hasJsonError ? "\uACE0\uAE09 \uD3B8\uC9D1\uC758 JSON\uC5D0 \uC624\uB958\uAC00 \uC788\uC5B4\uC694 \u2014 \uB418\uB3CC\uB9AC\uB824\uBA74 \uB2E4\uC2DC \uCEF4\uD30C\uC77C" : counts.error > 0 ? "\uD50C\uB808\uC774\uB97C \uC2DC\uC791\uD558\uB824\uBA74 \uD655\uC778\uC774 \uD544\uC694\uD55C \uC624\uB958\uB97C \uD574\uACB0\uD574 \uC8FC\uC138\uC694." : "\uC2B9\uC778\uD558\uBA74 \uD65C\uC131 \uC5D4\uC9C4 \uC138\uC158\uC774 \uC774 \uC815\uADDC\uD654\uB41C \uC2A4\uD0A4\uB9C8\uB85C \uC7AC\uC124\uC815\uB429\uB2C8\uB2E4.";
+    section.append(approve, note2);
     return section;
   }
   async function runCompile(ctx, render2) {
@@ -20720,6 +20808,191 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     return card;
   }
 
+  // src/editorView.js
+  var import_projectEditor = __toESM(require_projectEditor());
+  function renderEditorView(panel, ctx) {
+    let project = ctx.ensureProject();
+    const root = document.createElement("div");
+    root.className = "editor-workspace";
+    const nav = document.createElement("nav");
+    nav.className = "editor-sections";
+    const body = document.createElement("div");
+    body.className = "editor-body";
+    const sections = [["basics", "\uAE30\uBCF8 \uC815\uBCF4"], ["prompt", "\uD504\uB86C\uD504\uD2B8"], ["lore", "\uB85C\uC5B4\uBD81"], ["modules", "\uBAA8\uB4C8"], ["rules", "\uCD08\uAE30 \uC0C1\uD0DC"], ["assets", "\uC5D0\uC14B \uC5F0\uACB0"], ["screens", "\uD654\uBA74"], ["review", "\uAC80\uD1A0\xB7\uC800\uC7A5"]];
+    let active = "basics";
+    const save = (next) => {
+      project = next;
+      ctx.updateProject(next);
+      draw();
+    };
+    const draw = () => {
+      nav.replaceChildren();
+      body.replaceChildren();
+      for (const [id, label] of sections) {
+        const button5 = document.createElement("button");
+        button5.type = "button";
+        button5.className = id === active ? "tab editor-active" : "tab";
+        button5.textContent = label;
+        button5.addEventListener("click", () => {
+          active = id;
+          draw();
+        });
+        nav.append(button5);
+      }
+      renderSection(body, active, project, save, ctx);
+    };
+    root.append(nav, body);
+    panel.append(root);
+    draw();
+    return () => {
+    };
+  }
+  function renderSection(body, section, project, save, ctx) {
+    const manifest = project.manifest;
+    const heading = document.createElement("h2");
+    heading.textContent = sectionTitle(section);
+    body.append(heading);
+    if (section === "basics") {
+      const character2 = manifest.content.characters[0] || {};
+      const title = field4("\uD504\uB85C\uC81D\uD2B8 \uC774\uB984", manifest.title);
+      const name = field4("\uC8FC \uCE90\uB9AD\uD130 \uC774\uB984", character2.name || "");
+      const desc = area("\uC124\uBA85", character2.description || "");
+      body.append(title.wrap, name.wrap, desc.wrap, action("\uC800\uC7A5", () => save((0, import_projectEditor.setBasics)(project, { title: title.input.value, name: name.input.value, description: desc.input.value }))));
+    } else if (section === "prompt") {
+      body.append(note("Risu \uD504\uB9AC\uC14B \uBE14\uB85D \uC21C\uC11C\uC640 \uC6D0\uBCF8\uC740 \uADF8\uB300\uB85C \uBCF4\uC874\uB429\uB2C8\uB2E4. \uC774 MVP\uC5D0\uC11C\uB294 \uD504\uB9AC\uC14B\uC744 \uC120\uD0DD\uD558\uACE0 \uC2E4\uC81C \uC694\uCCAD \uCD94\uC801 \uD654\uBA74\uC5D0\uC11C \uACB0\uACFC\uB97C \uAC80\uD1A0\uD569\uB2C8\uB2E4."));
+      const select = document.createElement("select");
+      for (const preset of manifest.prompts.presets || []) {
+        const option = document.createElement("option");
+        option.value = preset.id;
+        option.textContent = preset.name || preset.id;
+        option.selected = preset.id === manifest.prompts.defaultPresetId;
+        select.append(option);
+      }
+      select.addEventListener("change", () => save(edit(project, (m) => {
+        m.prompts.defaultPresetId = select.value || null;
+      })));
+      body.append(select, rawDetails(manifest.prompts));
+    } else if (section === "lore") {
+      const entries = manifest.content.lorebooks[0]?.entries || [];
+      const drafts = [];
+      entries.slice(0, 100).forEach((entry, index) => {
+        const row3 = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = entry.name || entry.comment || `\uB85C\uC5B4 ${index + 1}`;
+        const keys = field4("\uD638\uCD9C \uD0A4(\uC27C\uD45C \uAD6C\uBD84)", (entry.keys || []).join(", "));
+        const content = area("\uB0B4\uC6A9", entry.content || "");
+        row3.append(summary, keys.wrap, content.wrap);
+        body.append(row3);
+        drafts.push({ id: String(entry.id ?? index), keys, content, enabled: entry.enabled !== false });
+      });
+      body.append(action("\uD45C\uC2DC\uB41C \uB85C\uC5B4 \uC77C\uAD04 \uC800\uC7A5", () => save((0, import_projectEditor.updateLoreEntries)(project, drafts.map((item) => ({ id: item.id, keys: item.keys.input.value, content: item.content.input.value, enabled: item.enabled }))))));
+    } else if (section === "modules") {
+      for (const module of manifest.modules.installed || []) {
+        const label = document.createElement("label");
+        label.className = "editor-check";
+        const input2 = document.createElement("input");
+        input2.type = "checkbox";
+        input2.checked = module.enabled !== false;
+        input2.addEventListener("change", () => save((0, import_projectEditor.setModuleEnabled)(project, module.id, input2.checked)));
+        label.append(input2, document.createTextNode(`${module.id} \xB7 ${module.version || "1.0.0"}`));
+        body.append(label);
+      }
+      body.append(note("Lua\uCC98\uB7FC \uB0AE\uC740 \uC218\uC900\uC758 \uC2E4\uD589 \uCF54\uB4DC\uB294 \uBCF4\uC874\uB418\uC9C0\uB9CC \uC774 \uD654\uBA74\uC5D0\uC11C \uC548\uC804\uD558\uB2E4\uACE0 \uC790\uB3D9 \uC2B9\uC778\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."));
+    } else if (section === "rules") {
+      const json = area("\uCD08\uAE30 \uC0C1\uD0DC(JSON)", JSON.stringify(manifest.runtime.schema?.initialState || {}, null, 2));
+      const status = document.createElement("p");
+      body.append(json.wrap, action("\uAC80\uC99D\uD558\uACE0 \uC800\uC7A5", () => {
+        try {
+          save((0, import_projectEditor.setInitialState)(project, JSON.parse(json.input.value)));
+          status.textContent = "\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.";
+        } catch (error) {
+          status.textContent = `\uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${error.message}`;
+        }
+      }), status);
+    } else if (section === "assets") {
+      body.append(note("\uC5D0\uC14B\uC758 canonical NPC\uC640 \uAC10\uC815 \uC5F0\uACB0\uC744 \uD655\uC778\uD569\uB2C8\uB2E4. \uC6D0\uBCF8 \uD30C\uC77C\uC740 \uBCC0\uACBD\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."));
+      const table = document.createElement("table");
+      for (const asset of (manifest.assets || []).slice(0, 200)) {
+        const tr = document.createElement("tr");
+        tr.append(cell(asset.name || asset.id), cell(asset.canonical?.entityId || "\uBBF8\uC5F0\uACB0"), cell(asset.canonical?.emotion || "-"));
+        table.append(tr);
+      }
+      body.append(table);
+    } else if (section === "screens") {
+      const select = document.createElement("select");
+      for (const [id, value] of Object.entries(import_projectEditor.SCREEN_PRESETS)) {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = { chat: "\uB300\uD654 \uC911\uC2EC", adventure: "\uBAA8\uD5D8\xB7\uD30C\uD2F0", management: "\uACBD\uC601" }[id];
+        select.append(option);
+      }
+      body.append(select, action("\uD654\uBA74 \uD504\uB9AC\uC14B \uC801\uC6A9", () => save((0, import_projectEditor.setScreenPreset)(project, select.value))), rawDetails(manifest.runtime.screens));
+    } else {
+      const issues = (0, import_projectEditor.validateEditorProject)(project);
+      body.append(note(issues.length ? `\uD655\uC778\uD560 \uBB38\uC81C ${issues.length}\uAC1C: ${issues.map((item) => `${item.path}(${item.reason})`).join(", ")}` : "\uD544\uC218 \uAD6C\uC870 \uAC80\uC0AC\uB97C \uD1B5\uACFC\uD588\uC2B5\uB2C8\uB2E4."));
+      body.append(action("\uB77C\uC774\uBE0C \uD50C\uB808\uC774\uD14C\uC2A4\uD2B8", () => {
+        ctx.activateProject(project);
+        ctx.goToPlay();
+      }), action("SimPack \uC800\uC7A5", () => ctx.exportProject(project)), rawDetails(manifest));
+    }
+  }
+  function edit(project, fn) {
+    const next = { manifest: JSON.parse(JSON.stringify(project.manifest)), files: project.files };
+    fn(next.manifest);
+    next.manifest.revision += 1;
+    return next;
+  }
+  function field4(label, value) {
+    const wrap = document.createElement("label");
+    wrap.className = "editor-field";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const input2 = document.createElement("input");
+    input2.value = value;
+    wrap.append(span, input2);
+    return { wrap, input: input2 };
+  }
+  function area(label, value) {
+    const result = field4(label, value);
+    const input2 = document.createElement("textarea");
+    input2.value = value;
+    input2.rows = Math.min(18, Math.max(5, String(value).split("\n").length));
+    result.wrap.replaceChild(input2, result.input);
+    result.input = input2;
+    return result;
+  }
+  function action(label, handler) {
+    const button5 = document.createElement("button");
+    button5.type = "button";
+    button5.className = "primary-btn";
+    button5.textContent = label;
+    button5.addEventListener("click", handler);
+    return button5;
+  }
+  function note(text) {
+    const p = document.createElement("p");
+    p.className = "editor-note";
+    p.textContent = text;
+    return p;
+  }
+  function rawDetails(value) {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "\uC6D0\uBCF8 \uAD6C\uC870 \uD568\uAED8 \uBCF4\uAE30";
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(value, null, 2);
+    details.append(summary, pre);
+    return details;
+  }
+  function cell(value) {
+    const td2 = document.createElement("td");
+    td2.textContent = String(value);
+    return td2;
+  }
+  function sectionTitle(id) {
+    return { basics: "\uAE30\uBCF8 \uC815\uBCF4", prompt: "Risu \uD638\uD658 \uD504\uB86C\uD504\uD2B8", lore: "\uB85C\uC5B4\uBD81", modules: "\uBAA8\uB4C8\uACFC \uAD8C\uD55C", rules: "\uCD08\uAE30\uAC12\uACFC \uADDC\uCE59", assets: "\uC5D0\uC14B \uC5F0\uACB0", screens: "\uD654\uBA74 \uD504\uB9AC\uC14B", review: "\uAC80\uD1A0\xB7\uC800\uC7A5" }[id];
+  }
+
   // src/main.js
   var import_simpack = __toESM(require_simpack());
   var import_runtimeProject = __toESM(require_runtimeProject());
@@ -20732,7 +21005,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     { id: "assets", label: "\uC5D0\uC14B" },
     { id: "engine", label: "\uC5D4\uC9C4(\uC2E4\uD5D8)" },
     { id: "play", label: "\uD50C\uB808\uC774(\uC2E4\uD5D8)" },
-    { id: "import", label: "\uC784\uD3EC\uD2B8(\uC2E4\uD5D8)" }
+    { id: "import", label: "\uC784\uD3EC\uD2B8(\uC2E4\uD5D8)" },
+    { id: "editor", label: "\uC81C\uC791 \uD3B8\uC9D1\uAE30" }
   ];
   var KNOWN_ORIGINS = [
     "https://generativelanguage.googleapis.com/",
@@ -20930,7 +21204,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       button5.className = "tab";
       button5.textContent = tab.label;
       button5.setAttribute("aria-selected", String(state.activeTab === tab.id));
-      button5.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine" && tab.id !== "import";
+      button5.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine" && tab.id !== "import" && tab.id !== "editor";
       button5.addEventListener("click", () => {
         if (state.activeTab === tab.id) return;
         clearTabResources();
@@ -21036,6 +21310,10 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       state.cleanup = renderImportView(panel, ctx);
       return;
     }
+    if (state.activeTab === "editor") {
+      state.cleanup = renderEditorView(panel, ctx);
+      return;
+    }
     if (!state.parsed) {
       panel.append(renderEmptyOverview());
       return;
@@ -21070,11 +21348,48 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       objectUrlFor,
       revokeViewUrls,
       formatBytes,
+      ensureProject: ensureEditableProject,
+      updateProject: (project) => {
+        state.simpackProject = project;
+      },
+      activateProject: (project) => {
+        state.simpackProject = project;
+        setActiveSchema(project.manifest.runtime.schema);
+        schemaActivated = true;
+      },
+      exportProject: exportSimPackProject,
       goToPlay: () => {
         schemaActivated = true;
         enterPlayer();
       }
     };
+  }
+  function ensureEditableProject() {
+    if (state.simpackProject) return state.simpackProject;
+    const parsed = state.parsed || { name: "\uC0C8 \uD504\uB85C\uC81D\uD2B8", card: { data: {} }, assets: [] };
+    const data = parsed.card && parsed.card.data || {};
+    state.simpackProject = (0, import_simpack.createSimPack)({
+      id: String(parsed.name || "project"),
+      title: String(parsed.name || "\uC0C8 \uD504\uB85C\uC81D\uD2B8"),
+      fileName: state.file && state.file.name || "",
+      risuEnvelope: state.compatibility,
+      sourceBytes: parsed._sourceBytes || parsed._bytes || null,
+      schema: getSchema(),
+      lorebooks: state.lore ? [state.lore] : [],
+      characters: [{ id: "primary", name: data.name || parsed.name || "", description: data.description || "" }],
+      screens: [{ id: "play", title: "\uB300\uD654", layout: "stage-chat-hud", presentation: "page", regions: { main: [{ widget: "chat" }], side: [{ widget: "sidebar" }] } }],
+      navigation: [{ id: "play", screenId: "play", label: "\uB300\uD654" }],
+      provenance: state.compatibility && state.compatibility.provenance || []
+    });
+    return state.simpackProject;
+  }
+  function exportSimPackProject(project) {
+    const bytes = (0, import_simpack.packSimPack)(project);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+    link.download = `${String(project.manifest.title || "project").replace(/[<>:"/\\|?*]/g, "")}.simpack`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1e3);
   }
   function renderEmptyOverview() {
     const wrap = document.createElement("div");
@@ -21113,7 +21428,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     const lengths = document.createElement("section");
     lengths.className = "wide-section";
     lengths.append(
-      sectionTitle("\uD504\uB86C\uD504\uD2B8 \uAE38\uC774"),
+      sectionTitle2("\uD504\uB86C\uD504\uD2B8 \uAE38\uC774"),
       keyValueList([
         ["first_mes", `${firstMes.length.toLocaleString()}\uC790`],
         ["post_history_instructions", `${postHistory.length.toLocaleString()}\uC790`],
@@ -21129,7 +21444,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     details.append(summary, pre);
     const packageSection = document.createElement("section");
     packageSection.className = "wide-section";
-    const packageTitle = sectionTitle("SimPack \uD504\uB85C\uC81D\uD2B8");
+    const packageTitle = sectionTitle2("SimPack \uD504\uB85C\uC81D\uD2B8");
     const packageCopy = document.createElement("p");
     packageCopy.textContent = "\uCE74\uB4DC \uC6D0\uBCF8\xB7\uD638\uD658 \uC815\uBCF4\xB7\uD604\uC7AC \uC2B9\uC778 \uADDC\uCE59\uC744 \uD558\uB098\uC758 \uAD50\uCCB4 \uAC00\uB2A5\uD55C \uD504\uB85C\uC81D\uD2B8 \uD30C\uC77C\uB85C \uC800\uC7A5\uD569\uB2C8\uB2E4.";
     const packageButton = document.createElement("button");
@@ -21172,7 +21487,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     el5.append(k, v);
     return el5;
   }
-  function sectionTitle(text) {
+  function sectionTitle2(text) {
     const h = document.createElement("h2");
     h.textContent = text;
     return h;

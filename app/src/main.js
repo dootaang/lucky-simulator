@@ -10,6 +10,7 @@ import { renderEngineView } from './engineView.js';
 import { renderPlayView, primaryCharacter } from './playView.js';
 import { applyCardTheme } from './theme/cardTheme.js';
 import { renderImportView } from './importView.js';
+import { renderEditorView } from './editorView.js';
 import { getSchema, setActiveSchema } from './engineSession.js';
 import { createSimPack, packSimPack, unpackSimPack } from '../core/simpack/simpack.js';
 import { selectSimPackRuntime } from '../core/simpack/runtimeProject.js';
@@ -27,6 +28,7 @@ const tabs = [
   { id: 'engine', label: '엔진(실험)' },
   { id: 'play', label: '플레이(실험)' },
   { id: 'import', label: '임포트(실험)' },
+  { id: 'editor', label: '제작 편집기' },
 ];
 
 const KNOWN_ORIGINS = [
@@ -226,7 +228,7 @@ function renderTabs() {
     button.className = 'tab';
     button.textContent = tab.label;
     button.setAttribute('aria-selected', String(state.activeTab === tab.id));
-    button.disabled = !state.parsed && tab.id !== 'overview' && tab.id !== 'engine' && tab.id !== 'import';
+    button.disabled = !state.parsed && tab.id !== 'overview' && tab.id !== 'engine' && tab.id !== 'import' && tab.id !== 'editor';
     button.addEventListener('click', () => {
       if (state.activeTab === tab.id) return;
       clearTabResources();
@@ -330,6 +332,10 @@ function render() {
     state.cleanup = renderImportView(panel, ctx);
     return;
   }
+  if (state.activeTab === 'editor') {
+    state.cleanup = renderEditorView(panel, ctx);
+    return;
+  }
 
   if (!state.parsed) {
     panel.append(renderEmptyOverview());
@@ -369,8 +375,31 @@ function createContext() {
     objectUrlFor,
     revokeViewUrls,
     formatBytes,
+    ensureProject: ensureEditableProject,
+    updateProject: (project) => { state.simpackProject = project; },
+    activateProject: (project) => { state.simpackProject = project; setActiveSchema(project.manifest.runtime.schema); schemaActivated = true; },
+    exportProject: exportSimPackProject,
     goToPlay: () => { schemaActivated = true; enterPlayer(); },
   };
+}
+
+function ensureEditableProject() {
+  if (state.simpackProject) return state.simpackProject;
+  const parsed = state.parsed || { name: '새 프로젝트', card: { data: {} }, assets: [] };
+  const data = parsed.card && parsed.card.data || {};
+  state.simpackProject = createSimPack({
+    id: String(parsed.name || 'project'), title: String(parsed.name || '새 프로젝트'), fileName: state.file && state.file.name || '',
+    risuEnvelope: state.compatibility, sourceBytes: parsed._sourceBytes || parsed._bytes || null, schema: getSchema(), lorebooks: state.lore ? [state.lore] : [],
+    characters: [{ id: 'primary', name: data.name || parsed.name || '', description: data.description || '' }],
+    screens: [{ id: 'play', title: '대화', layout: 'stage-chat-hud', presentation: 'page', regions: { main: [{ widget: 'chat' }], side: [{ widget: 'sidebar' }] } }],
+    navigation: [{ id: 'play', screenId: 'play', label: '대화' }], provenance: state.compatibility && state.compatibility.provenance || [],
+  });
+  return state.simpackProject;
+}
+
+function exportSimPackProject(project) {
+  const bytes = packSimPack(project); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+  link.download = `${String(project.manifest.title || 'project').replace(/[<>:"/\\|?*]/g, '')}.simpack`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
 function renderEmptyOverview() {
