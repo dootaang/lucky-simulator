@@ -7339,7 +7339,7 @@ ${row3.entry.content}`).join("\n\n");
             retryAfterMs: retryAfterMs(response.headers.get("retry-after"))
           };
         }, { retryNetwork: false });
-        return parseResponse(req.kind, JSON.parse(bodyText));
+        return parseResponse(req.kind, JSON.parse(bodyText), prompt.allowTruncated);
       }
       async function callVertex(def, cfg, prompt) {
         const auth = await getVertexAccessToken(cfg.apiKey);
@@ -7381,7 +7381,7 @@ ${row3.entry.content}`).join("\n\n");
             retryAfterMs: retryAfterMs(response.headers.get("retry-after"))
           };
         }, { retryNetwork: false });
-        return parseVertexResponse(JSON.parse(bodyText));
+        return parseVertexResponse(JSON.parse(bodyText), prompt.allowTruncated);
       }
       function buildVertexBody(prompt) {
         return {
@@ -7436,31 +7436,34 @@ ${row3.entry.content}`).join("\n\n");
           body: JSON.stringify(body)
         };
       }
-      function parseResponse(kind, json) {
+      function parseResponse(kind, json, allowTruncated) {
         if (kind === "anthropic") {
-          if (json && json.stop_reason === "max_tokens") throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
+          const truncated2 = !!(json && json.stop_reason === "max_tokens");
           const out2 = json && json.content && json.content[0] && json.content[0].text;
-          if (typeof out2 !== "string" || !out2.trim()) throw new Error("\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
-          return out2;
+          if (truncated2 && !allowTruncated) throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
+          if (typeof out2 !== "string" || !out2.trim()) throw new Error(truncated2 ? "\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694" : "\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
+          return allowTruncated ? { text: out2, truncated: truncated2 } : out2;
         }
         const choice = json && json.choices && json.choices[0];
         const finish = choice && choice.finish_reason;
-        if (finish === "length") throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
+        const truncated = finish === "length";
+        if (truncated && !allowTruncated) throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
         if (finish === "content_filter") throw new Error("\uC548\uC804 \uD544\uD130\uAC00 \uC751\uB2F5\uC744 \uCC28\uB2E8\uD588\uC5B4\uC694");
         const out = choice && choice.message && choice.message.content;
-        if (typeof out !== "string" || !out.trim()) throw new Error("\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
-        return out;
+        if (typeof out !== "string" || !out.trim()) throw new Error(truncated ? "\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694" : "\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
+        return allowTruncated ? { text: out, truncated } : out;
       }
-      function parseVertexResponse(json) {
+      function parseVertexResponse(json, allowTruncated) {
         const blocked = json && json.promptFeedback && json.promptFeedback.blockReason;
         if (blocked) throw new Error(`\uC548\uC804 \uD544\uD130\uAC00 \uC694\uCCAD\uC744 \uCC28\uB2E8\uD588\uC5B4\uC694 (${blocked})`);
         const candidate = json && json.candidates && json.candidates[0];
-        if (candidate && candidate.finishReason === "MAX_TOKENS") throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
+        const truncated = !!(candidate && candidate.finishReason === "MAX_TOKENS");
+        if (truncated && !allowTruncated) throw new Error("\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694");
         if (candidate && candidate.finishReason === "SAFETY") throw new Error("\uC548\uC804 \uD544\uD130\uAC00 \uC751\uB2F5\uC744 \uCC28\uB2E8\uD588\uC5B4\uC694");
         const parts = candidate && candidate.content && candidate.content.parts;
         const out = Array.isArray(parts) ? parts.map((part) => part && typeof part.text === "string" ? part.text : "").join("") : "";
-        if (typeof out !== "string" || !out.trim()) throw new Error("\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
-        return out;
+        if (typeof out !== "string" || !out.trim()) throw new Error(truncated ? "\uC751\uB2F5\uC774 \uCD5C\uB300 \uAE38\uC774\uC5D0\uC11C \uC798\uB838\uC5B4\uC694" : "\uBAA8\uB378\uC774 \uBE48 \uC751\uB2F5\uC744 \uBC18\uD658\uD588\uC5B4\uC694");
+        return allowTruncated ? { text: out, truncated } : out;
       }
       async function requestWithRetry(req, doFetch, opts = {}) {
         const retries = opts.retries == null ? 2 : opts.retries;
@@ -11684,12 +11687,7 @@ ${Array.from(extras).join(" ")}` : text;
     const cfg = config || providerConfig2(settings2);
     const mined = cfg.provider === "mock" ? null : Object.prototype.hasOwnProperty.call(cfg, "mined") ? cfg.mined : mineCard(ctx && ctx.parsed);
     const compilerInput = buildCompilerInput(ctx && ctx.lore, mined);
-    const raw = cfg.provider === "mock" ? mockCompilerOutput() : await callProvider2(cfg, {
-      system: compilerInput,
-      messages: [{ role: "user", content: "Return only the compiled JSON object." }],
-      maxTokens: 16e3,
-      temperature: 0.2
-    });
+    const raw = cfg.provider === "mock" ? mockCompilerOutput() : await compileWithContinuation(cfg, compilerInput);
     const parsed = parseCompilerOutput(raw);
     if (!parsed.ok) {
       return {
@@ -11712,6 +11710,26 @@ ${Array.from(extras).join(" ")}` : text;
       mined,
       patches: patched.patches
     };
+  }
+  async function compileWithContinuation(cfg, compilerInput) {
+    const messages2 = [{ role: "user", content: "Return only the compiled JSON object." }];
+    let combined = "";
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await callProvider2(cfg, {
+        system: compilerInput,
+        messages: messages2,
+        maxTokens: 16e3,
+        temperature: 0.2,
+        allowTruncated: true
+      });
+      const text = typeof result === "string" ? result : String(result && result.text || "");
+      const truncated = !!(result && typeof result === "object" && result.truncated);
+      combined += combined ? text.replace(/^\s*```(?:json)?\s*/i, "") : text;
+      if (!truncated) return combined;
+      messages2.push({ role: "assistant", content: text });
+      messages2.push({ role: "user", content: "\uCD9C\uB825\uC774 \uC911\uAC04\uC5D0 \uC798\uB838\uB2E4. \uC9C1\uC804 \uCD9C\uB825\uC774 \uB04A\uAE34 \uC9C0\uC810\uC758 \uBC14\uB85C \uB2E4\uC74C \uBB38\uC790\uBD80\uD130, \uBC18\uBCF5\xB7\uC124\uBA85\xB7\uCF54\uB4DC\uD39C\uC2A4 \uC5C6\uC774 \uC774\uC5B4\uC11C \uACC4\uC18D \uCD9C\uB825\uD558\uB77C." });
+    }
+    throw new Error("\uC5F0\uC18D \uC694\uCCAD \uD6C4\uC5D0\uB3C4 \uC751\uB2F5\uC774 \uACC4\uC18D \uC798\uB824\uC694 \u2014 \uCD9C\uB825 \uD55C\uB3C4\uAC00 \uD070 \uBAA8\uB378(\uC608: gemini-2.5-pro, claude-sonnet)\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694");
   }
   function renderHeader2(ctx, render2) {
     const header = el3("div", "view-header import-header");

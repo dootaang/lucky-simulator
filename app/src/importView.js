@@ -43,12 +43,7 @@ export async function compileSchemaForImport(ctx, config) {
   const compilerInput = buildCompilerInput(ctx && ctx.lore, mined);
   const raw = cfg.provider === 'mock'
     ? mockCompilerOutput()
-    : await callProvider(cfg, {
-      system: compilerInput,
-      messages: [{ role: 'user', content: 'Return only the compiled JSON object.' }],
-      maxTokens: 16000,
-      temperature: 0.2,
-    });
+    : await compileWithContinuation(cfg, compilerInput);
   const parsed = parseCompilerOutput(raw);
   if (!parsed.ok) {
     return {
@@ -71,6 +66,31 @@ export async function compileSchemaForImport(ctx, config) {
     mined,
     patches: patched.patches,
   };
+}
+
+// 대형 카드(NPC 수십 명)의 스키마 JSON은 모델 출력 상한을 넘어 잘릴 수 있다.
+// 부분 응답을 버리지 않고(allowTruncated) "끊긴 지점부터 이어서"를 최대 3회 요청해 이어붙인다.
+// 상한 자체를 올리지 않는 이유: 프로바이더/모델별 최대 출력이 달라(예: 16K 캡 모델) 초과 요청은 400이 난다.
+async function compileWithContinuation(cfg, compilerInput) {
+  const messages = [{ role: 'user', content: 'Return only the compiled JSON object.' }];
+  let combined = '';
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const result = await callProvider(cfg, {
+      system: compilerInput,
+      messages,
+      maxTokens: 16000,
+      temperature: 0.2,
+      allowTruncated: true,
+    });
+    const text = typeof result === 'string' ? result : String((result && result.text) || '');
+    const truncated = !!(result && typeof result === 'object' && result.truncated);
+    // 연속분 서두의 코드펜스/공백 제거 후 이어붙인다(모델이 새 펜스를 다시 여는 경우 대비).
+    combined += combined ? text.replace(/^\s*```(?:json)?\s*/i, '') : text;
+    if (!truncated) return combined;
+    messages.push({ role: 'assistant', content: text });
+    messages.push({ role: 'user', content: '출력이 중간에 잘렸다. 직전 출력이 끊긴 지점의 바로 다음 문자부터, 반복·설명·코드펜스 없이 이어서 계속 출력하라.' });
+  }
+  throw new Error('연속 요청 후에도 응답이 계속 잘려요 — 출력 한도가 큰 모델(예: gemini-2.5-pro, claude-sonnet)을 선택해 주세요');
 }
 
 function renderHeader(ctx, render) {

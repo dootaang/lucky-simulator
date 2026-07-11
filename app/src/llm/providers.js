@@ -31,7 +31,7 @@ async function callProvider(cfg, prompt) {
       retryAfterMs: retryAfterMs(response.headers.get('retry-after')),
     };
   }, { retryNetwork: false });
-  return parseResponse(req.kind, JSON.parse(bodyText));
+  return parseResponse(req.kind, JSON.parse(bodyText), prompt.allowTruncated);
 }
 
 async function callVertex(def, cfg, prompt) {
@@ -76,7 +76,7 @@ async function callVertex(def, cfg, prompt) {
       retryAfterMs: retryAfterMs(response.headers.get('retry-after')),
     };
   }, { retryNetwork: false });
-  return parseVertexResponse(JSON.parse(bodyText));
+  return parseVertexResponse(JSON.parse(bodyText), prompt.allowTruncated);
 }
 
 function buildVertexBody(prompt) {
@@ -134,34 +134,39 @@ function buildRequest(def, cfg, prompt) {
   };
 }
 
-function parseResponse(kind, json) {
+// allowTruncated: 잘림을 에러로 버리지 않고 {text, truncated}로 반환 — 컴파일러의
+// 자동 연속(이어서 출력) 스티칭용. 미지정 시 기존 계약(문자열 반환/잘림은 throw) 유지.
+function parseResponse(kind, json, allowTruncated) {
   if (kind === 'anthropic') {
-    if (json && json.stop_reason === 'max_tokens') throw new Error('응답이 최대 길이에서 잘렸어요');
+    const truncated = !!(json && json.stop_reason === 'max_tokens');
     const out = json && json.content && json.content[0] && json.content[0].text;
-    if (typeof out !== 'string' || !out.trim()) throw new Error('모델이 빈 응답을 반환했어요');
-    return out;
+    if (truncated && !allowTruncated) throw new Error('응답이 최대 길이에서 잘렸어요');
+    if (typeof out !== 'string' || !out.trim()) throw new Error(truncated ? '응답이 최대 길이에서 잘렸어요' : '모델이 빈 응답을 반환했어요');
+    return allowTruncated ? { text: out, truncated } : out;
   }
   const choice = json && json.choices && json.choices[0];
   const finish = choice && choice.finish_reason;
-  if (finish === 'length') throw new Error('응답이 최대 길이에서 잘렸어요');
+  const truncated = finish === 'length';
+  if (truncated && !allowTruncated) throw new Error('응답이 최대 길이에서 잘렸어요');
   if (finish === 'content_filter') throw new Error('안전 필터가 응답을 차단했어요');
   const out = choice && choice.message && choice.message.content;
-  if (typeof out !== 'string' || !out.trim()) throw new Error('모델이 빈 응답을 반환했어요');
-  return out;
+  if (typeof out !== 'string' || !out.trim()) throw new Error(truncated ? '응답이 최대 길이에서 잘렸어요' : '모델이 빈 응답을 반환했어요');
+  return allowTruncated ? { text: out, truncated } : out;
 }
 
-function parseVertexResponse(json) {
+function parseVertexResponse(json, allowTruncated) {
   const blocked = json && json.promptFeedback && json.promptFeedback.blockReason;
   if (blocked) throw new Error(`안전 필터가 요청을 차단했어요 (${blocked})`);
   const candidate = json && json.candidates && json.candidates[0];
-  if (candidate && candidate.finishReason === 'MAX_TOKENS') throw new Error('응답이 최대 길이에서 잘렸어요');
+  const truncated = !!(candidate && candidate.finishReason === 'MAX_TOKENS');
+  if (truncated && !allowTruncated) throw new Error('응답이 최대 길이에서 잘렸어요');
   if (candidate && candidate.finishReason === 'SAFETY') throw new Error('안전 필터가 응답을 차단했어요');
   const parts = candidate && candidate.content && candidate.content.parts;
   const out = Array.isArray(parts)
     ? parts.map((part) => part && typeof part.text === 'string' ? part.text : '').join('')
     : '';
-  if (typeof out !== 'string' || !out.trim()) throw new Error('모델이 빈 응답을 반환했어요');
-  return out;
+  if (typeof out !== 'string' || !out.trim()) throw new Error(truncated ? '응답이 최대 길이에서 잘렸어요' : '모델이 빈 응답을 반환했어요');
+  return allowTruncated ? { text: out, truncated } : out;
 }
 
 async function requestWithRetry(req, doFetch, opts = {}) {
