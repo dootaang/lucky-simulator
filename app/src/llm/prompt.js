@@ -143,7 +143,7 @@ function formatEngineVerdicts(chips) {
   return `[엔진 판정 — 직전 턴 사건 처리 결과]\n${lines.join('\n')}`;
 }
 
-function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts }) {
+function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions }) {
   const combatCapable = isCombatCapable(schema);
   const stateText = summarize(schema, state);
   const npcIds = relatedNpcIds(schema, state, recentMessages, userInput);
@@ -174,6 +174,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     combatCapable && skillList ? '[스킬 목록]\n' + skillList + '\n' : '',
     itemList ? '[소모품 목록]\n' + itemList + '\n' : '',
     questList ? '[의뢰 목록]\n' + questList + '\n' : '',
+    Array.isArray(emotions) && emotions.length ? `응답 JSON에는 events 배열을 반드시 그대로 유지한 채, 선택 필드 "emotion"(주인공의 현재 표정)을 함께 넣어도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
     '[세계 정보]',
     loreText || (lore ? '없음' : '카드를 드롭하면 세계관 로어북이 자동 주입됩니다'),
     '',
@@ -210,7 +211,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   };
 }
 
-function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages }) {
+function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages, emotions }) {
   const stateText = summarize(schema, state);
   const combatActive = !!(state.combat && state.combat.active);
   const combatLine = stateText.split('\n').find((line) => line.startsWith('[전투]')) || '[전투] 종료됨';
@@ -223,6 +224,7 @@ function buildNarrationPrompt({ schema, state, results, flavorText, recentMessag
     '',
     combatActive ? combatLine : managementLines,
     flavorText ? `플레이어의 연출 의도: ${flavorText}` : '',
+    Array.isArray(emotions) && emotions.length ? `서사 뒤에 \`\`\`json {"emotion":"값"} \`\`\` 블록을 덧붙여도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
   ].filter(Boolean).join('\n');
   const messages = conversationMessages([...(recentMessages || []).slice(-4), { role: 'user', content: context }]);
   const injectedState = combatActive ? combatLine : managementLines;
@@ -257,12 +259,14 @@ function parseAssistantResponse(text) {
   const source = String(text || '');
   const blocks = Array.from(source.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
   let events = [];
+  let emotion;
   let jsonBlock = null;
   if (blocks.length) {
     jsonBlock = blocks[blocks.length - 1][1].trim();
     try {
       const parsed = JSON.parse(jsonBlock);
       events = Array.isArray(parsed.events) ? parsed.events : [];
+      if (typeof parsed.emotion === 'string') emotion = parsed.emotion;
     } catch (_) {
       events = [];
     }
@@ -272,7 +276,7 @@ function parseAssistantResponse(text) {
   const rawNarrative = jsonBlock
     ? source.replace(blocks[blocks.length - 1][0], '').trim()
     : source.trim();
-  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped };
+  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...(emotion !== undefined ? { emotion } : {}) };
 }
 
 // 카드 DNA에 밴 리스식 태그를 서사 표시에서 제거한다(우리 엔진의 상태 기제는 JSON

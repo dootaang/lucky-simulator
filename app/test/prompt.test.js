@@ -76,6 +76,17 @@ test('parseAssistantResponse drops events without a non-empty string id', () => 
   assert.deepEqual(parsed.events, [{ id: 'combat_action', params: { action: 'attack' } }]);
 });
 
+test('parseAssistantResponse parses optional emotion', () => {
+  const parsed = parseAssistantResponse('미소 짓는다.\n```json\n{"emotion":"smile","events":[]}\n```');
+  assert.equal(parsed.emotion, 'smile');
+});
+
+test('parseAssistantResponse remains compatible when emotion is absent', () => {
+  const parsed = parseAssistantResponse('그대로 바라본다.\n```json\n{"events":[]}\n```');
+  assert.equal(Object.hasOwn(parsed, 'emotion'), false);
+  assert.equal(parsed.narrative, '그대로 바라본다.');
+});
+
 test('buildPrompt enables all combat vocabulary after scales are promoted', () => {
   const source = {
     meta: { id: 'promoted', title: '승격 전투', schemaVersion: '0.1' }, resources: [],

@@ -160,7 +160,7 @@ function displayName(group) {
   return (group.profile && group.profile.name) || group.charId;
 }
 
-function preferredEmotion(group) {
+export function preferredEmotion(group) {
   const names = Array.from(group.emotions.keys());
   return names.find((x) => x === 'default') ||
     names.find((x) => x === 'neutral') ||
@@ -180,7 +180,7 @@ function rankEmotion(name, preferred) {
   return index < 0 ? preferred.length : index;
 }
 
-function selectAsset(group, emotion) {
+export function selectAsset(group, emotion) {
   const items = group.emotions.get(emotion);
   if (!items || !items.length) return null;
   return items[stableIndex(`${group.charId}:${emotion}`, items.length)];

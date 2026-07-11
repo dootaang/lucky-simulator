@@ -6,7 +6,8 @@ import { renderLorebookView } from './lorebookView.js';
 import { renderActivateView } from './activateView.js';
 import { renderAssetsView } from './assetsView.js';
 import { renderEngineView } from './engineView.js';
-import { renderPlayView } from './playView.js';
+import { renderPlayView, primaryCharacter } from './playView.js';
+import { applyCardTheme } from './theme/cardTheme.js';
 import { renderImportView } from './importView.js';
 
 const tabs = [
@@ -38,6 +39,7 @@ const state = {
   avifSupported: null,
   viewUrls: new Map(),
   cleanup: null,
+  cardTheme: null,
 };
 
 const app = document.getElementById('app');
@@ -236,6 +238,8 @@ async function loadFile(file) {
     state.file = { name: file.name, size: file.size, type: file.type || '' };
     state.activeTab = 'play';
     state.shellMode = 'player';
+    const primary = primaryCharacter(parsed, lore);
+    state.cardTheme = await applyCardTheme(primary.asset, objectUrlFor);
     const decoded = parsed.assets.filter((asset) => asset.bytes).length;
     console.info('[simbot] parsed card', {
       format: parsed.format,

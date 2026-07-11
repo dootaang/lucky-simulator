@@ -776,6 +776,14 @@ select:focus { border-color: var(--amber-line); }
 .play-chat-panel, .play-side-panel { align-self: start; display: grid; gap: 14px; }
 .import-run-panel, .import-review-panel { align-self: start; display: grid; gap: 14px; }
 .play-chat-header { margin-bottom: 0; }
+.play-hero { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.play-hero-copy { min-width: 0; }
+.play-hero-avatar, .play-speaker-avatar { flex: 0 0 auto; overflow: hidden; border-radius: 50%; border: 1px solid var(--card-accent, var(--amber)); background: var(--card-accent, var(--amber)); color: var(--on-amber); display: grid; place-items: center; font-weight: 800; }
+.play-hero-avatar { width: 54px; height: 54px; font-size: 22px; }
+.play-speaker-avatar { width: 24px; height: 24px; font-size: 11px; }
+.play-hero-avatar img, .play-speaker-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.play-speaker { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: var(--card-accent, var(--amber)); font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.play-speaker.user-label { justify-content: flex-end; color: var(--ink-mid); }
 
 .play-message-list {
   display: grid;
@@ -798,8 +806,8 @@ select:focus { border-color: var(--amber-line); }
 }
 .play-message.user {
   justify-self: end;
-  background: var(--amber-wash);
-  border-color: var(--amber-line);
+  background: var(--card-accent-soft, var(--amber-wash));
+  border-color: var(--card-accent, var(--amber-line));
 }
 .play-message.assistant { justify-self: start; background: var(--surface-2); }
 .play-message-text { white-space: pre-wrap; }
@@ -831,9 +839,9 @@ select:focus { border-color: var(--amber-line); }
 .play-token-meter {
   display: grid;
   gap: 6px;
-  border: 1px solid var(--amber-line);
+  border: 1px solid var(--card-accent, var(--amber-line));
   background:
-    radial-gradient(120% 140% at 100% 0%, var(--amber-glow), transparent 60%),
+    radial-gradient(120% 140% at 100% 0%, var(--card-accent-soft, var(--amber-glow)), transparent 60%),
     var(--inset);
   border-radius: var(--r-sm);
   padding: 14px;
@@ -845,7 +853,7 @@ select:focus { border-color: var(--amber-line); }
   font-size: 26px;
   font-weight: 700;
   line-height: 1;
-  color: var(--amber);
+  color: var(--card-accent, var(--amber));
   text-shadow: 0 0 12px var(--amber-glow);
 }
 
@@ -869,7 +877,7 @@ select:focus { border-color: var(--amber-line); }
   height: 100%;
   width: var(--pct, 0%);
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--amber-dim), var(--amber));
+  background: linear-gradient(90deg, var(--card-accent-strong, var(--amber-dim)), var(--card-accent, var(--amber)));
   box-shadow: 0 0 10px var(--amber-glow);
   transition: width 420ms ease;
 }
@@ -1020,7 +1028,10 @@ select:focus { border-color: var(--amber-line); }
 .combat-gauge { margin-bottom: 11px; }
 .combat-gauge-head { margin-bottom: 5px; color: var(--ink-mid); font-family: var(--font-mono); font-size: 12px; }
 .combat-gauge-track { height: 8px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--inset); }
-.combat-gauge-fill { width: var(--pct); height: 100%; background: var(--amber); transition: width 140ms ease; }
+.combat-gauge-fill { width: var(--pct); height: 100%; background: var(--card-accent, var(--amber)); transition: width 140ms ease; }
+
+.play-input-row .primary-btn, .play-view .primary-btn { background: var(--card-accent, var(--amber)); border-color: var(--card-accent, var(--amber)); }
+.play-view .badge.engine-ok, .play-view .engine-ok { border-color: var(--card-accent, var(--amber-line)); background: var(--card-accent-soft, var(--amber-wash)); color: var(--card-accent, var(--amber)); }
 
 .mgmt-console { padding: 12px 14px; border-top: 1px solid var(--line); background: var(--surface-2); }
 .mgmt-console:empty { display: none; }
@@ -6509,7 +6520,7 @@ select:focus { border-color: var(--amber-line); }
         return `[\uC5D4\uC9C4 \uD310\uC815 \u2014 \uC9C1\uC804 \uD134 \uC0AC\uAC74 \uCC98\uB9AC \uACB0\uACFC]
 ${lines.join("\n")}`;
       }
-      function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput, lastVerdicts }) {
+      function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput, lastVerdicts, emotions: emotions2 }) {
         const combatCapable = isCombatCapable(schema2);
         const stateText = summarize3(schema2, state2);
         const npcIds = relatedNpcIds(schema2, state2, recentMessages, userInput);
@@ -6539,6 +6550,7 @@ ${lines.join("\n")}`;
           combatCapable && skillList ? "[\uC2A4\uD0AC \uBAA9\uB85D]\n" + skillList + "\n" : "",
           itemList ? "[\uC18C\uBAA8\uD488 \uBAA9\uB85D]\n" + itemList + "\n" : "",
           questList ? "[\uC758\uB8B0 \uBAA9\uB85D]\n" + questList + "\n" : "",
+          Array.isArray(emotions2) && emotions2.length ? `\uC751\uB2F5 JSON\uC5D0\uB294 events \uBC30\uC5F4\uC744 \uBC18\uB4DC\uC2DC \uADF8\uB300\uB85C \uC720\uC9C0\uD55C \uCC44, \uC120\uD0DD \uD544\uB4DC "emotion"(\uC8FC\uC778\uACF5\uC758 \uD604\uC7AC \uD45C\uC815)\uC744 \uD568\uAED8 \uB123\uC5B4\uB3C4 \uB41C\uB2E4. \uAC12\uC740 \uBC18\uB4DC\uC2DC \uB2E4\uC74C \uC911 \uD558\uB098: ${emotions2.join(", ")}` : "",
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -6570,7 +6582,7 @@ ${lines.join("\n")}`;
           injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, ...questList ? { quests: questList } : {}, lore: loreText }
         };
       }
-      function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages }) {
+      function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages, emotions: emotions2 }) {
         const stateText = summarize3(schema2, state2);
         const combatActive = !!(state2.combat && state2.combat.active);
         const combatLine = stateText.split("\n").find((line) => line.startsWith("[\uC804\uD22C]")) || "[\uC804\uD22C] \uC885\uB8CC\uB428";
@@ -6582,7 +6594,8 @@ ${lines.join("\n")}`;
           resultText || "\uBCC0\uD654 \uC5C6\uC74C",
           "",
           combatActive ? combatLine : managementLines,
-          flavorText ? `\uD50C\uB808\uC774\uC5B4\uC758 \uC5F0\uCD9C \uC758\uB3C4: ${flavorText}` : ""
+          flavorText ? `\uD50C\uB808\uC774\uC5B4\uC758 \uC5F0\uCD9C \uC758\uB3C4: ${flavorText}` : "",
+          Array.isArray(emotions2) && emotions2.length ? `\uC11C\uC0AC \uB4A4\uC5D0 \`\`\`json {"emotion":"\uAC12"} \`\`\` \uBE14\uB85D\uC744 \uB367\uBD99\uC5EC\uB3C4 \uB41C\uB2E4. \uAC12\uC740 \uBC18\uB4DC\uC2DC \uB2E4\uC74C \uC911 \uD558\uB098: ${emotions2.join(", ")}` : ""
         ].filter(Boolean).join("\n");
         const messages2 = conversationMessages([...(recentMessages || []).slice(-4), { role: "user", content: context }]);
         const injectedState = combatActive ? combatLine : managementLines;
@@ -6614,12 +6627,14 @@ ${lines.join("\n")}`;
         const source = String(text || "");
         const blocks = Array.from(source.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
         let events = [];
+        let emotion;
         let jsonBlock = null;
         if (blocks.length) {
           jsonBlock = blocks[blocks.length - 1][1].trim();
           try {
             const parsed = JSON.parse(jsonBlock);
             events = Array.isArray(parsed.events) ? parsed.events : [];
+            if (typeof parsed.emotion === "string") emotion = parsed.emotion;
           } catch (_) {
             events = [];
           }
@@ -6627,7 +6642,7 @@ ${lines.join("\n")}`;
         const validEvents = events.filter((event) => event && typeof event.id === "string" && event.id.trim());
         const dropped = events.length - validEvents.length;
         const rawNarrative = jsonBlock ? source.replace(blocks[blocks.length - 1][0], "").trim() : source.trim();
-        return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped };
+        return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...emotion !== void 0 ? { emotion } : {} };
       }
       function stripRisuTags(text) {
         return String(text || "").replace(/\[[^\]\n]*::[^\]\n]*\]/g, "").replace(/<img\b[^>]*>/gi, "").replace(/\{\{[^}]*\}\}/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -9882,6 +9897,18 @@ ${Array.from(extras).join(" ")}` : text;
   var sheetWasOpen = false;
   var activeRender = null;
   var sessionCardKey = null;
+  var character = null;
+  function primaryCharacter(parsed, lore) {
+    const name = String(parsed && parsed.name || "\uC2DC\uBBAC\uBD07");
+    const groups = buildNpcClusters(parsed, lore).groups;
+    const exact = groups.find((group2) => group2.charId.toLowerCase() === name.toLowerCase());
+    const group = exact || groups.slice().sort((a, b) => assetCount(b) - assetCount(a))[0] || null;
+    const pick = group && selectAsset(group, preferredEmotion(group));
+    return { name, group, asset: pick && pick.asset, emotion: group && preferredEmotion(group) };
+  }
+  function assetCount(group) {
+    return Array.from(group.emotions.values()).reduce((sum, items) => sum + items.length, 0);
+  }
   function detachSheetKeyHandler() {
     if (sheetKeyHandler) {
       document.removeEventListener("keydown", sheetKeyHandler);
@@ -9921,7 +9948,10 @@ ${Array.from(extras).join(" ")}` : text;
       selectedTarget = null;
       fastCombatLog = [];
       mobileSheetOpen = false;
+      sheetWasOpen = false;
       detachSheetKeyHandler();
+      character = primaryCharacter(ctx.parsed, ctx.lore);
+      character.baseAsset = character.asset;
     }
     const root = el2("div", "play-view");
     container.append(root);
@@ -10045,12 +10075,15 @@ ${Array.from(extras).join(" ")}` : text;
   function renderChat(ctx, render2) {
     const panel = el2("section", "play-chat-panel");
     const header = el2("div", "view-header play-chat-header");
-    const title = el2("div");
+    const title = el2("div", "play-hero");
+    title.append(characterAvatar(ctx, character && character.asset, "play-hero-avatar"));
+    const identity = el2("div", "play-hero-copy");
     const h2 = el2("h2");
-    h2.textContent = "\uD50C\uB808\uC774(\uC2E4\uD5D8)";
+    h2.textContent = character && character.name || "\uC2DC\uBBAC\uBD07";
     const p = el2("p");
-    p.textContent = "LLM\uC740 \uC11C\uC0AC\uC640 \uC0AC\uAC74 \uD6C4\uBCF4\uB9CC \uC81C\uC548\uD558\uACE0, \uC0C1\uD0DC\uB294 \uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD569\uB2C8\uB2E4.";
-    title.append(h2, p);
+    p.textContent = sceneLine();
+    identity.append(h2, p);
+    title.append(identity);
     const copy = button2("\uB300\uD654 \uBCF5\uC0AC", "secondary-btn");
     copy.disabled = !messages.length;
     copy.addEventListener("click", () => {
@@ -10082,7 +10115,7 @@ ${Array.from(extras).join(" ")}` : text;
       empty.textContent = "mock \uC81C\uACF5\uC790\uB85C \uD0A4 \uC5C6\uC774 \uBC14\uB85C \uD14C\uC2A4\uD2B8\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
       list.append(empty);
     } else {
-      for (const message of messages) list.append(renderMessage(message));
+      for (let index = 0; index < messages.length; index += 1) list.append(renderMessage(messages[index], ctx, index === 0 || messages[index - 1].role !== messages[index].role));
     }
     if (busy) {
       const thinking = el2("div", "play-message assistant");
@@ -10113,10 +10146,22 @@ ${Array.from(extras).join(" ")}` : text;
     panel.append(header, list, renderCombatConsole(input2, ctx, render2), renderManagementConsole(input2, ctx, render2), form);
     return panel;
   }
-  function renderMessage(message) {
+  function renderMessage(message, ctx, showIdentity) {
     const wrap = el2("article", `play-message ${message.role}`);
     const text = el2("div", "play-message-text");
     text.textContent = message.content;
+    if (message.role === "assistant" && showIdentity) {
+      const label = el2("div", "play-speaker");
+      label.append(characterAvatar(ctx, character && (character.baseAsset || character.asset), "play-speaker-avatar"));
+      const name = el2("span");
+      name.textContent = character && character.name || "\uC2DC\uBBAC\uBD07";
+      label.append(name);
+      wrap.append(label);
+    } else if (message.role === "user" && showIdentity) {
+      const label = el2("div", "play-speaker user-label");
+      label.textContent = "\uB098";
+      wrap.append(label);
+    }
     wrap.append(text);
     if (message.chips && message.chips.length) {
       const chips = el2("div", "play-chip-row");
@@ -10128,6 +10173,39 @@ ${Array.from(extras).join(" ")}` : text;
       wrap.append(chips);
     }
     return wrap;
+  }
+  function characterAvatar(ctx, asset, className) {
+    const wrap = el2("div", className);
+    const showInitial = () => {
+      wrap.replaceChildren();
+      wrap.classList.add("initial");
+      wrap.textContent = (character && character.name || "\uC2DC").trim().charAt(0).toUpperCase();
+    };
+    const url = asset ? ctx.objectUrlFor(asset) : "";
+    if (url) {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.addEventListener("error", showInitial);
+      img.src = url;
+      wrap.append(img);
+    } else showInitial();
+    return wrap;
+  }
+  function sceneLine() {
+    const schema2 = getSchema(), state2 = getEngineState();
+    if (!schema2 || !state2) return "\uC0C8\uB85C\uC6B4 \uC7A5\uBA74";
+    return summarize2(schema2, state2).split("\n")[0] || "\uC0C8\uB85C\uC6B4 \uC7A5\uBA74";
+  }
+  function emotions() {
+    return character && character.group ? Array.from(character.group.emotions.keys()) : [];
+  }
+  function applyEmotion(value) {
+    if (!value || !character || !character.group || !character.group.emotions.has(value)) return;
+    const pick = selectAsset(character.group, value);
+    if (pick) {
+      character.asset = pick.asset;
+      character.emotion = value;
+    }
   }
   function renderSide(ctx, render2) {
     const side = el2("aside", "play-side-panel");
@@ -10303,9 +10381,10 @@ ${Array.from(extras).join(" ")}` : text;
     appendEventChips(event.id, result.entries, chips, resultTexts);
     const pending = { role: "assistant", content: "", chips };
     try {
-      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
+      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions() });
       lastPrompt = prompt;
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+      applyEmotion(parsed.emotion);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -10490,10 +10569,11 @@ ${Array.from(extras).join(" ")}` : text;
     try {
       const narrationResults = fastCombat ? [...fastCombatLog, ...resultTexts] : resultTexts;
       if (fastCombat) fastCombatLog = [];
-      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration });
+      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions() });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
+      applyEmotion(parsed.emotion);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -10531,7 +10611,7 @@ ${Array.from(extras).join(" ")}` : text;
     render2();
     try {
       const instruction = "\uC774\uBC88 \uC7A5\uBA74\uC5D0 \uC5B4\uC6B8\uB9AC\uB294 \uC801 \uBA85\uBD80\uB85C start_encounter \uC0AC\uAC74 \uD558\uB098\uB9CC JSON\uC73C\uB85C \uB0B4\uB77C. \uC11C\uC0AC\uB294 1~2\uBB38\uC7A5\uB9CC \uD5C8\uC6A9\uD55C\uB2E4.";
-      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction });
+      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions() });
       lastPrompt = prompt;
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       const event = parsed.events.find((item) => item.id === "start_encounter");
@@ -10561,10 +10641,11 @@ ${Array.from(extras).join(" ")}` : text;
     try {
       const schema2 = getSchema();
       const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === "assistant");
-      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips });
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions() });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
+      applyEmotion(parsed.emotion);
       const chips = [];
       if (parsed.dropped > 0) chips.push({ ok: false, text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       for (const event of parsed.events) {
@@ -10610,6 +10691,135 @@ ${Array.from(extras).join(" ")}` : text;
       if (m.chips && m.chips.length) out.push(m.chips.map((c) => `[${c.text}]`).join(" "));
     }
     return out.join("\n\n");
+  }
+
+  // src/theme/cardTheme.js
+  function rgbToHsl(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0;
+    const l = (max + min) / 2;
+    const d = max - min;
+    const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    if (d) {
+      if (max === r) h = (g - b) / d % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h = (h * 60 + 360) % 360;
+    }
+    return [h, s, l];
+  }
+  function hslToRgb(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(h / 60 % 2 - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) [r, g, b] = [c, x, 0];
+    else if (h < 120) [r, g, b] = [x, c, 0];
+    else if (h < 180) [r, g, b] = [0, c, x];
+    else if (h < 240) [r, g, b] = [0, x, c];
+    else if (h < 300) [r, g, b] = [x, 0, c];
+    else [r, g, b] = [c, 0, x];
+    return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+  }
+  function relativeLuminance(r, g, b) {
+    const lin = (v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  }
+  function contrastRatio(lumA, lumB) {
+    const [hi, lo] = lumA >= lumB ? [lumA, lumB] : [lumB, lumA];
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function backgroundLuminance() {
+    try {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+      const match = /^#([0-9a-f]{6})$/i.exec(raw);
+      if (match) {
+        const n = parseInt(match[1], 16);
+        return relativeLuminance(n >> 16 & 255, n >> 8 & 255, n & 255);
+      }
+    } catch (_) {
+    }
+    return relativeLuminance(20, 17, 16);
+  }
+  function ensureContrast(h, s, l, bgLum) {
+    let lum = relativeLuminance(...hslToRgb(h, s, l));
+    while (contrastRatio(lum, bgLum) < 4.5 && l < 0.92) {
+      l = Math.min(0.92, l + 0.03);
+      lum = relativeLuminance(...hslToRgb(h, s, l));
+    }
+    return l;
+  }
+  async function applyCardTheme(asset, objectUrlFor2) {
+    const root = document.documentElement.style;
+    for (const token of ["--card-accent", "--card-accent-soft", "--card-accent-strong"]) root.removeProperty(token);
+    try {
+      if (!asset) return null;
+      const src = objectUrlFor2(asset);
+      if (!src) return null;
+      const image = new Image();
+      image.src = src;
+      await image.decode();
+      if (!image.naturalWidth || !image.naturalHeight) return null;
+      const scale = Math.min(48 / image.naturalWidth, 48 / image.naturalHeight, 1);
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(image, 0, 0, width, height);
+      const bins = Array.from({ length: 12 }, () => ({ weight: 0, x: 0, y: 0, s: 0, l: 0 }));
+      const data = context.getImageData(0, 0, width, height).data;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 128) continue;
+        const [h2, s2, l2] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+        if (s2 < 0.25 || l2 < 0.15 || l2 > 0.85) continue;
+        const weight = s2 * data[i + 3] / 255;
+        const bin = bins[Math.floor(h2 / 30) % 12];
+        const rad = h2 * Math.PI / 180;
+        bin.weight += weight;
+        bin.x += Math.cos(rad) * weight;
+        bin.y += Math.sin(rad) * weight;
+        bin.s += s2 * weight;
+        bin.l += l2 * weight;
+      }
+      let bestIndex = -1;
+      let bestScore = 0;
+      for (let i = 0; i < 12; i += 1) {
+        const score = bins[i].weight + 0.5 * (bins[(i + 11) % 12].weight + bins[(i + 1) % 12].weight);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+      if (bestIndex < 0) return null;
+      const window2 = [bins[(bestIndex + 11) % 12], bins[bestIndex], bins[(bestIndex + 1) % 12]];
+      const agg = window2.reduce((acc, bin) => ({
+        weight: acc.weight + bin.weight,
+        x: acc.x + bin.x,
+        y: acc.y + bin.y,
+        s: acc.s + bin.s,
+        l: acc.l + bin.l
+      }), { weight: 0, x: 0, y: 0, s: 0, l: 0 });
+      if (!agg.weight) return null;
+      const h = (Math.atan2(agg.y, agg.x) * 180 / Math.PI + 360) % 360;
+      const s = agg.s / agg.weight;
+      const l = ensureContrast(h, s, Math.max(agg.l / agg.weight, 0.62), backgroundLuminance());
+      const accent = `hsl(${h.toFixed(1)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+      const strong = `hsl(${h.toFixed(1)} ${Math.round(s * 100)}% ${Math.round(Math.min(92, l * 100 + 10))}%)`;
+      root.setProperty("--card-accent", accent);
+      root.setProperty("--card-accent-soft", `hsl(${h.toFixed(1)} ${Math.round(s * 100)}% ${Math.round(l * 100)}% / 0.18)`);
+      root.setProperty("--card-accent-strong", strong);
+      return { accent, strong };
+    } catch (_) {
+      return null;
+    }
   }
 
   // src/importView.js
@@ -11133,7 +11343,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     error: "",
     avifSupported: null,
     viewUrls: /* @__PURE__ */ new Map(),
-    cleanup: null
+    cleanup: null,
+    cardTheme: null
   };
   var app = document.getElementById("app");
   disableNetworkApis();
@@ -11333,6 +11544,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       state.file = { name: file.name, size: file.size, type: file.type || "" };
       state.activeTab = "play";
       state.shellMode = "player";
+      const primary = primaryCharacter(parsed, lore);
+      state.cardTheme = await applyCardTheme(primary.asset, objectUrlFor);
       const decoded = parsed.assets.filter((asset) => asset.bytes).length;
       console.info("[simbot] parsed card", {
         format: parsed.format,

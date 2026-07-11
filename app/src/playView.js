@@ -5,6 +5,7 @@ const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
 const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
 import { getEngineState, getSchema, runEvent, summarizeEvent } from './engineSession.js';
+import { buildNpcClusters, preferredEmotion, selectAsset } from './npcGallery.js';
 
 let messages = [];
 let busy = false;
@@ -17,6 +18,17 @@ let sheetKeyHandler = null;
 let sheetWasOpen = false;
 let activeRender = null;
 let sessionCardKey = null;
+let character = null;
+
+export function primaryCharacter(parsed, lore) {
+  const name = String((parsed && parsed.name) || '시뮬봇');
+  const groups = buildNpcClusters(parsed, lore).groups;
+  const exact = groups.find((group) => group.charId.toLowerCase() === name.toLowerCase());
+  const group = exact || groups.slice().sort((a, b) => assetCount(b) - assetCount(a))[0] || null;
+  const pick = group && selectAsset(group, preferredEmotion(group));
+  return { name, group, asset: pick && pick.asset, emotion: group && preferredEmotion(group) };
+}
+function assetCount(group) { return Array.from(group.emotions.values()).reduce((sum, items) => sum + items.length, 0); }
 
 function detachSheetKeyHandler() {
   if (sheetKeyHandler) { document.removeEventListener('keydown', sheetKeyHandler); sheetKeyHandler = null; }
@@ -44,7 +56,11 @@ export function renderPlayView(container, ctx) {
     selectedTarget = null;
     fastCombatLog = [];
     mobileSheetOpen = false;
+    sheetWasOpen = false;
     detachSheetKeyHandler();
+    character = primaryCharacter(ctx.parsed, ctx.lore);
+    // 말풍선 아바타는 기본 표정으로 고정한다 — 감정 스왑은 히어로 헤더에만 반영.
+    character.baseAsset = character.asset;
   }
   const root = el('div', 'play-view');
   container.append(root);
@@ -141,12 +157,14 @@ function renderBottomSheet(ctx, render) {
 function renderChat(ctx, render) {
   const panel = el('section', 'play-chat-panel');
   const header = el('div', 'view-header play-chat-header');
-  const title = el('div');
+  const title = el('div', 'play-hero');
+  title.append(characterAvatar(ctx, character && character.asset, 'play-hero-avatar'));
+  const identity = el('div', 'play-hero-copy');
   const h2 = el('h2');
-  h2.textContent = '플레이(실험)';
+  h2.textContent = (character && character.name) || '시뮬봇';
   const p = el('p');
-  p.textContent = 'LLM은 서사와 사건 후보만 제안하고, 상태는 엔진이 계산합니다.';
-  title.append(h2, p);
+  p.textContent = sceneLine();
+  identity.append(h2, p); title.append(identity);
   const copy = button('대화 복사', 'secondary-btn');
   copy.disabled = !messages.length;
   copy.addEventListener('click', () => {
@@ -174,7 +192,7 @@ function renderChat(ctx, render) {
     empty.textContent = 'mock 제공자로 키 없이 바로 테스트할 수 있습니다.';
     list.append(empty);
   } else {
-    for (const message of messages) list.append(renderMessage(message));
+    for (let index = 0; index < messages.length; index += 1) list.append(renderMessage(messages[index], ctx, index === 0 || messages[index - 1].role !== messages[index].role));
   }
   if (busy) {
     const thinking = el('div', 'play-message assistant');
@@ -208,10 +226,15 @@ function renderChat(ctx, render) {
   return panel;
 }
 
-function renderMessage(message) {
+function renderMessage(message, ctx, showIdentity) {
   const wrap = el('article', `play-message ${message.role}`);
   const text = el('div', 'play-message-text');
   text.textContent = message.content;
+  if (message.role === 'assistant' && showIdentity) {
+    const label = el('div', 'play-speaker');
+    label.append(characterAvatar(ctx, character && (character.baseAsset || character.asset), 'play-speaker-avatar'));
+    const name = el('span'); name.textContent = (character && character.name) || '시뮬봇'; label.append(name); wrap.append(label);
+  } else if (message.role === 'user' && showIdentity) { const label = el('div', 'play-speaker user-label'); label.textContent = '나'; wrap.append(label); }
   wrap.append(text);
   if (message.chips && message.chips.length) {
     const chips = el('div', 'play-chip-row');
@@ -224,6 +247,27 @@ function renderMessage(message) {
   }
   return wrap;
 }
+
+function characterAvatar(ctx, asset, className) {
+  const wrap = el('div', className);
+  const showInitial = () => {
+    wrap.replaceChildren();
+    wrap.classList.add('initial');
+    wrap.textContent = ((character && character.name) || '시').trim().charAt(0).toUpperCase();
+  };
+  const url = asset ? ctx.objectUrlFor(asset) : '';
+  if (url) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.addEventListener('error', showInitial); // 깨진 에셋이면 엑박 대신 이니셜로.
+    img.src = url;
+    wrap.append(img);
+  } else showInitial();
+  return wrap;
+}
+function sceneLine() { const schema = getSchema(), state = getEngineState(); if (!schema || !state) return '새로운 장면'; return summarize(schema, state).split('\n')[0] || '새로운 장면'; }
+function emotions() { return character && character.group ? Array.from(character.group.emotions.keys()) : []; }
+function applyEmotion(value) { if (!value || !character || !character.group || !character.group.emotions.has(value)) return; const pick = selectAsset(character.group, value); if (pick) { character.asset = pick.asset; character.emotion = value; } }
 
 function renderSide(ctx, render) {
   const side = el('aside', 'play-side-panel');
@@ -404,9 +448,10 @@ async function runManagementTurn(event, input, ctx, render) {
   appendEventChips(event.id, result.entries, chips, resultTexts);
   const pending = { role: 'assistant', content: '', chips };
   try {
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions() });
     lastPrompt = prompt;
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+    applyEmotion(parsed.emotion);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
@@ -625,10 +670,11 @@ async function runCombatTurn(event, input, ctx, render) {
   try {
     const narrationResults = fastCombat ? [...fastCombatLog, ...resultTexts] : resultTexts;
     if (fastCombat) fastCombatLog = [];
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions() });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
+    applyEmotion(parsed.emotion);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '전투 결과가 반영되었습니다.';
@@ -670,7 +716,7 @@ async function startCombat(ctx, render) {
   render();
   try {
     const instruction = '이번 장면에 어울리는 적 명부로 start_encounter 사건 하나만 JSON으로 내라. 서사는 1~2문장만 허용한다.';
-    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction });
+    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions() });
     lastPrompt = prompt;
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     const event = parsed.events.find((item) => item.id === 'start_encounter');
@@ -701,10 +747,11 @@ async function submitTurn(text, ctx, render) {
   try {
     const schema = getSchema();
     const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === 'assistant');
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips });
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions() });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
+    applyEmotion(parsed.emotion);
     const chips = [];
     if (parsed.dropped > 0) chips.push({ ok: false, text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
     for (const event of parsed.events) {
