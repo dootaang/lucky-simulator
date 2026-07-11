@@ -59,7 +59,9 @@ function renderWidget(widget, context, api, ui) {
   if (widget.widget === 'sidebar') return api.sidebar();
   const box = el('section', `declarative-widget widget-${safeClass(widget.widget || 'unknown')}`);
   if (widget.title) { const title = el('h3'); title.textContent = String(widget.title); box.append(title); }
-  const data = selectScreenData(widget.source, context, selectors(api));
+  const data = typeof widget.source === 'string' && widget.source.startsWith('engine:')
+    ? api.select(widget.source.slice(7), context.schema, context.state)
+    : selectScreenData(widget.source, context, selectors(api));
   const type = String(widget.widget || '');
   if (type === 'stat-strip') renderStats(box, data);
   else if (type === 'gauge') renderGauge(box, data, widget.props || {});

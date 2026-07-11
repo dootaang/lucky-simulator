@@ -13,6 +13,7 @@ const { createStatsModule } = require('./modules/stats.js');
 const { createInventoryModule } = require('./modules/inventory.js');
 const { createCombatModule } = require('./modules/combat.js');
 const { createProgressionModule, createEquipmentModule, createQuestModule, createPartyModule, createTimeModule, createLocationModule, createLootModule, createShopModule, createCraftingModule, createFactionsModule, createJobsModule } = require('./modules/commonRpg.js');
+const { createHunterModule } = require('./modules/hunter.js');
 const {
   clone,
   findById,
@@ -306,6 +307,7 @@ defaultModuleRegistry.register(createShopModule());
 defaultModuleRegistry.register(createCraftingModule());
 defaultModuleRegistry.register(createFactionsModule());
 defaultModuleRegistry.register(createJobsModule());
+defaultModuleRegistry.register(createHunterModule());
 defaultModuleRegistry.register(createCombatModule());
 defaultModuleRegistry.register(createLegacyModule(applyLegacyEvent));
 

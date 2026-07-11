@@ -31,6 +31,7 @@ function createState(schema, seed) {
   if (schema.locations) state.location = initial.location || (schema.locations[0] && schema.locations[0].id) || null;
   if (schema.factions) state.factions = clone(initial.factions || {});
   if (schema.jobs) state.jobs = clone(initial.jobs || []);
+  if (schema.hunter) state.hunter = clone(initial.hunter || { registered: false, rank: null, assessmentScore: null, activeGateId: null, clearedGateId: null, guildId: null });
   if (seed != null) state.seed = seed;
   return state;
 }

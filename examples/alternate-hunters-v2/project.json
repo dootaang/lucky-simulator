@@ -1,0 +1,34 @@
+{
+  "contract": "simpack/0.2", "id": "alternate-hunters-v2", "title": "Alternate Hunters V2", "revision": 1,
+  "source": { "card": { "fileName": "Alternate Hunters V2.charx", "format": "charx", "version": "3.0", "provenance": "C:/freetalk/Alternate Hunters V2.charx" } },
+  "risu": { "preserveOriginal": true, "notes": ["조건부 CBS와 원본 로어는 보존하고 안전한 부분집합만 실행한다."] },
+  "personas": { "library": [], "defaultId": null }, "prompts": { "presets": [], "defaultId": null },
+  "modules": { "installed": [{ "id": "core.progression", "version": "1.0.0", "enabled": true }, { "id": "rpg.party", "version": "1.0.0", "enabled": true }, { "id": "rpg.loot", "version": "1.0.0", "enabled": true }, { "id": "combat.turnbased", "version": "1.0.0", "enabled": true }, { "id": "genre.hunter", "version": "1.0.0", "enabled": true }], "bindings": [] },
+  "content": { "characters": [{ "id": "choi-yoo-jin", "name": "최유진" }], "lorebooks": [], "locations": [{ "id": "association", "label": "헌터 협회" }, { "id": "gate-terminal", "label": "게이트 단말기" }, { "id": "dungeon", "label": "던전" }], "items": [{ "id": "mana_stone", "label": "마정석" }] },
+  "runtime": {
+    "featureToggles": { "stats": true, "alterStore": false, "factions": true, "events": true },
+    "schema": {
+      "meta": { "id": "alternate-hunters-v2", "title": "Alternate Hunters V2", "schemaVersion": "0.2" },
+      "resources": [{ "id": "mana_stone", "label": "마정석", "unit": "개", "min": 0 }],
+      "progression": { "sources": { "gate-clear": [20, 40] }, "thresholds": [100, 250, 500], "statPointsPerLevel": 3, "allocatableStats": ["atk", "def", "sense"] },
+      "party": { "maxSize": 4, "roles": ["leader", "dealer", "tank", "support"] },
+      "lootTables": [{ "id": "e-gate", "entries": [{ "itemId": "mana_stone", "qty": [1, 3], "weight": 1 }] }],
+      "entities": [{ "type": "npc", "instances": [{ "id": "choi-yoo-jin", "name": "최유진" }] }],
+      "hunter": {
+        "assessment": { "defaultScore": 120, "variance": [0, 0], "ranks": [{ "id": "E", "label": "E급", "min": 0 }, { "id": "D", "label": "D급", "min": 100 }, { "id": "C", "label": "C급", "min": 250 }, { "id": "B", "label": "B급", "min": 500 }, { "id": "A", "label": "A급", "min": 800 }, { "id": "S", "label": "S급", "min": 1200 }] },
+        "gates": [{ "id": "e-gate-01", "label": "서울 외곽 E급 게이트", "minRank": "E", "minParty": 1, "settlement": { "gold": [50000, 80000], "exp": [20, 40], "manaStone": [1, 3] } }, { "id": "d-gate-01", "label": "마포 D급 게이트", "minRank": "D", "minParty": 2, "settlement": { "gold": [120000, 180000], "exp": [40, 70], "manaStone": [3, 6] } }],
+        "guilds": [{ "id": "heuksa", "label": "흑사 길드", "minRank": "D" }]
+      },
+      "initialState": { "day": 1, "gold": 0, "resources": { "mana_stone": 0 }, "player": { "level": 1, "exp": 0, "atk": 10, "def": 10, "sense": 10 }, "hunter": { "registered": false, "rank": null, "assessmentScore": null, "activeGateId": null, "clearedGateId": null, "guildId": null } }
+    },
+    "screens": [
+      { "id": "association", "title": "헌터 협회", "layout": "stage-chat-hud", "presentation": "page", "regions": { "hud": [{ "widget": "detail-panel", "title": "헌터 상태", "source": "engine:hunter/status" }], "main": [{ "widget": "chat" }], "actions": [{ "widget": "decision-card", "title": "등록과 평가", "actions": [{ "label": "신규 헌터 등록", "event": { "id": "hunter/register", "params": { "name": "신규 헌터" } } }, { "label": "협회 등급 평가", "event": { "id": "hunter/assess", "params": {} } }] }] } },
+      { "id": "terminal", "title": "게이트 단말기", "layout": "dashboard", "presentation": "page", "regions": { "main": [{ "widget": "card-list", "title": "게이트 목록", "source": "engine:hunter/gates", "selectionKey": "gateId" }], "actions": [{ "widget": "action-group", "actions": [{ "label": "선택한 게이트 수락", "event": { "id": "hunter/gate-accept", "params": { "gateId": { "$path": "selection.gateId" } } } }] }] } },
+      { "id": "party", "title": "파티", "layout": "dashboard", "presentation": "page", "regions": { "main": [{ "widget": "detail-panel", "title": "편성", "source": "engine:party/formation" }] } }
+    ],
+    "navigation": [{ "id": "association", "screenId": "association", "label": "협회" }, { "id": "terminal", "screenId": "terminal", "label": "게이트" }, { "id": "party", "screenId": "party", "label": "파티" }]
+  },
+  "assets": [{ "id": "choi-yoo-jin-default", "name": "최유진 기본", "kind": "emotion", "canonical": { "entityId": "choi-yoo-jin", "emotion": "default" }, "source": { "namePattern": "Choi Yoo-jin default" } }],
+  "evidence": [{ "path": "$.runtime.schema.hunter", "confidence": 1, "refs": [{ "source": "card-lore", "path": "게이트/헌터/길드" }] }],
+  "compatibility": { "conflicts": [], "unsupported": [{ "id": "unsafe-lua", "status": "blocked" }] }, "migrations": { "current": 2, "history": [] }
+}

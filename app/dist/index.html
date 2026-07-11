@@ -7898,6 +7898,109 @@ ${bodies}`;
     }
   });
 
+  // ../engine/core/modules/hunter.js
+  var require_hunter = __commonJS({
+    "../engine/core/modules/hunter.js"(exports, module) {
+      "use strict";
+      var { scopedEvent } = require_eventSupport();
+      function createHunterModule() {
+        return {
+          id: "genre.hunter",
+          version: "1.0.0",
+          dependencies: ["core.progression", "rpg.party", "rpg.loot"],
+          stateAccess: { owns: ["hunter"], reads: ["player.*", "party"], writes: ["gold", "resources", "player.exp"] },
+          events: {
+            "hunter/register": scopedEvent(({ state: state2, params, ok, fail }) => {
+              if (state2.hunter && state2.hunter.registered) return fail("hunter_already_registered");
+              const name = String(params.name || "").trim();
+              if (!name) return fail("hunter_name_required");
+              state2.hunter = { ...state2.hunter || {}, registered: true, name, rank: null, assessmentScore: null, activeGateId: null, clearedGateId: null, guildId: null };
+              return ok({ name });
+            }),
+            "hunter/assess": scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => {
+              if (!state2.hunter || !state2.hunter.registered) return fail("hunter_not_registered");
+              if (state2.hunter.rank) return fail("hunter_already_assessed");
+              const config = schema2.hunter && schema2.hunter.assessment || {};
+              const base = Number(params.score ?? config.defaultScore ?? 0);
+              const variance = Array.isArray(config.variance) ? rng.int(Number(config.variance[0]), Number(config.variance[1])) : 0;
+              const score = Math.max(0, base + variance);
+              const rank = rankFor(score, config.ranks || []);
+              if (!rank) return fail("hunter_rank_unresolved", score);
+              state2.hunter.assessmentScore = score;
+              state2.hunter.rank = rank.id;
+              return ok({ score, rank: rank.id });
+            }),
+            "hunter/gate-accept": scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => {
+              if (!state2.hunter || !state2.hunter.rank) return fail("hunter_not_assessed");
+              if (state2.hunter.activeGateId) return fail("gate_already_active");
+              const gate = gates(schema2).find((entry) => entry.id === params.gateId);
+              if (!gate) return fail("unknown_gate", params.gateId);
+              if (rankIndex(schema2, state2.hunter.rank) < rankIndex(schema2, gate.minRank || "E")) return fail("hunter_rank_too_low", gate.minRank);
+              const partySize = state2.party && state2.party.members && state2.party.members.length || 0;
+              if (partySize < Number(gate.minParty || 0)) return fail("party_too_small", gate.minParty);
+              state2.hunter.activeGateId = gate.id;
+              state2.hunter.clearedGateId = null;
+              return ok({ gateId: gate.id });
+            }),
+            "hunter/gate-clear": scopedEvent(({ state: state2, params, ok, fail }) => {
+              if (!state2.hunter || state2.hunter.activeGateId !== params.gateId) return fail("gate_not_active", params.gateId);
+              state2.hunter.clearedGateId = params.gateId;
+              return ok({ gateId: params.gateId });
+            }),
+            "hunter/settle": scopedEvent(({ schema: schema2, state: state2, params, rng, ok, fail }) => {
+              const gate = gates(schema2).find((entry) => entry.id === params.gateId);
+              if (!gate || !state2.hunter || state2.hunter.clearedGateId !== gate.id) return fail("gate_not_cleared", params.gateId);
+              const gold = roll(gate.settlement && gate.settlement.gold || 0, rng);
+              const exp = roll(gate.settlement && gate.settlement.exp || 0, rng);
+              const manaStone = roll(gate.settlement && gate.settlement.manaStone || 0, rng);
+              state2.gold = Number(state2.gold || 0) + gold;
+              state2.player.exp = Number(state2.player.exp || 0) + exp;
+              state2.resources = state2.resources || {};
+              state2.resources.mana_stone = Number(state2.resources.mana_stone || 0) + manaStone;
+              state2.hunter.activeGateId = null;
+              state2.hunter.clearedGateId = null;
+              return ok({ gateId: gate.id, gold, exp, manaStone });
+            }),
+            "hunter/guild-join": scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => {
+              if (!state2.hunter || !state2.hunter.rank) return fail("hunter_not_assessed");
+              const guild = (schema2.hunter && schema2.hunter.guilds || []).find((entry) => entry.id === params.guildId);
+              if (!guild) return fail("unknown_guild", params.guildId);
+              if (rankIndex(schema2, state2.hunter.rank) < rankIndex(schema2, guild.minRank || "E")) return fail("hunter_rank_too_low", guild.minRank);
+              state2.hunter.guildId = guild.id;
+              return ok({ guildId: guild.id });
+            })
+          },
+          selectors: {
+            "hunter/status": (schema2, state2) => ({ ...state2.hunter || {}, level: state2.player.level, exp: state2.player.exp, rankLabel: rankDef(schema2, state2.hunter && state2.hunter.rank)?.label || null }),
+            "hunter/gates": (schema2, state2) => gates(schema2).map((gate) => ({ ...gate, available: !!(state2.hunter && state2.hunter.rank) && rankIndex(schema2, state2.hunter.rank) >= rankIndex(schema2, gate.minRank || "E") })),
+            "hunter/guilds": (schema2, state2) => (schema2.hunter && schema2.hunter.guilds || []).map((guild) => ({ ...guild, joined: state2.hunter && state2.hunter.guildId === guild.id }))
+          },
+          processes: {},
+          migrations: {}
+        };
+      }
+      function gates(schema2) {
+        return schema2.hunter && schema2.hunter.gates || [];
+      }
+      function ranks(schema2) {
+        return schema2.hunter && schema2.hunter.assessment && schema2.hunter.assessment.ranks || [];
+      }
+      function rankDef(schema2, id) {
+        return ranks(schema2).find((entry) => entry.id === id);
+      }
+      function rankIndex(schema2, id) {
+        return ranks(schema2).findIndex((entry) => entry.id === id);
+      }
+      function rankFor(score, definitions) {
+        return definitions.filter((entry) => score >= Number(entry.min || 0)).sort((a, b) => Number(b.min || 0) - Number(a.min || 0))[0] || null;
+      }
+      function roll(value, rng) {
+        return Array.isArray(value) ? rng.int(Number(value[0]), Number(value[1])) : Number(value || 0);
+      }
+      module.exports = { createHunterModule };
+    }
+  });
+
   // ../engine/core/applyEvent.js
   var require_applyEvent = __commonJS({
     "../engine/core/applyEvent.js"(exports, module) {
@@ -7915,6 +8018,7 @@ ${bodies}`;
       var { createInventoryModule } = require_inventory();
       var { createCombatModule } = require_combat2();
       var { createProgressionModule, createEquipmentModule, createQuestModule, createPartyModule, createTimeModule, createLocationModule, createLootModule, createShopModule, createCraftingModule, createFactionsModule, createJobsModule } = require_commonRpg();
+      var { createHunterModule } = require_hunter();
       var {
         clone: clone3,
         findById,
@@ -8182,6 +8286,7 @@ ${bodies}`;
       defaultModuleRegistry.register(createCraftingModule());
       defaultModuleRegistry.register(createFactionsModule());
       defaultModuleRegistry.register(createJobsModule());
+      defaultModuleRegistry.register(createHunterModule());
       defaultModuleRegistry.register(createCombatModule());
       defaultModuleRegistry.register(createLegacyModule(applyLegacyEvent));
       function applyEvent(schema2, state2, event, rng) {
@@ -8229,6 +8334,7 @@ ${bodies}`;
         if (schema2.locations) state2.location = initial.location || schema2.locations[0] && schema2.locations[0].id || null;
         if (schema2.factions) state2.factions = clone3(initial.factions || {});
         if (schema2.jobs) state2.jobs = clone3(initial.jobs || []);
+        if (schema2.hunter) state2.hunter = clone3(initial.hunter || { registered: false, rank: null, assessmentScore: null, activeGateId: null, clearedGateId: null, guildId: null });
         if (seed != null) state2.seed = seed;
         return state2;
       }
@@ -17548,7 +17654,7 @@ ${Array.from(extras).join(" ")}` : text;
       title.textContent = String(widget.title);
       box.append(title);
     }
-    const data = (0, import_runtime.selectScreenData)(widget.source, context, selectors(api));
+    const data = typeof widget.source === "string" && widget.source.startsWith("engine:") ? api.select(widget.source.slice(7), context.schema, context.state) : (0, import_runtime.selectScreenData)(widget.source, context, selectors(api));
     const type = String(widget.widget || "");
     if (type === "stat-strip") renderStats(box, data);
     else if (type === "gauge") renderGauge(box, data, widget.props || {});
