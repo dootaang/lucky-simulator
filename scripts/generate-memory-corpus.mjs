@@ -47,7 +47,16 @@ function emitMessage(role, content, entities) {
   return id;
 }
 
-function setFact(key, value, { kind, text, role = 'assistant', entities = [], importance = 0 }) {
+// knowledgeScope(C0-4): 이 기억을 누가 아는가. 비밀·약속은 사용자 전용, 공개 사실은 public.
+// public = 아무나 언급 가능, user = 플레이어만 앎(다른 NPC 앞에서 누설 금지),
+// entity:<npcId> = 특정 NPC만 관여. 검색·주입 게이트가 이를 존중해야 한다(C2).
+function scopeFor(kind, key, entities) {
+  if (kind === 'secret') return 'user';
+  if (kind === 'promise') return entities && entities.length ? `entity:${entities[0]}` : 'user';
+  return 'public';
+}
+
+function setFact(key, value, { kind, text, role = 'assistant', entities = [], importance = 0, knowledgeScope }) {
   const messageId = emitMessage(role, text, entities);
   eventSeq += 1;
   const recordId = nextRecId();
@@ -59,7 +68,8 @@ function setFact(key, value, { kind, text, role = 'assistant', entities = [], im
   }
   records.push({
     id: recordId, kind, text, sourceMessageIds: [messageId], sourceEventIndexes: [eventSeq],
-    entities, createdTurn: turn, validFromTurn: turn, validToTurn: null, supersedes, importance, status: 'approved',
+    entities, createdTurn: turn, validFromTurn: turn, validToTurn: null, supersedes, importance,
+    knowledgeScope: knowledgeScope || scopeFor(kind, key, entities), status: 'approved',
   });
   latest[key] = { recordId, value };
   return recordId;
@@ -357,8 +367,8 @@ for (const rec of psrPool) {
 
 // ── 출력 ──
 mkdirSync(OUT_DIR, { recursive: true });
-writeFileSync(join(OUT_DIR, 'corpus.json'), JSON.stringify({ contract: 'memory-benchmark-corpus/0.1', seed: SEED, messages, records }, null, 2) + '\n');
-writeFileSync(join(OUT_DIR, 'questions.json'), JSON.stringify({ contract: 'memory-benchmark-questions/0.1', questions }, null, 2) + '\n');
+writeFileSync(join(OUT_DIR, 'corpus.json'), JSON.stringify({ contract: 'memory-benchmark-corpus/0.2', seed: SEED, messages, records }, null, 2) + '\n');
+writeFileSync(join(OUT_DIR, 'questions.json'), JSON.stringify({ contract: 'memory-benchmark-questions/0.2', questions }, null, 2) + '\n');
 
 const byCat = {};
 for (const q of questions) byCat[q.category] = (byCat[q.category] || 0) + 1;

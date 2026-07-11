@@ -91,6 +91,61 @@ function mean(values) {
   return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
 }
 
+// 근거 "보유율"(source presence) — precision과 다른 별개 지표(C0-6). 상위 k hit이 출처
+// 메타데이터를 갖는 비율. 코퍼스가 항상 출처를 가지면 100%에 가깝다 → 이 수치만으로
+// 근거 정확도를 주장하면 안 된다는 것을 명시적으로 드러내기 위해 따로 보고한다.
+function sourcePresenceRate(hits, k = 5) {
+  const top = hits.slice(0, k);
+  if (!top.length) return null;
+  let present = 0;
+  for (const hit of top) if ((hit.sourceMessageIds && hit.sourceMessageIds.length) || (hit.sourceEventIndexes && hit.sourceEventIndexes.length)) present += 1;
+  return present / top.length;
+}
+
+// 현재 사실 정확도(C0-3) — current-fact 질문에서 정답(현재 유효) record가 authoritative
+// 현재사실 블록에 실제로 들어갔는가. 폐기값이 아니라 최신값을 집었는지 검증.
+function currentFactExactMatch(plan, question, corpus) {
+  if (question.category !== 'current-fact') return null;
+  const relevant = relevantIdsOf(question, corpus);
+  if (!relevant.size) return null;
+  const factIds = new Set((plan.currentFacts || []).map((h) => h.recordId));
+  for (const id of relevant) if (factIds.has(id)) return 1;
+  return 0;
+}
+
+// NPC 혼동(C0-3) — npc-disambiguation 질문에서 금지된(다른 NPC) record가 정답보다
+// 위(top-1)에 오면 혼동 1. forbiddenClaims와 달리 "순위상 오답이 정답을 눌렀는가"를 본다.
+function npcConfusion(plan, question, corpus) {
+  if (question.category !== 'npc-disambiguation') return null;
+  const relevant = relevantIdsOf(question, corpus);
+  const top = plan.hits[0];
+  if (!top) return 0;
+  if (relevant.has(top.recordId)) return 0;
+  const rec = corpus.records.find((r) => r.id === top.recordId);
+  if (!rec) return 0;
+  for (const forbidden of question.forbiddenClaims) if (rec.text.includes(forbidden)) return 1;
+  return 0;
+}
+
+// abstention(C0-1) — negative 질문에서 시스템이 '관련 기억 없음'을 택했는가.
+// planner가 abstained 플래그를 주면 그걸 쓰고, 없으면 "확신 hit 없음"으로 근사하지 않고
+// false(주입함)로 본다 — 즉 abstention 계약이 없는 기준선은 negative에서 항상 실패.
+function abstained(plan) {
+  return plan.abstained === true;
+}
+
+// 폐기 기억이 "주입 후보(hits)"에 오른 횟수(C0-5) — 현재사실 노출과 별개.
+// 회상엔 나와도 되지만, 몇 개나 상위에 섞이는지 자체를 측정해 롤백 필터 효과를 본다.
+function supersededInInjection(plan, corpus, k = 10) {
+  const top = plan.hits.slice(0, k);
+  let count = 0;
+  for (const hit of top) {
+    const rec = corpus.records.find((r) => r.id === hit.recordId);
+    if (rec && rec.validToTurn != null) count += 1;
+  }
+  return count;
+}
+
 // 한 planner의 전체 질문 집계.
 function evaluate(planResults, corpus, { budgetTokens = 2000 } = {}) {
   const per = [];
@@ -106,8 +161,14 @@ function evaluate(planResults, corpus, { budgetTokens = 2000 } = {}) {
       mrr: reciprocalRank(plan.hits, relevant),
       ndcgAt10: ndcgAt(plan.hits, relevant, 10),
       attributionPrecision: attributionPrecision(plan.hits, question, corpus, 5),
+      sourcePresence: sourcePresenceRate(plan.hits, 5),
       supersededRejection: supersededRejection(plan, question, 10),
       supersededAsCurrent: supersededAsCurrent(plan, question),
+      supersededInInjection: supersededInInjection(plan, corpus, 10),
+      currentFactExactMatch: currentFactExactMatch(plan, question, corpus),
+      npcConfusion: npcConfusion(plan, question, corpus),
+      abstainedOnNegative: question.category === 'negative' ? (abstained(plan) ? 1 : 0) : null,
+      overAbstained: question.category !== 'negative' ? (abstained(plan) ? 1 : 0) : null,
       forbiddenClaims: forbiddenClaims(plan, question, corpus, 5),
       memoryTokens: estimateTokens(selectedText),
     });
@@ -119,10 +180,16 @@ function evaluate(planResults, corpus, { budgetTokens = 2000 } = {}) {
     mrr: mean(per.map((p) => p.mrr)),
     ndcgAt10: mean(per.map((p) => p.ndcgAt10)),
     attributionPrecision: mean(per.map((p) => p.attributionPrecision)),
+    sourcePresenceRate: mean(per.map((p) => p.sourcePresence)),
     supersededRejectionRate: mean(per.map((p) => p.supersededRejection)),
   };
   const facts = {
+    currentFactExactMatch: mean(per.map((p) => p.currentFactExactMatch)),
     supersededAsCurrentCount: per.reduce((a, p) => a + p.supersededAsCurrent, 0),
+    meanSupersededInInjection: mean(per.map((p) => p.supersededInInjection)),
+    npcConfusionCount: per.reduce((a, p) => a + (p.npcConfusion || 0), 0),
+    negativeAbstentionRate: mean(per.map((p) => p.abstainedOnNegative)),
+    overAbstentionRate: mean(per.map((p) => p.overAbstained)),
     forbiddenClaimCount: per.reduce((a, p) => a + p.forbiddenClaims, 0),
   };
   const resources = {

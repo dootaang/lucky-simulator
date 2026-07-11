@@ -1,5 +1,5 @@
 {
-  "contract": "memory-benchmark-questions/0.1",
+  "contract": "memory-benchmark-questions/0.2",
   "questions": [
     {
       "queryId": "current-fact-01",

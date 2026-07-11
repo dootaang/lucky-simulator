@@ -1,6 +1,9 @@
 {
+  "schema": "memory-benchmark-results/0.2",
   "provider": "fixed-hashgram-256",
+  "note": "고정(결정론) 임베딩 provider 측정. 절대 품질 아님. v0.1과 지표 정의가 달라 값을 직접 섞지 말 것.",
   "corpus": {
+    "contract": "memory-benchmark-corpus/0.2",
     "messages": 329,
     "records": 102,
     "questions": 120
@@ -14,10 +17,16 @@
         "mrr": 0.125,
         "ndcgAt10": 0.13392789260714374,
         "attributionPrecision": 0.050333333333333334,
+        "sourcePresenceRate": 1,
         "supersededRejectionRate": 1
       },
       "facts": {
+        "currentFactExactMatch": 0,
         "supersededAsCurrentCount": 0,
+        "meanSupersededInInjection": 0.2,
+        "npcConfusionCount": 1,
+        "negativeAbstentionRate": 0,
+        "overAbstentionRate": 0,
         "forbiddenClaimCount": 10
       },
       "resources": {
@@ -34,10 +43,16 @@
         "mrr": 0.35865397510985764,
         "ndcgAt10": 0.43463058392957543,
         "attributionPrecision": 0.1178333333333332,
+        "sourcePresenceRate": 1,
         "supersededRejectionRate": 1
       },
       "facts": {
+        "currentFactExactMatch": 1,
         "supersededAsCurrentCount": 0,
+        "meanSupersededInInjection": 7.008333333333334,
+        "npcConfusionCount": 1,
+        "negativeAbstentionRate": 0,
+        "overAbstentionRate": 0,
         "forbiddenClaimCount": 31
       },
       "resources": {
@@ -50,19 +65,25 @@
       "retrieval": {
         "recallAt1": 0.1,
         "recallAt5": 0.22,
-        "recallAt10": 0.5,
-        "mrr": 0.18399188311688305,
-        "ndcgAt10": 0.24508617206035105,
+        "recallAt10": 0.45,
+        "mrr": 0.1755759102009101,
+        "ndcgAt10": 0.23003467227715194,
         "attributionPrecision": 0.04450000000000002,
+        "sourcePresenceRate": 1,
         "supersededRejectionRate": 1
       },
       "facts": {
+        "currentFactExactMatch": 0,
         "supersededAsCurrentCount": 0,
+        "meanSupersededInInjection": 1.3583333333333334,
+        "npcConfusionCount": 1,
+        "negativeAbstentionRate": 0,
+        "overAbstentionRate": 0,
         "forbiddenClaimCount": 14
       },
       "resources": {
-        "meanMemoryTokens": 121.38333333333334,
-        "maxMemoryTokens": 148,
+        "meanMemoryTokens": 124.45833333333333,
+        "maxMemoryTokens": 143,
         "budgetTokens": 2000
       }
     },
@@ -74,10 +95,16 @@
         "mrr": 0.3049532175340998,
         "ndcgAt10": 0.3939983338383455,
         "attributionPrecision": 0.10099999999999998,
+        "sourcePresenceRate": 1,
         "supersededRejectionRate": 1
       },
       "facts": {
+        "currentFactExactMatch": 1,
         "supersededAsCurrentCount": 0,
+        "meanSupersededInInjection": 7.558333333333334,
+        "npcConfusionCount": 2,
+        "negativeAbstentionRate": 0,
+        "overAbstentionRate": 0,
         "forbiddenClaimCount": 31
       },
       "resources": {

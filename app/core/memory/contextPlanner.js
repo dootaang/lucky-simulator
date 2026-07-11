@@ -57,7 +57,13 @@ function planStructuredLexical(corpus, question, lexicalIndex, { topK = 20 } = {
 // C. Hypa V3 reproduction — 중요·최근·유사 기억. 무작위는 seed로 격리.
 // frozen summary 사용(요약 LLM 변동과 검색 품질을 섞지 않음 — CLAUDE-TASK §4-C).
 async function planHypaV3(corpus, question, semanticIndex, options = {}) {
-  const { recentRatio = 0.4, similarRatio = 0.4, budget = 20, seed = 1 } = options;
+  const { recentRatio = 0.4, similarRatio = 0.4, budget = 20, seed = 1, includeRecentInQuery = true, queryChatCount = 3 } = options;
+  // HypaV3 고증(hypav3.ts settings.queryChatCount 기본 3): semantic query에 평가 질문뿐 아니라
+  // 그 시점의 최근 N개 메시지를 붙인다. 질문 단독 회수와 비교하려면 includeRecentInQuery:false.
+  const recentMsgs = includeRecentInQuery
+    ? corpus.messages.filter((m) => m.turn <= question.atTurn).slice(-queryChatCount).map((m) => m.content).join(' ')
+    : '';
+  const semanticQuery = includeRecentInQuery ? `${question.query} ${recentMsgs}`.trim() : question.query;
   const pool = corpus.records.filter((r) => r.createdTurn <= question.atTurn);
   const byRecent = pool.slice().sort((a, b) => b.createdTurn - a.createdTurn);
   const recentCount = Math.floor(budget * recentRatio);
@@ -68,7 +74,7 @@ async function planHypaV3(corpus, question, semanticIndex, options = {}) {
   // 최근 기억
   for (const r of byRecent.slice(0, recentCount)) selected.set(r.id, hitOf(r, { score: 0.5, recencyScore: 0.5, selectedBecause: ['hypa-recent'] }));
   // 유사 기억(요약 조각 임베딩 → childToParentRRF는 semanticSearch가 처리)
-  const sem = await semanticSearch(semanticIndex, question.query, budget);
+  const sem = await semanticSearch(semanticIndex, semanticQuery, budget);
   let added = 0;
   for (const s of sem) {
     if (added >= similarCount) break;

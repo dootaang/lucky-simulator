@@ -48,8 +48,10 @@ async function run() {
   const outDir = join(ROOT, 'docs/reports');
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'memory-benchmark-results.json'), JSON.stringify({
+    schema: 'memory-benchmark-results/0.2',
     provider: provider.modelId,
-    corpus: { messages: corpus.messages.length, records: corpus.records.length, questions: questions.length },
+    note: '고정(결정론) 임베딩 provider 측정. 절대 품질 아님. v0.1과 지표 정의가 달라 값을 직접 섞지 말 것.',
+    corpus: { contract: corpus.contract, messages: corpus.messages.length, records: corpus.records.length, questions: questions.length },
     groups: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, { retrieval: v.retrieval, facts: v.facts, resources: v.resources }])),
   }, null, 2) + '\n');
 
@@ -67,7 +69,7 @@ function renderReport(results, provider) {
   const names = Object.keys(results);
   const row = (label, get) => `| ${label} | ${names.map((n) => get(results[n])).join(' | ')} |`;
   const lines = [];
-  lines.push('# 기억 벤치마크 결과 (Phase A/B)');
+  lines.push('# 기억 벤치마크 결과 (Phase A~C · schema 0.2)');
   lines.push('');
   lines.push('> 이 표는 **외부 API 없는 고정(결정론) 임베딩 provider**로 측정한 것이다. 목적은 검색 파이프라인·지표가 올바른지, 네 방식의 상대적 강약을 재는 것이다. **절대적 의미 품질이 아니다** — 실제 임베딩 품질은 Voyage 실호출(Phase C, `--live-voyage`)에서 별도 측정한다.');
   lines.push('');
@@ -83,14 +85,20 @@ function renderReport(results, provider) {
   lines.push(row('Recall@10', (r) => fmt(r.retrieval.recallAt10)));
   lines.push(row('MRR', (r) => fmt(r.retrieval.mrr)));
   lines.push(row('nDCG@10', (r) => fmt(r.retrieval.ndcgAt10)));
-  lines.push(row('근거 정확도(top5)', (r) => fmt(r.retrieval.attributionPrecision)));
-  lines.push(row('폐기 기억 거부율', (r) => fmt(r.retrieval.supersededRejectionRate)));
+  lines.push(row('근거 정확도 precision@5 (정답 대비)', (r) => fmt(r.retrieval.attributionPrecision)));
+  lines.push(row('출처 보유율(precision 아님·참고)', (r) => fmt(r.retrieval.sourcePresenceRate)));
+  lines.push(row('폐기 기억 거부율(현재사실 블록)', (r) => fmt(r.retrieval.supersededRejectionRate)));
   lines.push('');
-  lines.push('## 게임 사실 안전성 (낮을수록 좋음)');
+  lines.push('## 게임 사실 안전성 (낮을수록 좋음, 단 abstention은 높을수록 좋음)');
   lines.push('');
   lines.push(`| 지표 | ${names.join(' | ')} |`);
   lines.push(`|---|${names.map(() => '---').join('|')}|`);
+  lines.push(row('현재사실 정확도(current-fact 정답이 현재사실 블록에)', (r) => fmt(r.facts.currentFactExactMatch)));
   lines.push(row('폐기 과거값을 현재 사실로 노출(건)', (r) => String(r.facts.supersededAsCurrentCount)));
+  lines.push(row('폐기 기억이 주입후보 top10에 섞인 평균(건)', (r) => (r.facts.meanSupersededInInjection == null ? 'n/a' : r.facts.meanSupersededInInjection.toFixed(2))));
+  lines.push(row('NPC 혼동(오답이 top1, 건)', (r) => String(r.facts.npcConfusionCount)));
+  lines.push(row('negative에서 abstention 성공률', (r) => fmt(r.facts.negativeAbstentionRate)));
+  lines.push(row('답변가능 질문 과잉 abstention률', (r) => fmt(r.facts.overAbstentionRate)));
   lines.push(row('금지 문구 회상(건)', (r) => String(r.facts.forbiddenClaimCount)));
   lines.push('');
   lines.push('## 자원');
@@ -122,7 +130,7 @@ function renderReport(results, provider) {
   lines.push('');
   lines.push('## 권고 (이번 고정 provider 측정 기준)');
   lines.push('');
-  lines.push('1. **지금 당장 플레이에 연결할 것: 구조화 + 어휘(B의 요소)뿐.** 폐기 과거값을 현재 사실로 노출한 사례 0건, 근거 100%, 최근창만(A) 대비 검색 회수가 크게 높다. 외부 비용·지연 없음.');
+  lines.push('1. **지금 당장 플레이에 연결할 것: 구조화 + 어휘(B의 요소)뿐.** 폐기 과거값을 현재 사실로 노출한 사례 0건, 최근창만(A) 대비 검색 회수가 크게 높다. 외부 비용·지연 없음. (근거 정확도는 precision@5 기준 10% 안팎 — 상위5에 정답 1개가 들어갈 때의 정상 범위이며, 이전의 "근거 100%"는 지표 착시였다.)');
   lines.push('2. **의미(semantic) 검색은 아직 연결하지 말 것.** 고정 provider에서 D(하이브리드)는 B보다 Recall@5가 낮거나 비슷하다 — 약한 임베딩을 섞으면 정확 매칭이 희석된다. 이는 CLAUDE-TASK 통과 기준 5("Voyage 이득이 FTS 대비 작으면 기본 기능화 보류")를 그대로 확인한 것이다. **연결 여부는 Voyage 실측(Phase C) 이후 결정한다.**');
   lines.push('3. **abstention(모름) 임계값이 없다는 게 다음 우선 과제.** 모든 planner가 negative 질문에도 top-K를 반환해 "금지 문구 회상"이 10~31건 발생한다. 회상 신뢰도 하한을 두어 "관련 기억 없음"을 반환하는 경로가 필요하다.');
   lines.push('4. **HypaV3 재현(C)의 무작위 기억은 seed로 격리해 재현성은 확보**했으나, 이 corpus에서 검색 회수 기여가 낮다. 유사 기억 선택은 Voyage 임베딩과 결합했을 때만 재평가한다.');

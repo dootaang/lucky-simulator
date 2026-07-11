@@ -5,6 +5,7 @@
   "license": "GPL-3.0-or-later",
   "scripts": {
     "test": "node --test test/*.test.js",
+    "test:phasec": "node --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json",
     "build": "node build.mjs",
     "deploy": "node build.mjs && firebase deploy --only hosting",

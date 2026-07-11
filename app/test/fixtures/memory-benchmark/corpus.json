@@ -1,5 +1,5 @@
 {
-  "contract": "memory-benchmark-corpus/0.1",
+  "contract": "memory-benchmark-corpus/0.2",
   "seed": 20260712,
   "messages": [
     {
@@ -2514,6 +2514,7 @@
       "validToTurn": 40,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2534,6 +2535,7 @@
       "validToTurn": 78,
       "supersedes": [],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2552,6 +2554,7 @@
       "validToTurn": 42,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2572,6 +2575,7 @@
       "validToTurn": 64,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2592,6 +2596,7 @@
       "validToTurn": 47,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2612,6 +2617,7 @@
       "validToTurn": 54,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2632,6 +2638,7 @@
       "validToTurn": 55,
       "supersedes": [],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2652,6 +2659,7 @@
       "validToTurn": 62,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2672,6 +2680,7 @@
       "validToTurn": 101,
       "supersedes": [],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2692,6 +2701,7 @@
       "validToTurn": 89,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2712,6 +2722,7 @@
       "validToTurn": 70,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2734,6 +2745,7 @@
         "r0001"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2754,6 +2766,7 @@
       "validToTurn": 163,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2774,6 +2787,7 @@
         "r0003"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2796,6 +2810,7 @@
         "r0005"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2816,6 +2831,7 @@
       "validToTurn": 113,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2838,6 +2854,7 @@
         "r0006"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2860,6 +2877,7 @@
         "r0007"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2882,6 +2900,7 @@
         "r0008"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2904,6 +2923,7 @@
         "r0004"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2924,6 +2944,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.9,
+      "knowledgeScope": "entity:silvia",
       "status": "approved"
     },
     {
@@ -2946,6 +2967,7 @@
         "r0011"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2966,6 +2988,7 @@
       "validToTurn": 138,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -2988,6 +3011,7 @@
         "r0012"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3010,6 +3034,7 @@
         "r0002"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3030,6 +3055,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.4,
+      "knowledgeScope": "entity:mirian",
       "status": "approved"
     },
     {
@@ -3050,6 +3076,7 @@
         "r0014"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3072,6 +3099,7 @@
         "r0015"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3094,6 +3122,7 @@
         "r0010"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3116,6 +3145,7 @@
         "r0017"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3138,6 +3168,7 @@
         "r0019"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3160,6 +3191,7 @@
         "r0009"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3180,6 +3212,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.95,
+      "knowledgeScope": "user",
       "status": "approved"
     },
     {
@@ -3202,6 +3235,7 @@
         "r0022"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3224,6 +3258,7 @@
         "r0016"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3246,6 +3281,7 @@
         "r0024"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3268,6 +3304,7 @@
         "r0025"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3288,6 +3325,7 @@
         "r0027"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3310,6 +3348,7 @@
         "r0028"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3332,6 +3371,7 @@
         "r0020"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3352,6 +3392,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.9,
+      "knowledgeScope": "user",
       "status": "approved"
     },
     {
@@ -3374,6 +3415,7 @@
         "r0030"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3396,6 +3438,7 @@
         "r0018"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3418,6 +3461,7 @@
         "r0023"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3440,6 +3484,7 @@
         "r0031"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3462,6 +3507,7 @@
         "r0032"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3482,6 +3528,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.85,
+      "knowledgeScope": "entity:iris",
       "status": "approved"
     },
     {
@@ -3504,6 +3551,7 @@
         "r0034"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3526,6 +3574,7 @@
         "r0029"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3548,6 +3597,7 @@
         "r0036"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3568,6 +3618,7 @@
         "r0038"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3588,6 +3639,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.7,
+      "knowledgeScope": "entity:kang",
       "status": "approved"
     },
     {
@@ -3610,6 +3662,7 @@
         "r0013"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3632,6 +3685,7 @@
         "r0039"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3654,6 +3708,7 @@
         "r0042"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3676,6 +3731,7 @@
         "r0043"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3696,6 +3752,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.8,
+      "knowledgeScope": "user",
       "status": "approved"
     },
     {
@@ -3718,6 +3775,7 @@
         "r0035"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3740,6 +3798,7 @@
         "r0045"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3762,6 +3821,7 @@
         "r0048"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3782,6 +3842,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.75,
+      "knowledgeScope": "user",
       "status": "approved"
     },
     {
@@ -3804,6 +3865,7 @@
         "r0050"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3826,6 +3888,7 @@
         "r0037"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3846,6 +3909,7 @@
         "r0051"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3868,6 +3932,7 @@
         "r0044"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3888,6 +3953,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.6,
+      "knowledgeScope": "entity:sera",
       "status": "approved"
     },
     {
@@ -3910,6 +3976,7 @@
         "r0054"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3932,6 +3999,7 @@
         "r0055"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -3954,6 +4022,7 @@
         "r0049"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -3974,6 +4043,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0.65,
+      "knowledgeScope": "user",
       "status": "approved"
     },
     {
@@ -3996,6 +4066,7 @@
         "r0059"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4018,6 +4089,7 @@
         "r0046"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4040,6 +4112,7 @@
         "r0053"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4062,6 +4135,7 @@
         "r0060"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4083,6 +4157,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4105,6 +4180,7 @@
         "r0062"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4127,6 +4203,7 @@
         "r0063"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4147,6 +4224,7 @@
         "r0064"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4169,6 +4247,7 @@
         "r0067"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4191,6 +4270,7 @@
         "r0040"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4213,6 +4293,7 @@
         "r0068"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4235,6 +4316,7 @@
         "r0056"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4255,6 +4337,7 @@
       "validToTurn": null,
       "supersedes": [],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4277,6 +4360,7 @@
         "r0071"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4299,6 +4383,7 @@
         "r0072"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4321,6 +4406,7 @@
         "r0065"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4343,6 +4429,7 @@
         "r0074"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4365,6 +4452,7 @@
         "r0076"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4385,6 +4473,7 @@
         "r0078"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4407,6 +4496,7 @@
         "r0079"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4429,6 +4519,7 @@
         "r0073"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4451,6 +4542,7 @@
         "r0081"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "superseded"
     },
     {
@@ -4473,6 +4565,7 @@
         "r0082"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4495,6 +4588,7 @@
         "r0084"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4517,6 +4611,7 @@
         "r0058"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4539,6 +4634,7 @@
         "r0087"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4561,6 +4657,7 @@
         "r0080"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4583,6 +4680,7 @@
         "r0088"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4605,6 +4703,7 @@
         "r0077"
       ],
       "importance": 0.5,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4627,6 +4726,7 @@
         "r0090"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4649,6 +4749,7 @@
         "r0086"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     },
     {
@@ -4671,6 +4772,7 @@
         "r0092"
       ],
       "importance": 0,
+      "knowledgeScope": "public",
       "status": "approved"
     }
   ]

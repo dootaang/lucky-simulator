@@ -17,10 +17,29 @@ const CATEGORIES = ['current-fact', 'superseded', 'promise-secret-relation', 'pa
 // ── Phase A: 코퍼스·정답지 무결성 (테스트 중 생성 없음 — 커밋 fixture만 읽음) ──
 
 test('코퍼스는 300턴 규모이고 정답지는 6종 카테고리 각 20문항이다', () => {
-  assert.equal(corpus.contract, 'memory-benchmark-corpus/0.1');
+  assert.equal(corpus.contract, 'memory-benchmark-corpus/0.2');
   assert.ok(corpus.messages.length >= 300, `messages ${corpus.messages.length}`);
   assert.equal(questions.length, 120);
   for (const cat of CATEGORIES) assert.equal(questions.filter((q) => q.category === cat).length, 20, cat);
+});
+
+test('모든 record는 knowledgeScope를 가지며 비밀은 user, 약속은 entity 스코프다(C0-4)', () => {
+  for (const r of corpus.records) {
+    assert.ok(typeof r.knowledgeScope === 'string' && r.knowledgeScope.length > 0, r.id);
+    if (r.kind === 'secret') assert.equal(r.knowledgeScope, 'user', r.id);
+    if (r.kind === 'promise') assert.ok(r.knowledgeScope.startsWith('entity:') || r.knowledgeScope === 'user', r.id);
+  }
+});
+
+test('C0 지표: current-fact 정확도는 authoritative를 주는 B·D만 1.0, A·C는 0이고 abstention 계약이 노출된다', async () => {
+  const r = await runAll();
+  assert.equal(r.lexical.facts.currentFactExactMatch, 1);
+  assert.equal(r.hybrid.facts.currentFactExactMatch, 1);
+  assert.equal(r.recent.facts.currentFactExactMatch, 0);
+  // 기준선 planner들은 abstention 계약이 없어 negative에서 abstain하지 못한다(C2가 메울 공백).
+  assert.equal(r.lexical.facts.negativeAbstentionRate, 0);
+  // 출처 보유율과 근거 precision은 서로 다른 지표로 분리 보고된다.
+  assert.ok(r.lexical.retrieval.sourcePresenceRate > r.lexical.retrieval.attributionPrecision);
 });
 
 test('모든 정답의 relevantMessageId·supersededRecordId가 실제 코퍼스에 존재한다', () => {

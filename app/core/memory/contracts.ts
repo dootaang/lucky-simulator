@@ -17,7 +17,18 @@ export interface MemoryRecord {
   validToTurn: number | null;   // null이면 현재까지 유효
   supersedes: string[];         // 이 기록이 대체한 과거 기록 id
   importance: number;           // 0..1, 사용자 고정 기억 등
+  // 누가 이 기억을 아는가(C0-4): 'public' 아무나 | 'user' 플레이어 전용(비밀) | 'entity:<npcId>' 특정 NPC
+  knowledgeScope: string;
   status: 'candidate' | 'approved' | 'rejected' | 'superseded';
+}
+
+// 검색·주입 결정 계약(C0-1, C2). planner는 abstention 판단을 함께 낼 수 있다.
+export interface RetrievalPlan {
+  hits: RetrievalHit[];
+  currentFacts: RetrievalHit[];
+  abstained?: boolean;          // '관련 기억 없음'을 택했는가
+  confidence?: number;          // 상위 hit 신뢰도(0..1, uncalibrated)
+  reason?: string;
 }
 
 // 임베딩 provider — fixed(결정론, 외부 호출 없음) ↔ voyage(실호출)로 교체.

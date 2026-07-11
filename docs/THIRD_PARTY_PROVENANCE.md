@@ -28,5 +28,20 @@
 
 ## Voyage AI
 
-- 이번 세션(Phase A/B) 범위 아님 — 벤치마크 기반 완성 후 별도 진행.
-- `voyage-context-3`(Risu 재현 기준) / `voyage-context-4`(최신 대안) REST 계약은 착수 시 이 문서에 기록.
+- Phase C 배선 완료(실측 대기). `app/core/memory/providers/voyage.ts` — REST `POST /v1/contextualizedembeddings`,
+  input_type query/document, 입력 한도(inputs 1000·chunks 16000·tokens 120000), 429 bounded backoff, 캐시.
+- 공식 문서 기준 `voyage-context-3`(Risu 재현 기준) / `voyage-context-4`(최신 대안). 실측 전 우열 단정 안 함.
+- API 키는 코드·fixture·로그·리포트·세션 export에 기록하지 않음. `VOYAGE_API_KEY` + `--live-voyage` 이중 opt-in.
+
+## 커뮤니티 플러그인 (개념 참고 — 코드 미복사)
+
+원본 위치 `C:\freetalk\리스플러그인분석용`. 파일이 고도로 minify돼 있고 Risu 런타임(pluginStorage/DOM/전역)에
+강결합돼 있어 **코드를 복사하지 않고 개념만 참조해 독립 재구현**했다. SHA-256은 원본 갱신 추적용.
+
+| 원본 | 표시 버전 | SHA-256 | 참조한 개념 | 우리 구현(재구현) |
+|---|---:|---|---|---|
+| `LIBRA World Manager.js` | 5.3.1 | `81FCEB0F…C774D8` | evidence gate off/soft/strict, rollback row tombstone, embedding cache/queue | `abstention.ts`(gate), `groundedPlanner.ts`(rollback 필터·budget/quota), `embeddingCache.ts` |
+| `RisuAI Agent v5.3.1.js` | 5.3.1 | `F8117404…10EC6` | recency decay, embedding batch 아이디어 | `groundedPlanner.ts` recency 가중, `voyage.ts` 배치/캐시 |
+
+- Risu DB·pluginStorage·DOM·API 키 저장·직접 채팅 수정 코드는 가져오지 않음(금지선).
+- `risu_agents.js`(1.1.9, `1E1D24D1…770CC`)·`multiagent-full-v0.8.4`(`E5A89828…EA7A4`)는 후속 에이전트 런타임 연구용으로만 기록, 이번 Phase C 미포함.
