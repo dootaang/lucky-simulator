@@ -82,6 +82,9 @@ async function compileWithContinuation(cfg, compilerInput, onLog) {
       maxTokens: 16000,
       temperature: 0.2,
       allowTruncated: true,
+      // 컴파일은 16K 토큰급 장문 생성이라 정상적으로도 1~3분 걸린다 —
+      // 기본 타임아웃(45초)에 잘리지 않도록 넉넉히. (서사화는 30초 유지)
+      timeoutMs: 240000,
     });
     const text = typeof result === 'string' ? result : String((result && result.text) || '');
     // finish_reason이 비표준(null 등)이라 잘림 신호를 못 받는 프록시 대비:

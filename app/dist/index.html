@@ -7878,7 +7878,7 @@ ${row3.entry.content}`).join("\n\n");
           return await fetch(url, { ...init, signal: controller.signal });
         } catch (err) {
           if (err && err.name === "AbortError") {
-            const timeout = new Error(`\uC11C\uC0AC \uC0DD\uC131\uC774 ${Math.round(ms / 1e3)}\uCD08\uB97C \uB118\uC5B4 \uC911\uB2E8\uB410\uC2B5\uB2C8\uB2E4. \uC5D4\uC9C4 \uACB0\uACFC\uB294 \uC720\uC9C0\uB429\uB2C8\uB2E4.`);
+            const timeout = new Error(`\uC751\uB2F5 \uB300\uAE30\uAC00 ${Math.round(ms / 1e3)}\uCD08\uB97C \uB118\uC5B4 \uC911\uB2E8\uB410\uC2B5\uB2C8\uB2E4. \uC5D4\uC9C4\uC5D0 \uC774\uBBF8 \uBC18\uC601\uB41C \uACB0\uACFC\uB294 \uC720\uC9C0\uB429\uB2C8\uB2E4.`);
             timeout.simbotSafe = true;
             throw timeout;
           }
@@ -12905,7 +12905,10 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
         messages: messages2,
         maxTokens: 16e3,
         temperature: 0.2,
-        allowTruncated: true
+        allowTruncated: true,
+        // 컴파일은 16K 토큰급 장문 생성이라 정상적으로도 1~3분 걸린다 —
+        // 기본 타임아웃(45초)에 잘리지 않도록 넉넉히. (서사화는 30초 유지)
+        timeoutMs: 24e4
       });
       const text = typeof result === "string" ? result : String(result && result.text || "");
       const flagged = !!(result && typeof result === "object" && result.truncated);

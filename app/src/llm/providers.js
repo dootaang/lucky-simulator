@@ -206,7 +206,7 @@ async function fetchWithTimeout(url, init, timeoutMs) {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (err) {
     if (err && err.name === 'AbortError') {
-      const timeout = new Error(`서사 생성이 ${Math.round(ms / 1000)}초를 넘어 중단됐습니다. 엔진 결과는 유지됩니다.`);
+      const timeout = new Error(`응답 대기가 ${Math.round(ms / 1000)}초를 넘어 중단됐습니다. 엔진에 이미 반영된 결과는 유지됩니다.`);
       timeout.simbotSafe = true;
       throw timeout;
     }
