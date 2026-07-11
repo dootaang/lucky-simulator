@@ -4,7 +4,7 @@ const { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('.
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
 const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
-import { getEngineState, getSchema, runEvent, summarizeEvent, summarizeEventItem } from './engineSession.js';
+import { buttonOnlyEvents, getEngineState, getSchema, getSessionEpoch, runEvent, summarizeEvent, summarizeEventItem } from './engineSession.js';
 import { buildNpcClusters, preferredEmotion, selectAsset } from './npcGallery.js';
 
 let messages = [];
@@ -53,7 +53,9 @@ function refresh() {
 export function renderPlayView(container, ctx) {
   registerCustomOrigin(settings);
   // 카드가 바뀌면 이전 카드의 대화·전투 버퍼·busy 상태를 물려받지 않는다.
-  const cardKey = ctx.file ? `${ctx.file.name}:${ctx.file.size}` : 'no-card';
+  // 카드가 같아도 스키마 승인·엔진 리셋(epoch 증가)이 있었으면 대화·무대 등 UI 상태를 함께 리셋 —
+  // 1일차 엔진에 옛 대화가 남아 프롬프트 시간선이 오염되는 것 방지(감사 지적).
+  const cardKey = `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : 'no-card'}#${getSessionEpoch()}`;
   if (sessionCardKey !== cardKey) {
     sessionCardKey = cardKey;
     messages = [];
@@ -934,7 +936,7 @@ function renderSettings(render) {
     if (!scale || !scale.steps) continue;
     const current = state && state.scaleMults && state.scaleMults[scale.id] != null ? state.scaleMults[scale.id] : 1;
     const input = namedInput(`scaleMult-${scale.id}`, String(current), 'range');
-    input.min = '0.5'; input.max = '3'; input.step = '0.1';
+    input.min = '0.5'; input.max = '3'; input.step = '0.1'; input.disabled = busy;
     const label = el('span'); label.textContent = `${scale.label || scale.id} ×${Number(current).toFixed(1)}`;
     input.addEventListener('change', () => runLedgerAction({ id: 'set_scale_mult', params: { scale: scale.id, mult: Number(input.value) } }, render));
     mults.append(field(label.textContent, input));
@@ -1228,7 +1230,11 @@ async function openCannedScene(instruction, ctx, render) {
     applySpeakers(parsed);
     const chips = [];
     if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
+    // 버튼 전용 인텐트는 LLM 응답으로 실행하지 않는다 — 치트·이중 영업 채널 차단(감사 지적).
+    const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
+    if (blocked.length) chips.push({ ok: false, kind: 'system', text: `버튼 전용 사건 ${blocked.length}개 무시됨` });
     for (const event of parsed.events) {
+      if (buttonOnlyEvents.has(event.id)) continue;
       const result = runEvent(event);
       const first = result.entries[0] || { ok: false, reason: 'empty_log' };
       const item = summarizeEventItem(event.id, first, formatMoney);
@@ -1261,7 +1267,11 @@ async function submitTurn(text, ctx, render) {
     applySpeakers(parsed);
     const chips = [];
     if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
+    // 버튼 전용 인텐트는 LLM 응답으로 실행하지 않는다 — 치트·이중 영업 채널 차단(감사 지적).
+    const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
+    if (blocked.length) chips.push({ ok: false, kind: 'system', text: `버튼 전용 사건 ${blocked.length}개 무시됨` });
     for (const event of parsed.events) {
+      if (buttonOnlyEvents.has(event.id)) continue;
       const result = runEvent(event);
       const first = result.entries[0] || { ok: false, reason: 'empty_log' };
       const item = summarizeEventItem(event.id, first, formatMoney);

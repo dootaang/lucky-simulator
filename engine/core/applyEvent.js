@@ -232,6 +232,7 @@ function isRewardRange(range) {
 }
 
 function upgrade(schema, state, params, ok, fail) {
+  if (state.combat && state.combat.active) return fail('in_combat');
   const facility = params.facility || params.facilityId;
   const def = findById(schema, 'facility', facility);
   if (!def) return fail('unknown_facility', facility);
@@ -431,6 +432,8 @@ function checkout(state, params, ok, fail) {
 }
 
 function sale(schema, state, params, ok, fail) {
+  // 전투 중 경영 거래 금지 — 콘솔은 숨기지만 자유 텍스트 경로까지 엔진이 차단(감사 지적, attempt_quest와 동일 원칙).
+  if (state.combat && state.combat.active) return fail('in_combat');
   const menu = findMenu(schema, params.menuName);
   const qty = normalizeInt(params.qty, 1);
   if (!menu) return fail('unknown_menu', params.menuName);
@@ -456,6 +459,7 @@ function sale(schema, state, params, ok, fail) {
 }
 
 function buyItem(schema, state, params, ok, fail) {
+  if (state.combat && state.combat.active) return fail('in_combat');
   if (Object.keys(params).some((key) => !['menuName', 'qty'].includes(key))) return fail('item_number_not_allowed');
   const menu = findMenu(schema, params.menuName);
   if (!menu) return fail('unknown_menu', params.menuName);
@@ -471,6 +475,7 @@ function buyItem(schema, state, params, ok, fail) {
 }
 
 function purchase(schema, state, params, ok, fail) {
+  if (state.combat && state.combat.active) return fail('in_combat');
   const resource = params.resource || params.resourceId;
   const qty = normalizeInt(params.qty, 1);
   const def = (schema.resources || []).find((entry) => entry.id === resource);
@@ -484,6 +489,7 @@ function purchase(schema, state, params, ok, fail) {
 }
 
 function purchaseBatch(schema, state, params, ok, fail) {
+  if (state.combat && state.combat.active) return fail('in_combat');
   const items = Array.isArray(params.items) ? params.items : [];
   if (!items.length) return fail('empty_purchase_batch');
   const normalized = [];

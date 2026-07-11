@@ -47,6 +47,21 @@ export const eventTypes = [
   'day_end',
 ];
 
+// 버튼 전용 인텐트 — LLM 어휘에 노출하지 않으며(prompt.js), LLM 자유 텍스트 응답의
+// events 배열로 흉내 내도 플레이 화면이 실행하지 않는다(감사 지적: 치트 채널 차단).
+export const buttonOnlyEvents = new Set([
+  'traffic_wave',
+  'incident_choice',
+  'lodging_review',
+  'lodging_accept',
+  'lodging_reject',
+  'mail_check',
+  'mail_open',
+  'purchase_batch',
+  'set_scale_mult',
+  'set_outfit',
+]);
+
 export function getSchema() {
   return activeSchema;
 }
@@ -72,12 +87,21 @@ export function getEventCount() {
   return eventCount;
 }
 
+// 세션 세대 번호 — 스키마 승인·엔진 리셋마다 증가한다. 플레이 화면이 카드 파일이 같아도
+// 세션이 갈렸음을 감지해 대화·무대 등 UI 상태를 함께 리셋하는 근거(감사 지적: 시간선 오염).
+let sessionEpoch = 0;
+
+export function getSessionEpoch() {
+  return sessionEpoch;
+}
+
 export function resetSession(seed) {
   seedValue = Number.isFinite(Number(seed)) ? Number(seed) : 42;
   engineState = createState(activeSchema, seedValue);
   rng = createRng(seedValue);
   logs = [];
   eventCount = 0;
+  sessionEpoch += 1;
   return engineState;
 }
 

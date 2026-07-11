@@ -6768,6 +6768,7 @@ select:focus { border-color: var(--amber-line); }
         return Number.isFinite(min) && Number.isFinite(max) && max >= min;
       }
       function upgrade(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
         const facility = params.facility || params.facilityId;
         const def = findById(schema2, "facility", facility);
         if (!def) return fail("unknown_facility", facility);
@@ -6947,6 +6948,7 @@ select:focus { border-color: var(--amber-line); }
         return ok({ roomNo, guestName });
       }
       function sale(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
         const menu = findMenu(schema2, params.menuName);
         const qty = normalizeInt(params.qty, 1);
         if (!menu) return fail("unknown_menu", params.menuName);
@@ -6971,6 +6973,7 @@ select:focus { border-color: var(--amber-line); }
         return ok({ menuName: menu.name, qty, goldDelta: goldDelta2, consumed });
       }
       function buyItem(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
         if (Object.keys(params).some((key) => !["menuName", "qty"].includes(key))) return fail("item_number_not_allowed");
         const menu = findMenu(schema2, params.menuName);
         if (!menu) return fail("unknown_menu", params.menuName);
@@ -6985,6 +6988,7 @@ select:focus { border-color: var(--amber-line); }
         return ok({ menuName: menu.name, qty, goldDelta: -cost, owned: state2.items[menu.name] });
       }
       function purchase(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
         const resource = params.resource || params.resourceId;
         const qty = normalizeInt(params.qty, 1);
         const def = (schema2.resources || []).find((entry) => entry.id === resource);
@@ -6997,6 +7001,7 @@ select:focus { border-color: var(--amber-line); }
         return ok({ resource, qty, goldDelta: -cost });
       }
       function purchaseBatch(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
         const items = Array.isArray(params.items) ? params.items : [];
         if (!items.length) return fail("empty_purchase_batch");
         const normalized = [];
@@ -10646,6 +10651,18 @@ ${Array.from(extras).join(" ")}` : text;
     "mail_open",
     "day_end"
   ];
+  var buttonOnlyEvents = /* @__PURE__ */ new Set([
+    "traffic_wave",
+    "incident_choice",
+    "lodging_review",
+    "lodging_accept",
+    "lodging_reject",
+    "mail_check",
+    "mail_open",
+    "purchase_batch",
+    "set_scale_mult",
+    "set_outfit"
+  ]);
   function getSchema() {
     return activeSchema;
   }
@@ -10665,12 +10682,17 @@ ${Array.from(extras).join(" ")}` : text;
   function getEventCount() {
     return eventCount;
   }
+  var sessionEpoch = 0;
+  function getSessionEpoch() {
+    return sessionEpoch;
+  }
   function resetSession(seed) {
     seedValue = Number.isFinite(Number(seed)) ? Number(seed) : 42;
     engineState = createState(activeSchema, seedValue);
     rng = createRng(seedValue);
     logs = [];
     eventCount = 0;
+    sessionEpoch += 1;
     return engineState;
   }
   function runEvent(event) {
@@ -11296,7 +11318,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderPlayView(container, ctx) {
     registerCustomOrigin(settings);
-    const cardKey2 = ctx.file ? `${ctx.file.name}:${ctx.file.size}` : "no-card";
+    const cardKey2 = `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : "no-card"}#${getSessionEpoch()}`;
     if (sessionCardKey !== cardKey2) {
       sessionCardKey = cardKey2;
       messages = [];
@@ -12290,6 +12312,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       input2.min = "0.5";
       input2.max = "3";
       input2.step = "0.1";
+      input2.disabled = busy;
       const label = el2("span");
       label.textContent = `${scale.label || scale.id} \xD7${Number(current).toFixed(1)}`;
       input2.addEventListener("change", () => runLedgerAction({ id: "set_scale_mult", params: { scale: scale.id, mult: Number(input2.value) } }, render2));
@@ -12598,7 +12621,10 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       applySpeakers(parsed);
       const chips = [];
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
+      const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
+      if (blocked.length) chips.push({ ok: false, kind: "system", text: `\uBC84\uD2BC \uC804\uC6A9 \uC0AC\uAC74 ${blocked.length}\uAC1C \uBB34\uC2DC\uB428` });
       for (const event of parsed.events) {
+        if (buttonOnlyEvents.has(event.id)) continue;
         const result = runEvent(event);
         const first = result.entries[0] || { ok: false, reason: "empty_log" };
         const item = summarizeEventItem(event.id, first, formatMoney2);
@@ -12630,7 +12656,10 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       applySpeakers(parsed);
       const chips = [];
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
+      const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
+      if (blocked.length) chips.push({ ok: false, kind: "system", text: `\uBC84\uD2BC \uC804\uC6A9 \uC0AC\uAC74 ${blocked.length}\uAC1C \uBB34\uC2DC\uB428` });
       for (const event of parsed.events) {
+        if (buttonOnlyEvents.has(event.id)) continue;
         const result = runEvent(event);
         const first = result.entries[0] || { ok: false, reason: "empty_log" };
         const item = summarizeEventItem(event.id, first, formatMoney2);

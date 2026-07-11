@@ -31,6 +31,18 @@ test('inn system prompt keeps its identity and all inn event vocabulary', () => 
   assert.doesNotMatch(system, /\bcombat_action\b/);
 });
 
+test('button-only intents never leak into the LLM vocabulary', () => {
+  // engineSession.buttonOnlyEvents와 같은 목록 — ESM이라 여기서 require 불가, 목록 변경 시 양쪽 갱신.
+  const buttonOnly = ['traffic_wave', 'incident_choice', 'lodging_review', 'lodging_accept', 'lodging_reject', 'mail_check', 'mail_open', 'purchase_batch', 'set_scale_mult', 'set_outfit'];
+  const prompt = buildPrompt({ schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '쉰다' });
+  const narration = buildNarrationPrompt({ schema: innSchema, state: createState(innSchema), results: ['테스트'], recentMessages: [] });
+  for (const id of buttonOnly) {
+    assert.doesNotMatch(prompt.system, new RegExp(`\\b${id}\\b`), id);
+    assert.doesNotMatch(prompt.messages.at(-1).content, new RegExp(`\\b${id}\\b`), id);
+    assert.doesNotMatch(narration.system, new RegExp(`\\b${id}\\b`), id);
+  }
+});
+
 test('hunter system prompt is combat-specific and contains no inn vocabulary', () => {
   const system = buildSystemPrompt(hunterSchema);
   assert.match(system, /"헌터 전투 코어 \(참조 스키마\)"의 내레이터/);
