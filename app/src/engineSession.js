@@ -87,6 +87,7 @@ export function runEvent(event) {
 }
 
 export function summarizeEvent(type, entry, formatMoney) {
+  if (entry.ok && type === 'traffic_wave' && entry.skipped) return `${entry.label} 영업 건너뜀`;
   if (entry.ok && entry.awaitingChoice && entry.incident) return `⚠ ${entry.incident.label} 발생 — 대응을 선택하세요`;
   if (entry.ok && type === 'incident_choice' && entry.incidentId) return `${entry.label} · ${entry.choiceLabel}${entry.goldDelta != null ? ` · ${entry.goldDelta >= 0 ? '+' : ''}${formatMoney(entry.goldDelta)}` : ''}`;
   if (entry.ok && type === 'mail_check') return entry.arrived ? `편지 ${entry.arrived}통 도착` : '새 편지 없음';
@@ -146,6 +147,7 @@ export function summarizeEventItem(type, entry, formatMoney) {
 
 function eventKind(type, entry) {
   if (!entry || !entry.ok) return 'system';
+  if (type === 'traffic_wave' && entry.skipped) return 'info';
   if (['start_encounter', 'combat_action', 'enemy_action', 'enemy_turn', 'end_encounter'].includes(type)) return 'combat';
   if (['use_item'].includes(type)) return 'pool';
   if (['attempt_quest'].includes(type)) return 'quest';

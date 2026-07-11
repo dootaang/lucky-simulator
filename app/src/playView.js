@@ -19,6 +19,7 @@ let sheetWasOpen = false;
 let activeRender = null;
 let sessionCardKey = null;
 let character = null;
+let mgmtConsoleOpen = false;
 
 export function primaryCharacter(parsed, lore) {
   const name = String((parsed && parsed.name) || '시뮬봇');
@@ -57,6 +58,7 @@ export function renderPlayView(container, ctx) {
     fastCombatLog = [];
     mobileSheetOpen = false;
     sheetWasOpen = false;
+    mgmtConsoleOpen = false;
     detachSheetKeyHandler();
     character = primaryCharacter(ctx.parsed, ctx.lore);
     // 말풍선 아바타는 기본 표정으로 고정한다 — 감정 스왑은 히어로 헤더에만 반영.
@@ -399,6 +401,8 @@ function renderManagementConsole(input, ctx, render) {
   const descriptor = availableManagement(getSchema(), getEngineState());
   const details = el('details', 'mgmt-console');
   if (!descriptor.sections.length) return details;
+  details.open = mgmtConsoleOpen;
+  details.addEventListener('toggle', () => { mgmtConsoleOpen = details.open; });
   const summary = el('summary');
   summary.textContent = '🗂 관리';
   details.append(summary);
@@ -408,13 +412,24 @@ function renderManagementConsole(input, ctx, render) {
     const trafficDay = Number(getEngineState().day);
     label.textContent = section.type === 'traffic' ? (Number.isFinite(trafficDay) ? `🏪 ${trafficDay}일차 영업` : '🏪 영업') : ({ sell: '판매', buy: '구매', purchase: '재료 구매', upgrade: '증축', gather: '채집 (무료 · 획득량은 주사위)', day_end: '하루' })[section.type] || section.type;
     group.append(label);
-    if (section.type === 'traffic') for (const wave of section.waves) {
-      if (section.pendingIncident && section.pendingIncident.waveId === wave.id) continue;
-      const control = button(wave.resolved ? `✓ ${wave.label} 완료` : `${wave.label} 진행`, 'secondary-btn');
-      // 사건 대기 중엔 모든 파동 정지 — 대응부터 선택해야 영업이 이어진다.
-      control.disabled = busy || wave.resolved || !!section.pendingIncident;
-      control.addEventListener('click', () => runManagementTurn({ id: 'traffic_wave', params: { wave: wave.id } }, input, ctx, render));
-      group.append(control);
+    if (section.type === 'traffic') {
+      const trafficState = getEngineState().traffic;
+      const resolved = trafficState && trafficState.day === getEngineState().day ? trafficState.resolved || {} : {};
+      const firstPending = section.waves.find((wave) => !wave.resolved);
+      for (const wave of section.waves) {
+        const skipped = resolved[wave.id] === 'skipped';
+        const control = button(skipped ? `― ${wave.label} 건너뜀` : wave.resolved ? `✓ ${wave.label} 완료` : `${wave.label} 진행`, 'secondary-btn');
+        // 사건 대기 중엔 모든 파동 정지 — 대응부터 선택해야 영업이 이어진다.
+        control.disabled = busy || wave.resolved || firstPending !== wave || !!section.pendingIncident;
+        control.addEventListener('click', () => runManagementTurn({ id: 'traffic_wave', params: { wave: wave.id } }, input, ctx, render));
+        group.append(control);
+        if (!wave.resolved) {
+          const skip = button('건너뛰기', 'secondary-btn');
+          skip.disabled = busy || firstPending !== wave || !!section.pendingIncident;
+          skip.addEventListener('click', () => runManagementTurn({ id: 'traffic_wave', params: { wave: wave.id, skip: true } }, input, ctx, render));
+          group.append(skip);
+        }
+      }
     }
     if (section.type === 'traffic' && section.pendingIncident) {
       const warning = el('span', 'combat-command-label');
@@ -469,10 +484,31 @@ function renderManagementConsole(input, ctx, render) {
       group.append(control);
     }
     if (section.type === 'purchase') for (const item of section.items) {
-      const control = button(`${item.label || item.id} (${formatMoney(item.basePrice)})`, 'secondary-btn');
-      control.disabled = busy || !item.affordable;
-      control.addEventListener('click', () => runManagementTurn({ id: 'purchase', params: { resource: item.id, qty: 1 } }, input, ctx, render));
-      group.append(control);
+      const line = el('div', 'mgmt-row purchase-stepper');
+      const name = el('span'); name.textContent = item.label || item.id;
+      const minus = button('−', 'secondary-btn');
+      const qty = el('input', 'purchase-qty');
+      qty.type = 'number'; qty.min = '1'; qty.max = '999'; qty.value = '1';
+      const plus = button('+', 'secondary-btn');
+      const control = button('', 'secondary-btn');
+      const readQty = () => Math.max(1, Math.min(999, Math.round(Number(qty.value) || 1)));
+      const updateLabel = () => {
+        const value = readQty();
+        control.textContent = `구매 (합계 ${formatMoney(Number(item.basePrice || 0) * value)})`;
+        control.disabled = busy || Number(getEngineState().gold || 0) < Number(item.basePrice || 0) * value;
+        return value;
+      };
+      // 타이핑 중에는 필드를 덮어쓰지 않는다(백스페이스로 비울 수 있게) — 클램프는 포커스 이탈/확정 시.
+      const clampQty = () => { const value = updateLabel(); qty.value = String(value); return value; };
+      minus.disabled = busy; plus.disabled = busy; qty.disabled = busy;
+      minus.addEventListener('click', () => { qty.value = String(readQty() - 1); clampQty(); });
+      plus.addEventListener('click', () => { qty.value = String(readQty() + 1); clampQty(); });
+      qty.addEventListener('input', updateLabel);
+      qty.addEventListener('change', clampQty);
+      control.addEventListener('click', () => runManagementTurn({ id: 'purchase', params: { resource: item.id, qty: clampQty() } }, input, ctx, render));
+      clampQty();
+      line.append(name, minus, qty, plus, control);
+      group.append(line);
     }
     if (section.type === 'upgrade') for (const item of section.items) {
       const control = button(item.maxed ? `${item.label} Lv.${item.level} (최대)` : `${item.label} Lv.${item.level}→${item.level + 1} (${formatMoney(item.nextCost)})`, 'secondary-btn');

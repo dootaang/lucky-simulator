@@ -71,7 +71,7 @@ function applyEvent(schema, state, event, rng) {
     case 'fire':
       return fire(next, params, ok, fail);
     case 'traffic_wave': {
-      const result = rollTrafficIncident(schema, next, params.wave);
+      const result = rollTrafficIncident(schema, next, params.wave, params.skip === true);
       if (!result.ok) return fail(result.reason, result.detail);
       for (const entry of result.entries) log.push(Object.assign({ event: type }, entry));
       return { state: next, log };

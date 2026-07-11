@@ -10,9 +10,47 @@ const { applyEvent } = require('../core/applyEvent.js');
 const legacySchema = JSON.parse(JSON.stringify(schema));
 delete legacySchema.traffic.incidents;
 
-function run(state, wave = 'lunch', source = legacySchema) {
-  return applyEvent(source, state, { id: 'traffic_wave', params: { wave } }, createRng(999));
+function run(state, wave = 'lunch', source = legacySchema, params = {}) {
+  return applyEvent(source, state, { id: 'traffic_wave', params: { wave, ...params } }, createRng(999));
 }
+
+function runEvening(state, source = legacySchema) {
+  return run(run(state, 'lunch', source, { skip: true }).state, 'evening', source);
+}
+
+test('later wave is blocked while an earlier wave is unresolved', () => {
+  const result = run(createState(legacySchema, 42), 'evening');
+  assert.equal(result.log[0].reason, 'earlier_wave_pending');
+  assert.equal(result.log[0].detail, 'lunch');
+});
+
+test('skipping a wave records it without changing gold or resources and unlocks the next wave', () => {
+  const state = createState(legacySchema, 42);
+  const beforeGold = state.gold;
+  const beforeResources = JSON.parse(JSON.stringify(state.resources));
+  const skipped = run(state, 'lunch', legacySchema, { skip: true });
+  assert.equal(skipped.log.length, 1);
+  assert.equal(skipped.log[0].skipped, true);
+  assert.equal(skipped.state.traffic.resolved.lunch, 'skipped');
+  assert.equal(skipped.state.gold, beforeGold);
+  assert.deepEqual(skipped.state.resources, beforeResources);
+  assert.equal(run(skipped.state, 'evening').log[0].ok, true);
+});
+
+test('skipping or running lunch does not change the addressed evening result', () => {
+  const skipped = run(createState(legacySchema, 77), 'lunch', legacySchema, { skip: true });
+  const ran = run(createState(legacySchema, 77), 'lunch');
+  const skippedEvening = run(skipped.state, 'evening').log[0];
+  const ranEvening = run(ran.state, 'evening').log[0];
+  assert.deepEqual({ potential: skippedEvening.potential, customers: skippedEvening.customers, sales: skippedEvening.sales },
+    { potential: ranEvening.potential, customers: ranEvening.customers, sales: ranEvening.sales });
+});
+
+test('pending incident blocks skipping its wave', () => {
+  const source = incidentSchema({ id: 'fixed', label: '고정 사건', weight: 1, choices: [{ id: 'ok', label: '대응', effects: {} }] });
+  const rolled = run(createState(source, 1), 'lunch', source);
+  assert.equal(run(rolled.state, 'lunch', source, { skip: true }).log[0].reason, 'incident_pending');
+});
 
 function incidentSchema(card, chance = 100) {
   const source = JSON.parse(JSON.stringify(legacySchema));
@@ -50,7 +88,7 @@ test('incident choice resolves wave and prevents reroll', () => {
 
 test('waveMultiplier 0.7 reduces potential versus 1.0', () => {
   const make = (value) => incidentSchema({ id: 'fixed', label: '사건', weight: 1, choices: [{ id: 'pick', label: '선택', effects: { waveMultiplier: value } }] });
-  const resolve = (source) => incident(run(createState(source, 5), 'evening', source).state, 'incident_choice', { choice: 'pick' }, source).log[1].potential;
+  const resolve = (source) => incident(runEvening(createState(source, 5), source).state, 'incident_choice', { choice: 'pick' }, source).log[1].potential;
   assert.ok(resolve(make(0.7)) < resolve(make(1)));
 });
 
@@ -105,7 +143,7 @@ test('stockout records loss without negative resources and revenue matches sales
   const state = createState(schema, 42);
   state.resources.food = 1;
   state.resources.drink = 0;
-  const result = run(state, 'evening');
+  const result = runEvening(state);
   assert.ok(result.log.some((entry) => entry.lostStockout > 0));
   assert.ok(Object.values(result.state.resources).every((value) => value >= 0));
   assert.equal(result.state.gold - state.gold, result.log[0].sales.reduce((sum, sale) => sum + sale.subtotal, 0));
@@ -116,10 +154,10 @@ test('capacity loss and reputation modifier are observable', () => {
   high.facilities.tavern = 1;
   high.staff = [{}, {}, {}, {}];
   high.reputation.village = { rank: 'S', exp: 0 };
-  const boosted = run(high, 'evening');
+  const boosted = runEvening(high);
   assert.ok(boosted.log.some((entry) => entry.lostCapacity > 0));
   const base = createState(schema, 42);
-  assert.ok(boosted.log[0].potential >= run(base, 'evening').log[0].potential);
+  assert.ok(boosted.log[0].potential >= runEvening(base).log[0].potential);
 });
 
 test('reputation rank alone never decreases potential (isolated variable)', () => {
@@ -127,7 +165,7 @@ test('reputation rank alone never decreases potential (isolated variable)', () =
   low.reputation.village = { rank: 'E', exp: 0 };
   const high = createState(schema, 42);
   high.reputation.village = { rank: 'S', exp: 0 };
-  assert.ok(run(high, 'evening').log[0].potential >= run(low, 'evening').log[0].potential);
+  assert.ok(runEvening(high).log[0].potential >= runEvening(low).log[0].potential);
 });
 
 test('day change resets resolved waves', () => {
@@ -170,7 +208,7 @@ test('zero-priced item does not break the weighted roll', () => {
     { name: '에일', category: '주류', price: 5000, requiresKitchenLevel: 1, consumes: { drink: 1 } },
   ];
   const state = createState(source, 42);
-  const result = run(state, 'evening', source);
+  const result = runEvening(state, source);
   assert.equal(result.log[0].ok, true);
   const summary = result.log[0];
   assert.ok(Number.isFinite(summary.revenue));

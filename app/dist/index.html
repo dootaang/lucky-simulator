@@ -1082,6 +1082,8 @@ select:focus { border-color: var(--amber-line); }
 .mgmt-console > summary { cursor: pointer; color: var(--ink-mid); font-family: var(--font-mono); }
 .mgmt-section { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 9px; }
 .mgmt-section .primary-btn, .mgmt-section .secondary-btn { margin-top: 0; padding: 7px 10px; }
+.purchase-stepper { display: inline-flex; align-items: center; gap: 6px; }
+.purchase-stepper .purchase-qty { width: 64px; padding: 7px 6px; text-align: center; }
 
   </style>
 </head>
@@ -6061,7 +6063,11 @@ select:focus { border-color: var(--amber-line); }
       "use strict";
       var { deriveRng } = require_rng();
       var { saleConsumes } = require_utils();
-      function resolveTrafficWave(schema2, state2, waveId, waveMultiplier = 1) {
+      function earlierPendingWave(traffic, resolved, waveId) {
+        const targetIndex = (traffic.waves || []).findIndex((entry) => entry.id === waveId);
+        return (traffic.waves || []).slice(0, targetIndex).find((entry) => !resolved[entry.id]);
+      }
+      function resolveTrafficWave(schema2, state2, waveId, waveMultiplier = 1, skip = false) {
         if (state2.combat && state2.combat.active) return { ok: false, reason: "in_combat" };
         const traffic = schema2 && schema2.traffic;
         if (!traffic) return { ok: false, reason: "traffic_not_configured" };
@@ -6069,6 +6075,13 @@ select:focus { border-color: var(--amber-line); }
         if (!wave) return { ok: false, reason: "unknown_wave", detail: waveId };
         const resolved = state2.traffic && state2.traffic.day === state2.day ? { ...state2.traffic.resolved || {} } : {};
         if (resolved[waveId]) return { ok: false, reason: "wave_already_resolved", detail: waveId };
+        const earlier = earlierPendingWave(traffic, resolved, waveId);
+        if (earlier) return { ok: false, reason: "earlier_wave_pending", detail: earlier.id };
+        if (skip) {
+          resolved[waveId] = "skipped";
+          state2.traffic = { day: state2.day, resolved };
+          return { ok: true, entries: [{ ok: true, wave: waveId, label: wave.label, skipped: true, text: `${wave.label}\uC744(\uB97C) \uAC74\uB108\uB6F0\uC5C8\uB2E4` }] };
+        }
         const base = traffic.base || [];
         const rawLevel = Number(state2.facilities && state2.facilities[traffic.capacityFacility] || 1);
         const level = Math.max(1, Math.min(base.length, Math.round(rawLevel)));
@@ -6149,7 +6162,7 @@ select:focus { border-color: var(--amber-line); }
         const rank = current && typeof current === "object" ? current.rank : current;
         return Math.max(0, order.indexOf(rank)) >= requiredIndex;
       }
-      function rollTrafficIncident(schema2, state2, waveId) {
+      function rollTrafficIncident(schema2, state2, waveId, skip = false) {
         if (state2.combat && state2.combat.active) return { ok: false, reason: "in_combat" };
         const traffic = schema2 && schema2.traffic;
         if (!traffic) return { ok: false, reason: "traffic_not_configured" };
@@ -6159,6 +6172,9 @@ select:focus { border-color: var(--amber-line); }
         const resolved = state2.traffic && state2.traffic.day === state2.day ? state2.traffic.resolved || {} : {};
         if (resolved[waveId]) return { ok: false, reason: "wave_already_resolved", detail: waveId };
         if (state2.pendingIncident && state2.pendingIncident.day === state2.day) return { ok: false, reason: "incident_pending", detail: state2.pendingIncident.waveId };
+        const earlier = earlierPendingWave(traffic, resolved, waveId);
+        if (earlier) return { ok: false, reason: "earlier_wave_pending", detail: earlier.id };
+        if (skip) return resolveTrafficWave(schema2, state2, waveId, 1, true);
         const incidents = traffic.incidents;
         if (!incidents) return resolveTrafficWave(schema2, state2, waveId);
         const rng2 = deriveRng(state2.seed ?? 0, `incident/${state2.day}/${traffic.id}/${waveId}`);
@@ -6406,7 +6422,7 @@ select:focus { border-color: var(--amber-line); }
           case "fire":
             return fire(next, params, ok, fail);
           case "traffic_wave": {
-            const result = rollTrafficIncident(schema2, next, params.wave);
+            const result = rollTrafficIncident(schema2, next, params.wave, params.skip === true);
             if (!result.ok) return fail(result.reason, result.detail);
             for (const entry of result.entries) log.push(Object.assign({ event: type }, entry));
             return { state: next, log };
@@ -10183,6 +10199,7 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function summarizeEvent(type, entry, formatMoney3) {
+    if (entry.ok && type === "traffic_wave" && entry.skipped) return `${entry.label} \uC601\uC5C5 \uAC74\uB108\uB700`;
     if (entry.ok && entry.awaitingChoice && entry.incident) return `\u26A0 ${entry.incident.label} \uBC1C\uC0DD \u2014 \uB300\uC751\uC744 \uC120\uD0DD\uD558\uC138\uC694`;
     if (entry.ok && type === "incident_choice" && entry.incidentId) return `${entry.label} \xB7 ${entry.choiceLabel}${entry.goldDelta != null ? ` \xB7 ${entry.goldDelta >= 0 ? "+" : ""}${formatMoney3(entry.goldDelta)}` : ""}`;
     if (entry.ok && type === "mail_check") return entry.arrived ? `\uD3B8\uC9C0 ${entry.arrived}\uD1B5 \uB3C4\uCC29` : "\uC0C8 \uD3B8\uC9C0 \uC5C6\uC74C";
@@ -10235,6 +10252,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function eventKind(type, entry) {
     if (!entry || !entry.ok) return "system";
+    if (type === "traffic_wave" && entry.skipped) return "info";
     if (["start_encounter", "combat_action", "enemy_action", "enemy_turn", "end_encounter"].includes(type)) return "combat";
     if (["use_item"].includes(type)) return "pool";
     if (["attempt_quest"].includes(type)) return "quest";
@@ -10738,6 +10756,7 @@ ${Array.from(extras).join(" ")}` : text;
   var activeRender = null;
   var sessionCardKey = null;
   var character = null;
+  var mgmtConsoleOpen = false;
   function primaryCharacter(parsed, lore) {
     const name = String(parsed && parsed.name || "\uC2DC\uBBAC\uBD07");
     const groups = buildNpcClusters(parsed, lore).groups;
@@ -10789,6 +10808,7 @@ ${Array.from(extras).join(" ")}` : text;
       fastCombatLog = [];
       mobileSheetOpen = false;
       sheetWasOpen = false;
+      mgmtConsoleOpen = false;
       detachSheetKeyHandler();
       character = primaryCharacter(ctx.parsed, ctx.lore);
       character.baseAsset = character.asset;
@@ -11181,6 +11201,10 @@ ${Array.from(extras).join(" ")}` : text;
     const descriptor = availableManagement(getSchema(), getEngineState());
     const details = el2("details", "mgmt-console");
     if (!descriptor.sections.length) return details;
+    details.open = mgmtConsoleOpen;
+    details.addEventListener("toggle", () => {
+      mgmtConsoleOpen = details.open;
+    });
     const summary = el2("summary");
     summary.textContent = "\u{1F5C2} \uAD00\uB9AC";
     details.append(summary);
@@ -11190,12 +11214,23 @@ ${Array.from(extras).join(" ")}` : text;
       const trafficDay = Number(getEngineState().day);
       label.textContent = section.type === "traffic" ? Number.isFinite(trafficDay) ? `\u{1F3EA} ${trafficDay}\uC77C\uCC28 \uC601\uC5C5` : "\u{1F3EA} \uC601\uC5C5" : { sell: "\uD310\uB9E4", buy: "\uAD6C\uB9E4", purchase: "\uC7AC\uB8CC \uAD6C\uB9E4", upgrade: "\uC99D\uCD95", gather: "\uCC44\uC9D1 (\uBB34\uB8CC \xB7 \uD68D\uB4DD\uB7C9\uC740 \uC8FC\uC0AC\uC704)", day_end: "\uD558\uB8E8" }[section.type] || section.type;
       group.append(label);
-      if (section.type === "traffic") for (const wave of section.waves) {
-        if (section.pendingIncident && section.pendingIncident.waveId === wave.id) continue;
-        const control = button2(wave.resolved ? `\u2713 ${wave.label} \uC644\uB8CC` : `${wave.label} \uC9C4\uD589`, "secondary-btn");
-        control.disabled = busy || wave.resolved || !!section.pendingIncident;
-        control.addEventListener("click", () => runManagementTurn({ id: "traffic_wave", params: { wave: wave.id } }, input2, ctx, render2));
-        group.append(control);
+      if (section.type === "traffic") {
+        const trafficState = getEngineState().traffic;
+        const resolved = trafficState && trafficState.day === getEngineState().day ? trafficState.resolved || {} : {};
+        const firstPending = section.waves.find((wave) => !wave.resolved);
+        for (const wave of section.waves) {
+          const skipped = resolved[wave.id] === "skipped";
+          const control = button2(skipped ? `\u2015 ${wave.label} \uAC74\uB108\uB700` : wave.resolved ? `\u2713 ${wave.label} \uC644\uB8CC` : `${wave.label} \uC9C4\uD589`, "secondary-btn");
+          control.disabled = busy || wave.resolved || firstPending !== wave || !!section.pendingIncident;
+          control.addEventListener("click", () => runManagementTurn({ id: "traffic_wave", params: { wave: wave.id } }, input2, ctx, render2));
+          group.append(control);
+          if (!wave.resolved) {
+            const skip = button2("\uAC74\uB108\uB6F0\uAE30", "secondary-btn");
+            skip.disabled = busy || firstPending !== wave || !!section.pendingIncident;
+            skip.addEventListener("click", () => runManagementTurn({ id: "traffic_wave", params: { wave: wave.id, skip: true } }, input2, ctx, render2));
+            group.append(skip);
+          }
+        }
       }
       if (section.type === "traffic" && section.pendingIncident) {
         const warning = el2("span", "combat-command-label");
@@ -11250,10 +11285,46 @@ ${Array.from(extras).join(" ")}` : text;
         group.append(control);
       }
       if (section.type === "purchase") for (const item of section.items) {
-        const control = button2(`${item.label || item.id} (${formatMoney2(item.basePrice)})`, "secondary-btn");
-        control.disabled = busy || !item.affordable;
-        control.addEventListener("click", () => runManagementTurn({ id: "purchase", params: { resource: item.id, qty: 1 } }, input2, ctx, render2));
-        group.append(control);
+        const line = el2("div", "mgmt-row purchase-stepper");
+        const name = el2("span");
+        name.textContent = item.label || item.id;
+        const minus = button2("\u2212", "secondary-btn");
+        const qty = el2("input", "purchase-qty");
+        qty.type = "number";
+        qty.min = "1";
+        qty.max = "999";
+        qty.value = "1";
+        const plus = button2("+", "secondary-btn");
+        const control = button2("", "secondary-btn");
+        const readQty = () => Math.max(1, Math.min(999, Math.round(Number(qty.value) || 1)));
+        const updateLabel = () => {
+          const value = readQty();
+          control.textContent = `\uAD6C\uB9E4 (\uD569\uACC4 ${formatMoney2(Number(item.basePrice || 0) * value)})`;
+          control.disabled = busy || Number(getEngineState().gold || 0) < Number(item.basePrice || 0) * value;
+          return value;
+        };
+        const clampQty = () => {
+          const value = updateLabel();
+          qty.value = String(value);
+          return value;
+        };
+        minus.disabled = busy;
+        plus.disabled = busy;
+        qty.disabled = busy;
+        minus.addEventListener("click", () => {
+          qty.value = String(readQty() - 1);
+          clampQty();
+        });
+        plus.addEventListener("click", () => {
+          qty.value = String(readQty() + 1);
+          clampQty();
+        });
+        qty.addEventListener("input", updateLabel);
+        qty.addEventListener("change", clampQty);
+        control.addEventListener("click", () => runManagementTurn({ id: "purchase", params: { resource: item.id, qty: clampQty() } }, input2, ctx, render2));
+        clampQty();
+        line.append(name, minus, qty, plus, control);
+        group.append(line);
       }
       if (section.type === "upgrade") for (const item of section.items) {
         const control = button2(item.maxed ? `${item.label} Lv.${item.level} (\uCD5C\uB300)` : `${item.label} Lv.${item.level}\u2192${item.level + 1} (${formatMoney2(item.nextCost)})`, "secondary-btn");

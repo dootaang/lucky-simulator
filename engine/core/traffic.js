@@ -3,7 +3,12 @@
 const { deriveRng } = require('./rng.js');
 const { saleConsumes } = require('./utils.js');
 
-function resolveTrafficWave(schema, state, waveId, waveMultiplier = 1) {
+function earlierPendingWave(traffic, resolved, waveId) {
+  const targetIndex = (traffic.waves || []).findIndex((entry) => entry.id === waveId);
+  return (traffic.waves || []).slice(0, targetIndex).find((entry) => !resolved[entry.id]);
+}
+
+function resolveTrafficWave(schema, state, waveId, waveMultiplier = 1, skip = false) {
   if (state.combat && state.combat.active) return { ok: false, reason: 'in_combat' };
   const traffic = schema && schema.traffic;
   if (!traffic) return { ok: false, reason: 'traffic_not_configured' };
@@ -11,6 +16,13 @@ function resolveTrafficWave(schema, state, waveId, waveMultiplier = 1) {
   if (!wave) return { ok: false, reason: 'unknown_wave', detail: waveId };
   const resolved = state.traffic && state.traffic.day === state.day ? { ...(state.traffic.resolved || {}) } : {};
   if (resolved[waveId]) return { ok: false, reason: 'wave_already_resolved', detail: waveId };
+  const earlier = earlierPendingWave(traffic, resolved, waveId);
+  if (earlier) return { ok: false, reason: 'earlier_wave_pending', detail: earlier.id };
+  if (skip) {
+    resolved[waveId] = 'skipped';
+    state.traffic = { day: state.day, resolved };
+    return { ok: true, entries: [{ ok: true, wave: waveId, label: wave.label, skipped: true, text: `${wave.label}을(를) 건너뛰었다` }] };
+  }
 
   const base = traffic.base || [];
   const rawLevel = Number((state.facilities && state.facilities[traffic.capacityFacility]) || 1);
@@ -92,7 +104,7 @@ function eligibleIncident(state, incident) {
   return Math.max(0, order.indexOf(rank)) >= requiredIndex;
 }
 
-function rollTrafficIncident(schema, state, waveId) {
+function rollTrafficIncident(schema, state, waveId, skip = false) {
   if (state.combat && state.combat.active) return { ok: false, reason: 'in_combat' };
   const traffic = schema && schema.traffic;
   if (!traffic) return { ok: false, reason: 'traffic_not_configured' };
@@ -101,8 +113,11 @@ function rollTrafficIncident(schema, state, waveId) {
   if (state.pendingIncident && state.pendingIncident.day !== state.day) delete state.pendingIncident;
   const resolved = state.traffic && state.traffic.day === state.day ? state.traffic.resolved || {} : {};
   if (resolved[waveId]) return { ok: false, reason: 'wave_already_resolved', detail: waveId };
-  // 사건은 한 번에 하나 — 다른 파동에서 새 사건이 대기 사건을 덮어쓰는 것 방지(중복 공지·UI 출렁임).
+  // 대기 사건은 모든 파동보다 우선하며 다른 파동이나 skip으로 우회할 수 없다.
   if (state.pendingIncident && state.pendingIncident.day === state.day) return { ok: false, reason: 'incident_pending', detail: state.pendingIncident.waveId };
+  const earlier = earlierPendingWave(traffic, resolved, waveId);
+  if (earlier) return { ok: false, reason: 'earlier_wave_pending', detail: earlier.id };
+  if (skip) return resolveTrafficWave(schema, state, waveId, 1, true);
   const incidents = traffic.incidents;
   if (!incidents) return resolveTrafficWave(schema, state, waveId);
   const rng = deriveRng(state.seed ?? 0, `incident/${state.day}/${traffic.id}/${waveId}`);

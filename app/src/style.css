@@ -1074,3 +1074,5 @@ select:focus { border-color: var(--amber-line); }
 .mgmt-console > summary { cursor: pointer; color: var(--ink-mid); font-family: var(--font-mono); }
 .mgmt-section { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 9px; }
 .mgmt-section .primary-btn, .mgmt-section .secondary-btn { margin-top: 0; padding: 7px 10px; }
+.purchase-stepper { display: inline-flex; align-items: center; gap: 6px; }
+.purchase-stepper .purchase-qty { width: 64px; padding: 7px 6px; text-align: center; }
