@@ -90,7 +90,9 @@ function parseRisumCard(bytesIn, opts = {}) {
       found: !!bytes, size: bytes ? bytes.length : 0, bytes,
     };
   });
-  return { spec: 'risu-module', specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m };
+  const containerEntries = [{ name: 'module.json', size: mainLen, kind: 'risum-metadata' }]
+    .concat(blobs.map((blob, idx) => ({ name: `asset:${idx}`, size: blob ? blob.length : 0, kind: 'risum-asset' })));
+  return { spec: 'risu-module', specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m, containerEntries };
 }
 
 // ── 지연(lazy) 색인: 블롭을 복호하지 않고 위치만 기록 → 대형 모듈(수백MB) 메모리 절약 ──
@@ -128,7 +130,9 @@ function parseRisumIndex(bytesIn) {
       _off: loc ? loc.off : -1, _len: loc ? loc.len : 0, // rpack은 길이 보존(치환) → _len = 복호 길이
     };
   });
-  return { spec: 'risu-module', specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m, lazy: true, _bytes: b };
+  const containerEntries = [{ name: 'module.json', size: mainLen, kind: 'risum-metadata' }]
+    .concat(locs.map((loc, idx) => ({ name: `asset:${idx}`, size: loc.len, kind: 'risum-asset' })));
+  return { spec: 'risu-module', specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m, containerEntries, lazy: true, _bytes: b };
 }
 
 // 지연 에셋 1개를 복호(캐시). bytes는 parseRisumIndex가 쓴 _bytes(또는 동일 버퍼)여야 함.

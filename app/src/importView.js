@@ -1,5 +1,6 @@
 const { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require('./llm/compilerPrompt.js');
 const { mineCard } = require('./llm/luaMine.js');
+const { diagnoseCard } = require('./llm/cardDiagnosis.js');
 const { patchSchemaWithMined } = require('./llm/schemaPatch.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
@@ -149,11 +150,11 @@ function renderHeader(ctx, render) {
     addLog(ctx, '내장(기본) 스키마로 되돌렸습니다. 플레이 탭에서 매끄럽게 플레이할 수 있습니다.');
     render();
   });
-  const combatSchema = button('내장 전투 스키마(헌터) 적용', 'secondary-btn');
+  const combatSchema = button('범용 전투 코어 샘플 적용', 'secondary-btn');
   combatSchema.disabled = busy;
   combatSchema.addEventListener('click', () => {
-    setActiveSchema(require('../../schema/hunters-combat.v0.json'));
-    addLog(ctx, '내장 전투 스키마 적용됨 · 플레이 탭에서 전투를 테스트할 수 있습니다');
+    setActiveSchema(require('../../schema/generic-combat.v0.json'));
+    addLog(ctx, '범용 전투 코어 샘플 적용됨 · Alternate Hunters V2 구현이 아닌 커널 테스트용입니다.');
     ctx.goToPlay();
   });
   buttonRow.append(compile, revert, combatSchema);
@@ -209,8 +210,98 @@ function renderRunPanel(ctx, render) {
     log.append(list);
   }
 
-  panel.append(status, log);
+  panel.append(status);
+  if (ctx && ctx.parsed) panel.append(renderCardDiagnosis(ctx));
+  panel.append(log);
   return panel;
+}
+
+function renderCardDiagnosis(ctx) {
+  const report = diagnosisFor(ctx);
+  const section = titled('카드 MRI · 컴파일 전 진단');
+  const summary = el('p', 'muted-line');
+  summary.textContent = `${classificationLabel(report.classification)} · 로어 ${report.content.loreEntries}개 · 에셋 ${report.assets.count.toLocaleString('ko-KR')}개`;
+  section.append(summary);
+
+  const list = el('div', 'engine-list');
+  const moduleName = report.runtime.embeddedModule && report.runtime.embeddedModule.name;
+  const rows = [
+    ['내장 모듈', moduleName || '없음'],
+    ['Lua', `${report.runtime.luaChars.toLocaleString('ko-KR')}자`],
+    ['기능 신호', report.capabilities.length ? report.capabilities.map((item) => item.id).join(', ') : '없음'],
+    ['추천 모듈', report.suggestedModules.length ? report.suggestedModules.join(', ') : '없음'],
+    ['컴파일 입력', `${report.compilerCoverage.includedEntries}/${report.compilerCoverage.totalEntries}개 포함`],
+  ];
+  for (const [label, value] of rows) {
+    const rowNode = el('div', 'engine-list-row');
+    rowNode.textContent = `${label}: ${value}`;
+    list.append(rowNode);
+  }
+  section.append(list);
+
+  if (ctx && ctx.compatibility) section.append(renderCompatibilitySummary(ctx.compatibility));
+
+  if (report.runtime.featureFlags.length) {
+    const flags = el('p', 'muted-line');
+    flags.textContent = `기능 토글: ${report.runtime.featureFlags.map((flag) => `${flag.id}=${flag.enabled ? '켜짐' : '꺼짐'}`).join(', ')}`;
+    section.append(flags);
+  }
+
+  if (report.issues.length) {
+    const issues = el('div', 'engine-list');
+    for (const item of report.issues) {
+      const rowNode = el('div', item.level === 'warn' ? 'engine-list-row engine-warning' : 'engine-list-row');
+      rowNode.textContent = `${item.level === 'warn' ? '검토 필요' : '안내'} · ${item.message}`;
+      issues.append(rowNode);
+    }
+    section.append(issues);
+  }
+
+  if (report.compilerCoverage.omittedEntries > 0) {
+    const details = el('details', 'import-raw-details');
+    const detailsSummary = el('summary');
+    detailsSummary.textContent = `컴파일에서 제외될 로어 ${report.compilerCoverage.omittedEntries}개 보기`;
+    const omitted = el('p', 'muted-line');
+    omitted.textContent = report.compilerCoverage.omitted.map((entry) => entry.name).join(', ');
+    details.append(detailsSummary, omitted);
+    section.append(details);
+  }
+  return section;
+}
+
+function renderCompatibilitySummary(envelope) {
+  const wrap = el('div', 'compatibility-summary');
+  const heading = el('h4');
+  heading.textContent = 'Risu 호환성 · 원본 보존 상태';
+  const totals = envelope.compatibility && envelope.compatibility.totals || {};
+  const summary = el('p', 'muted-line');
+  summary.textContent = `지원 ${totals.supported || 0} · 안전 변환 ${totals.translated || 0} · 원본 보존 ${totals.preserved || 0} · 저하 ${totals.degraded || 0} · 실행 차단 ${totals.blocked || 0}`;
+  wrap.append(heading, summary);
+
+  const list = el('div', 'engine-list');
+  const labels = { supported: '지원', translated: '안전 변환', preserved: '원본 보존', degraded: '일부 저하', blocked: '실행 차단' };
+  for (const feature of envelope.compatibility.features || []) {
+    const rowNode = el('div', `engine-list-row compatibility-${feature.status}`);
+    rowNode.textContent = `${labels[feature.status] || feature.status} · ${feature.label}${feature.count ? ` ${feature.count}개` : ''} — ${feature.reason}`;
+    list.append(rowNode);
+  }
+  wrap.append(list);
+
+  const raw = envelope.raw || {};
+  const preserved = el('p', 'muted-line');
+  preserved.textContent = `원본 컨테이너 ${Array.isArray(raw.containerEntries) ? raw.containerEntries.length : 0}개 항목 · 원본 바이트 ${raw.sourceBytes ? '보존됨' : '없음'}`;
+  wrap.append(preserved);
+  return wrap;
+}
+
+function classificationLabel(value) {
+  return ({
+    'asset-pack': '에셋 팩',
+    'narrative-card': '대화형 카드',
+    'prose-sim': '산문 규칙형 시뮬',
+    'declarative-sim': '선언형 시뮬',
+    'script-assisted-sim': '스크립트 보조형 시뮬',
+  })[value] || value;
 }
 
 function renderSettings(render) {
@@ -512,7 +603,7 @@ async function runCompile(ctx, render) {
   const cfg = providerConfig(settings);
   let mined = null;
   if (cfg.provider !== 'mock') {
-    mined = mineCard(ctx && ctx.parsed);
+    mined = minedFor(ctx);
     addLog(ctx, formatMineLog(mined));
   }
   render();
@@ -537,6 +628,22 @@ async function runCompile(ctx, render) {
     busy = false;
     refreshImport();
   }
+}
+
+function minedFor(ctx) {
+  const key = cardKey(ctx);
+  const entry = stateByCard.get(key) || { log: [] };
+  if (!entry.mined) entry.mined = mineCard(ctx && ctx.parsed);
+  stateByCard.set(key, entry);
+  return entry.mined;
+}
+
+function diagnosisFor(ctx) {
+  const key = cardKey(ctx);
+  const entry = stateByCard.get(key) || { log: [] };
+  if (!entry.diagnosis) entry.diagnosis = diagnoseCard(ctx && ctx.parsed, ctx && ctx.lore, minedFor(ctx));
+  stateByCard.set(key, entry);
+  return entry.diagnosis;
 }
 
 function formatMineLog(mined) {

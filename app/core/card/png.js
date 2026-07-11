@@ -23,15 +23,19 @@ function parsePngCard(bytesIn) {
 
   let card = null;
   const chunkById = {}; // id → Uint8Array (이미지 바이트)
+  const containerEntries = [];
   let off = 8;
   while (off + 8 <= b.length) {
     const length = dv.getUint32(off); off += 4;
     const type = String.fromCharCode(b[off], b[off + 1], b[off + 2], b[off + 3]); off += 4;
     const data = b.subarray(off, off + length); off += length;
     off += 4; // CRC
+    const containerEntry = { name: type, size: length, kind: 'png-chunk' };
+    containerEntries.push(containerEntry);
     if (type === 'tEXt') {
       const z = data.indexOf(0);
       const keyword = strFromU8(data.subarray(0, z < 0 ? 0 : z));
+      containerEntry.name = `tEXt:${keyword}`;
       const text = data.subarray((z < 0 ? 0 : z) + 1);
       if (keyword === 'ccv3' || keyword === 'chara') {
         try { card = JSON.parse(strFromU8(base64ToBytes(strFromU8(text)))); } catch (e) { /* ignore */ }
@@ -63,7 +67,7 @@ function parsePngCard(bytesIn) {
     };
   });
 
-  return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card };
+  return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, containerEntries };
 }
 
 module.exports = { parsePngCard, isPng, assetDataUrl, autoMap, buildImageMappings };

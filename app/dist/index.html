@@ -985,6 +985,19 @@ select:focus { border-color: var(--amber-line); }
 .import-check-auto { border-color: var(--amber-line); background: var(--amber-wash); color: var(--amber); }
 .import-check-review { border-color: var(--warn); background: var(--warn-wash); color: var(--warn); }
 .import-check-error { border-color: var(--bad); background: var(--bad-wash); color: var(--bad); }
+.compatibility-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.compatibility-summary h4 { margin: 0; color: var(--ink); }
+.compatibility-supported { border-color: rgba(116, 183, 195, 0.45); color: var(--cyan); }
+.compatibility-translated { border-color: var(--amber-line); background: var(--amber-wash); color: var(--amber); }
+.compatibility-preserved { color: var(--ink-mid); }
+.compatibility-degraded { border-color: var(--warn); background: var(--warn-wash); color: var(--warn); }
+.compatibility-blocked { border-color: var(--bad); background: var(--bad-wash); color: var(--bad); }
 .import-advanced {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1138,6 +1151,7 @@ select:focus { border-color: var(--amber-line); }
 <body>
   <div id="app"></div>
   <script>
+"use strict";
 (() => {
   var __create = Object.create;
   var __defProp = Object.defineProperty;
@@ -3681,7 +3695,9 @@ select:focus { border-color: var(--amber-line); }
             bytes: null
           };
         });
-        return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, lazy: true, _bytes: b };
+        const embeddedModules = Array.from(names).filter((name) => /\.risum$/i.test(name));
+        const containerEntries = Array.from(names).sort().map((name) => ({ name, size: sizes[name] || 0, kind: "zip-entry" }));
+        return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, embeddedModules, containerEntries, lazy: true, _bytes: b };
       }
       function decodeCharxAsset(bytes, asset) {
         if (!asset) return null;
@@ -3725,7 +3741,9 @@ select:focus { border-color: var(--amber-line); }
             bytes: fileBytes || null
           };
         });
-        return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card };
+        const embeddedModules = Object.keys(files).filter((name) => /\.risum$/i.test(name));
+        const containerEntries = Object.keys(files).sort().map((name) => ({ name, size: files[name].length, kind: "zip-entry" }));
+        return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, embeddedModules, containerEntries };
       }
       module.exports = { parseCharx, parseCharxIndex, decodeCharxAsset, assetDataUrl, autoMap, deriveTag, buildImageMappings };
     }
@@ -3751,6 +3769,7 @@ select:focus { border-color: var(--amber-line); }
         const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
         let card = null;
         const chunkById = {};
+        const containerEntries = [];
         let off = 8;
         while (off + 8 <= b.length) {
           const length = dv.getUint32(off);
@@ -3760,9 +3779,12 @@ select:focus { border-color: var(--amber-line); }
           const data2 = b.subarray(off, off + length);
           off += length;
           off += 4;
+          const containerEntry = { name: type, size: length, kind: "png-chunk" };
+          containerEntries.push(containerEntry);
           if (type === "tEXt") {
             const z = data2.indexOf(0);
             const keyword = strFromU8(data2.subarray(0, z < 0 ? 0 : z));
+            containerEntry.name = `tEXt:${keyword}`;
             const text = data2.subarray((z < 0 ? 0 : z) + 1);
             if (keyword === "ccv3" || keyword === "chara") {
               try {
@@ -3806,7 +3828,7 @@ select:focus { border-color: var(--amber-line); }
             bytes: bytes || null
           };
         });
-        return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card };
+        return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, containerEntries };
       }
       module.exports = { parsePngCard, isPng, assetDataUrl, autoMap, buildImageMappings };
     }
@@ -3911,7 +3933,8 @@ select:focus { border-color: var(--amber-line); }
           name: data.name || card.name || card.title || (isRisuLorebookExport || isRisuLorebookArray ? "RisuAI Lorebook" : void 0),
           assets,
           card,
-          embeddedUnresolved
+          embeddedUnresolved,
+          containerEntries: [{ name: "card.json", size: b.length, kind: "json-document" }]
         };
       }
       module.exports = { parseJsonCard, findCardJsonRange, assetDataUrl, autoMap, buildImageMappings };
@@ -4250,7 +4273,8 @@ select:focus { border-color: var(--amber-line); }
             bytes
           };
         });
-        return { spec: "risu-module", specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m };
+        const containerEntries = [{ name: "module.json", size: mainLen, kind: "risum-metadata" }].concat(blobs.map((blob, idx) => ({ name: `asset:${idx}`, size: blob ? blob.length : 0, kind: "risum-asset" })));
+        return { spec: "risu-module", specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m, containerEntries };
       }
       function toBytes(x) {
         return x instanceof Uint8Array ? x : new Uint8Array(x);
@@ -4295,7 +4319,8 @@ select:focus { border-color: var(--amber-line); }
             // rpack은 길이 보존(치환) → _len = 복호 길이
           };
         });
-        return { spec: "risu-module", specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m, lazy: true, _bytes: b };
+        const containerEntries = [{ name: "module.json", size: mainLen, kind: "risum-metadata" }].concat(locs.map((loc, idx) => ({ name: `asset:${idx}`, size: loc.len, kind: "risum-asset" })));
+        return { spec: "risu-module", specVersion: root && root.type, name: m.name, namespace: m.namespace, assets, card: root, module: m, containerEntries, lazy: true, _bytes: b };
       }
       function decodeRisumAsset(bytes, asset) {
         if (!asset) return null;
@@ -4363,9 +4388,264 @@ select:focus { border-color: var(--amber-line); }
           else if (fmt === "risum") parsed = opts.lazy ? parseRisumIndex(b) : parseRisumCard(b);
           else parsed = parseJsonCard(b);
         }
-        return Object.assign({ format: fmt, source: hintName || null }, parsed);
+        return Object.assign({ format: fmt, source: hintName || null, _sourceBytes: b }, parsed);
       }
       module.exports = { parseCard: parseCard2, detectFormat, embeddedZipStart };
+    }
+  });
+
+  // core/compat/schemas.js
+  var require_schemas = __commonJS({
+    "core/compat/schemas.js"(exports, module) {
+      "use strict";
+      var CONTRACT_IDS = Object.freeze({
+        envelope: "risu-compatibility/0.1",
+        persona: "persona/0.1",
+        promptPreset: "prompt-preset/0.1"
+      });
+      function validateRisuCompatibilityEnvelope(value) {
+        const issues = [];
+        objectAt(value, "$", issues);
+        if (!value || typeof value !== "object") return issues;
+        exact(value.contract, CONTRACT_IDS.envelope, "$.contract", issues);
+        objectAt(value.source, "$.source", issues);
+        objectAt(value.raw, "$.raw", issues);
+        objectAt(value.normalized, "$.normalized", issues);
+        objectAt(value.compatibility, "$.compatibility", issues);
+        arrayAt(value.provenance, "$.provenance", issues);
+        if (value.source) {
+          stringAt(value.source.format, "$.source.format", issues);
+          stringAt(value.source.version, "$.source.version", issues);
+          stringAt(value.source.fileName, "$.source.fileName", issues);
+        }
+        if (value.raw) arrayAt(value.raw.containerEntries, "$.raw.containerEntries", issues);
+        if (value.normalized) {
+          arrayAt(value.normalized.lorebooks, "$.normalized.lorebooks", issues);
+          arrayAt(value.normalized.assets, "$.normalized.assets", issues);
+          arrayAt(value.normalized.modules, "$.normalized.modules", issues);
+        }
+        if (value.compatibility) arrayAt(value.compatibility.features, "$.compatibility.features", issues);
+        return issues;
+      }
+      function validatePersona(value) {
+        const issues = [];
+        objectAt(value, "$", issues);
+        if (!value || typeof value !== "object") return issues;
+        exact(value.contract, CONTRACT_IDS.persona, "$.contract", issues);
+        for (const key of ["id", "name", "prompt", "icon", "note"]) stringAt(value[key], `$.${key}`, issues);
+        if (!Number.isInteger(value.version) || value.version < 1) issues.push(issue("$.version", "1 \uC774\uC0C1\uC758 \uC815\uC218\uC5EC\uC57C \uD569\uB2C8\uB2E4."));
+        return issues;
+      }
+      function validatePromptPreset(value) {
+        const issues = [];
+        objectAt(value, "$", issues);
+        if (!value || typeof value !== "object") return issues;
+        exact(value.contract, CONTRACT_IDS.promptPreset, "$.contract", issues);
+        for (const key of ["id", "name"]) stringAt(value[key], `$.${key}`, issues);
+        if (!["risu", "simpack"].includes(value.compatibilityMode)) issues.push(issue("$.compatibilityMode", "risu \uB610\uB294 simpack\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4."));
+        arrayAt(value.blocks, "$.blocks", issues);
+        if (Array.isArray(value.blocks)) {
+          const ids = /* @__PURE__ */ new Set();
+          value.blocks.forEach((block, index) => {
+            objectAt(block, `$.blocks[${index}]`, issues);
+            if (!block || typeof block !== "object") return;
+            stringAt(block.id, `$.blocks[${index}].id`, issues);
+            stringAt(block.type, `$.blocks[${index}].type`, issues);
+            if (ids.has(block.id)) issues.push(issue(`$.blocks[${index}].id`, "\uBE14\uB85D id\uAC00 \uC911\uBCF5\uB429\uB2C8\uB2E4."));
+            ids.add(block.id);
+          });
+        }
+        return issues;
+      }
+      function issue(path, message) {
+        return { level: "error", path, message };
+      }
+      function objectAt(value, path, issues) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) issues.push(issue(path, "\uAC1D\uCCB4\uC5EC\uC57C \uD569\uB2C8\uB2E4."));
+      }
+      function arrayAt(value, path, issues) {
+        if (!Array.isArray(value)) issues.push(issue(path, "\uBC30\uC5F4\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4."));
+      }
+      function stringAt(value, path, issues) {
+        if (typeof value !== "string") issues.push(issue(path, "\uBB38\uC790\uC5F4\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4."));
+      }
+      function exact(value, expected, path, issues) {
+        if (value !== expected) issues.push(issue(path, `${expected}\uC5EC\uC57C \uD569\uB2C8\uB2E4.`));
+      }
+      module.exports = { CONTRACT_IDS, validateRisuCompatibilityEnvelope, validatePersona, validatePromptPreset };
+    }
+  });
+
+  // core/compat/risuCompatibility.js
+  var require_risuCompatibility = __commonJS({
+    "core/compat/risuCompatibility.js"(exports, module) {
+      "use strict";
+      var { validateRisuCompatibilityEnvelope } = require_schemas();
+      var STATUSES = ["supported", "preserved", "translated", "degraded", "blocked"];
+      function createRisuCompatibilityEnvelope2(parsed, lore) {
+        const card = parsed && parsed.card || {};
+        const data = card && typeof card === "object" && !Array.isArray(card) ? card.data || card : {};
+        const extensions = object(data.extensions);
+        const risu = object(extensions.risuai);
+        const moduleRoot = object(parsed && parsed.module || card && card.module || (card && card.type === "risuModule" ? card.module : null));
+        const assets = array(parsed && parsed.assets).map(assetReference);
+        const modules = collectModules(parsed, moduleRoot);
+        const features = collectCompatibilityFeatures({ parsed, lore, data, extensions, risu, moduleRoot, assets });
+        const envelope = {
+          contract: "risu-compatibility/0.1",
+          source: {
+            format: sourceFormat(parsed && parsed.format),
+            version: String(parsed && parsed.specVersion || parsed && parsed.spec || ""),
+            fileName: String(parsed && parsed.source || ""),
+            displayName: String(parsed && parsed.name || data.name || moduleRoot.name || "")
+          },
+          raw: {
+            card,
+            sourceBytes: parsed && parsed._sourceBytes instanceof Uint8Array ? parsed._sourceBytes : null,
+            containerEntries: array(parsed && parsed.containerEntries).map((entry) => ({
+              name: String(entry.name || ""),
+              size: finite(entry.size),
+              kind: String(entry.kind || "file")
+            })),
+            extensions
+          },
+          normalized: {
+            character: normalizedCharacter(data, parsed),
+            lorebooks: lore ? [lore] : [],
+            assets,
+            modules,
+            persona: null,
+            promptPreset: null
+          },
+          compatibility: { features, totals: statusTotals(features) },
+          provenance: baseProvenance(parsed, data, moduleRoot, lore)
+        };
+        const issues = validateRisuCompatibilityEnvelope(envelope);
+        if (issues.length) throw new Error(`Risu compatibility envelope invalid: ${issues.map((item) => `${item.path} ${item.message}`).join("; ")}`);
+        return envelope;
+      }
+      function collectCompatibilityFeatures(input2) {
+        const { parsed, lore, data, risu, moduleRoot, assets } = input2;
+        const features = [];
+        add(features, "character", "\uCE90\uB9AD\uD130 \uAE30\uBCF8 \uC815\uBCF4", normalizedCharacter(data, parsed) ? "supported" : "preserved", normalizedCharacter(data, parsed) ? 1 : 0, "\uD45C\uC900 \uCE74\uB4DC \uD544\uB4DC\uB97C \uACF5\uD1B5 \uCE90\uB9AD\uD130 \uBAA8\uB378\uB85C \uC77D\uC2B5\uB2C8\uB2E4.", "card", "$.data");
+        add(features, "lorebook", "\uB85C\uC5B4\uBD81", lore ? "supported" : "preserved", lore ? array(lore.entries).length : 0, lore ? "\uD65C\uC131\uD654 \uC124\uC815\uACFC \uC6D0\uBB38\uC744 \uD568\uAED8 \uBCF4\uC874\uD569\uB2C8\uB2E4." : "\uC77D\uC744 \uB85C\uC5B4\uBD81\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", lore && lore.kind === "module" ? "module" : "card", lore && lore.kind === "module" ? "$.module.lorebook" : "$.data.character_book");
+        add(features, "assets", "\uC5D0\uC14B", assets.some((asset) => !asset.found) ? "degraded" : "supported", assets.length, assets.some((asset) => !asset.found) ? "\uC77C\uBD80 \uC5D0\uC14B \uCC38\uC870\uB97C \uCEE8\uD14C\uC774\uB108\uC5D0\uC11C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4." : "\uC5D0\uC14B \uBA54\uD0C0\uB370\uC774\uD130\uC640 \uC6D0\uBCF8 \uBC14\uC774\uD2B8 \uC704\uCE58\uB97C \uBCF4\uC874\uD569\uB2C8\uB2E4.", "asset", "$.data.assets");
+        const containerAssetCount = array(parsed && parsed.containerEntries).filter((entry) => /chara-ext-asset|asset:/i.test(String(entry && entry.name))).length;
+        if (containerAssetCount > assets.length) add(features, "container-assets", "\uCEE8\uD14C\uC774\uB108 \uC804\uC6A9 \uC5D0\uC14B", "preserved", containerAssetCount - assets.length, "\uD45C\uC900 assets \uBAA9\uB85D\uC5D0\uB294 \uC5C6\uC9C0\uB9CC \uC6D0\uBCF8 \uCEE8\uD14C\uC774\uB108 \uBC14\uC774\uD2B8\uC5D0 \uBCF4\uC874\uD588\uC2B5\uB2C8\uB2E4. \uD6C4\uC18D \uC5D0\uC14B \uB9E4\uD37C\uAC00 \uC5F0\uACB0\uD574\uC57C \uD569\uB2C8\uB2E4.", "asset", "$.container");
+        const embeddedModules = array(parsed && parsed.embeddedModules);
+        if (embeddedModules.length) add(features, "embedded-modules", "\uB0B4\uC7A5 \uBAA8\uB4C8 \uD30C\uC77C", "preserved", embeddedModules.length, "\uBAA8\uB4C8 \uD30C\uC77C \uC6D0\uBCF8\uC740 \uBCF4\uC874\uD588\uC2B5\uB2C8\uB2E4. Lua\xB7\uC815\uADDC\uC2DD \uB4F1 \uC0C1\uC138 \uC2E4\uD589 \uAC80\uC0AC\uB294 \uCE74\uB4DC MRI\uAC00 \uBCC4\uB3C4\uB85C \uC218\uD589\uD569\uB2C8\uB2E4.", "module", "$.container");
+        const regex = array(moduleRoot.regex).concat(array(risu.customScripts));
+        if (regex.length) add(features, "regex", "\uC815\uADDC\uC2DD \uC2A4\uD06C\uB9BD\uD2B8", "preserved", regex.length, "\uC6D0\uBCF8\uACFC \uC2E4\uD589 \uB2E8\uACC4\uB97C \uBCF4\uC874\uD558\uC9C0\uB9CC \uC544\uC9C1 \uC804\uCCB4 \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.", "module", "$.module.regex");
+        const triggers = array(moduleRoot.trigger).concat(array(risu.triggerscript));
+        const effects = triggers.flatMap((trigger) => array(trigger && trigger.effect));
+        const luaCount = effects.filter((effect) => /lua/i.test(String(effect && effect.type))).length;
+        const cjsCount = Number(!!moduleRoot.cjs);
+        const lowLevelCount = Number(!!(moduleRoot.lowLevelAccess || risu.lowLevelAccess || triggers.some((trigger) => trigger && trigger.lowLevelAccess)));
+        if (triggers.length) add(features, "triggers", "\uD2B8\uB9AC\uAC70", luaCount || cjsCount || lowLevelCount ? "blocked" : "preserved", triggers.length, luaCount || cjsCount || lowLevelCount ? "\uC2E4\uD589 \uCF54\uB4DC\uB294 \uC6D0\uBCF8\uC5D0 \uBCF4\uC874\uD558\uC9C0\uB9CC \uC548\uC804 \uACBD\uACC4\uAC00 \uC0DD\uAE30\uAE30 \uC804\uC5D0\uB294 \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." : "\uD2B8\uB9AC\uAC70 \uAD6C\uC870\uB294 \uBCF4\uC874\uD558\uACE0 \uD638\uD658 \uBCC0\uD658\uC744 \uAE30\uB2E4\uB9BD\uB2C8\uB2E4.", "module", "$.module.trigger");
+        if (luaCount) add(features, "lua", "Lua", "blocked", luaCount, "\uC815\uC801 \uBD84\uC11D\uB9CC \uD558\uBA70 \uD604\uC7AC \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.", "module", "$.module.trigger[*].effect");
+        if (cjsCount) add(features, "cjs", "CJS \uBAA8\uB4C8 \uCF54\uB4DC", "blocked", cjsCount, "\uC784\uC758 JavaScript\uC774\uBBC0\uB85C \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.", "module", "$.module.cjs");
+        if (moduleRoot.mcp) add(features, "mcp", "MCP \uC5F0\uACB0", "blocked", 1, "\uC0AC\uC6A9\uC790 \uAD8C\uD55C\uACFC \uC5F0\uACB0 \uACA9\uB9AC\uAC00 \uC0DD\uAE30\uAE30 \uC804\uC5D0\uB294 \uD638\uCD9C\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.", "module", "$.module.mcp");
+        if (lowLevelCount) add(features, "low-level", "\uC800\uC218\uC900 \uAD8C\uD55C", "blocked", lowLevelCount, "\uBA85\uC2DC\uC801 \uAD8C\uD55C\uACFC \uC0CC\uB4DC\uBC15\uC2A4\uAC00 \uC5C6\uC5B4 \uC2E4\uD589\uC744 \uCC28\uB2E8\uD569\uB2C8\uB2E4.", "module", "$.module.lowLevelAccess");
+        const html = String(risu.backgroundHTML || "");
+        if (html) add(features, "html", "HTML/CSS \uD654\uBA74", "translated", 1, "\uC6D0\uBB38\uC740 \uBCF4\uC874\uD558\uACE0 \uC548\uC804\uD55C \uD654\uBA74 \uC120\uC5B8\uC73C\uB85C \uC62E\uAE38 \uB300\uC0C1\uC73C\uB85C \uD45C\uC2DC\uD569\uB2C8\uB2E4.", "card", "$.data.extensions.risuai.backgroundHTML");
+        const macroCount = countMacros([data.description, data.first_mes, data.post_history_instructions, lore && array(lore.entries).map((entry) => entry.content).join("\n")].join("\n"));
+        if (macroCount) add(features, "cbs", "CBS \uB9E4\uD06C\uB85C", "preserved", macroCount, "\uB9E4\uD06C\uB85C \uC6D0\uBB38\uC740 \uBCF4\uC874\uD558\uBA70 \uC9C0\uC6D0 \uBD80\uBD84\uC9D1\uD569\uC744 \uD6C4\uC18D \uB2E8\uACC4\uC5D0\uC11C \uC2E4\uD589\uD569\uB2C8\uB2E4.", "card", "$.data");
+        const knownRisu = /* @__PURE__ */ new Set(["backgroundHTML", "defaultVariables", "bias", "translatorNote", "lowLevelAccess", "hideChatIcon", "utilityBot", "escapeOutput", "customScripts", "triggerscript", "additionalAssets", "source", "emotions", "viewScreen", "largePortrait", "lorePlus", "inlayViewScreen", "newGenData", "license", "private", "additionalText", "toggles"]);
+        const opaqueRisu = Object.keys(risu).filter((key) => !knownRisu.has(key));
+        if (opaqueRisu.length) add(features, "opaque-extensions", "\uC54C \uC218 \uC5C6\uB294 Risu \uD655\uC7A5 \uD544\uB4DC", "preserved", opaqueRisu.length, `\uD574\uC11D\uD558\uC9C0 \uC54A\uACE0 \uC6D0\uBCF8 \uADF8\uB300\uB85C \uBCF4\uC874\uD569\uB2C8\uB2E4: ${opaqueRisu.join(", ")}`, "card", "$.data.extensions.risuai");
+        return features;
+      }
+      function normalizedCharacter(data, parsed) {
+        const hasCharacter = !!(data && typeof data === "object" && (data.name != null || data.description != null || data.first_mes != null)) && parsed && parsed.spec !== "risu-module";
+        if (!hasCharacter) return null;
+        return {
+          name: String(data.name || parsed.name || ""),
+          description: String(data.description || ""),
+          personality: String(data.personality || ""),
+          scenario: String(data.scenario || ""),
+          firstMessage: String(data.first_mes || ""),
+          alternateGreetings: array(data.alternate_greetings).map(String),
+          systemPrompt: String(data.system_prompt || ""),
+          postHistoryInstructions: String(data.post_history_instructions || ""),
+          creator: String(data.creator || ""),
+          characterVersion: String(data.character_version || ""),
+          tags: array(data.tags).map(String)
+        };
+      }
+      function collectModules(parsed, moduleRoot) {
+        const out = [];
+        if (Object.keys(moduleRoot).length) out.push(moduleBinding(moduleRoot, "embedded"));
+        for (const name of array(parsed && parsed.embeddedModules)) {
+          if (!out.some((item) => item.name === name)) out.push({
+            id: String(name),
+            name: String(name),
+            namespace: "",
+            scope: "embedded",
+            lowLevelAccess: false,
+            capabilities: ["container-reference"],
+            provenance: { source: "module", path: String(name), note: "\uCEE8\uD14C\uC774\uB108 \uC548\uC758 \uBAA8\uB4C8 \uD30C\uC77C" }
+          });
+        }
+        return out;
+      }
+      function moduleBinding(moduleRoot, scope) {
+        const capabilities = [];
+        if (array(moduleRoot.lorebook).length) capabilities.push("lorebook");
+        if (array(moduleRoot.regex).length) capabilities.push("regex");
+        if (array(moduleRoot.trigger).length) capabilities.push("trigger");
+        if (array(moduleRoot.assets).length) capabilities.push("assets");
+        if (moduleRoot.mcp) capabilities.push("mcp");
+        return {
+          id: String(moduleRoot.id || moduleRoot.namespace || moduleRoot.name || "embedded-module"),
+          name: String(moduleRoot.name || "\uB0B4\uC7A5 \uBAA8\uB4C8"),
+          namespace: String(moduleRoot.namespace || ""),
+          scope,
+          lowLevelAccess: !!moduleRoot.lowLevelAccess,
+          capabilities,
+          provenance: { source: "module", path: "$.module" }
+        };
+      }
+      function assetReference(asset) {
+        return {
+          name: String(asset && asset.name || ""),
+          type: String(asset && asset.type || ""),
+          ext: String(asset && asset.ext || ""),
+          uri: String(asset && asset.uri || ""),
+          mime: String(asset && asset.mime || ""),
+          found: !!(asset && asset.found),
+          size: finite(asset && asset.size)
+        };
+      }
+      function baseProvenance(parsed, data, moduleRoot, lore) {
+        const out = [{ source: "card", path: "$", note: String(parsed && parsed.source || "") }];
+        if (data && data.extensions) out.push({ source: "card", path: "$.data.extensions" });
+        if (Object.keys(moduleRoot).length) out.push({ source: "module", path: "$.module" });
+        if (lore) out.push({ source: lore.kind === "module" ? "module" : "card", path: lore.kind === "module" ? "$.module.lorebook" : "$.data.character_book" });
+        return out;
+      }
+      function countMacros(text) {
+        return Array.from(String(text || "").matchAll(/\{\{[^{}]+\}\}/g)).length;
+      }
+      function add(list, id, label, status, count2, reason, source, path) {
+        list.push({ id, label, status, count: finite(count2), reason, evidence: [{ source, path }] });
+      }
+      function statusTotals(features) {
+        return Object.fromEntries(STATUSES.map((status) => [status, features.filter((item) => item.status === status).length]));
+      }
+      function sourceFormat(value) {
+        return ["charx", "png", "jpeg", "json", "risum", "persona-png", "risup"].includes(value) ? value : "unknown";
+      }
+      function object(value) {
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      }
+      function array(value) {
+        return Array.isArray(value) ? value : [];
+      }
+      function finite(value) {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 0 ? n : 0;
+      }
+      module.exports = { createRisuCompatibilityEnvelope: createRisuCompatibilityEnvelope2, collectCompatibilityFeatures, normalizedCharacter, statusTotals };
     }
   });
 
@@ -5399,6 +5679,13 @@ select:focus { border-color: var(--amber-line); }
       function createRng2(seed) {
         let t = hashSeed(seed);
         return {
+          snapshot() {
+            return t;
+          },
+          restore(snapshot) {
+            if (!Number.isFinite(Number(snapshot))) throw new TypeError("invalid_rng_snapshot");
+            t = Number(snapshot);
+          },
           next() {
             t += 1831565813;
             let x = t;
@@ -6549,31 +6836,606 @@ select:focus { border-color: var(--amber-line); }
     }
   });
 
+  // ../engine/core/moduleRegistry.js
+  var require_moduleRegistry = __commonJS({
+    "../engine/core/moduleRegistry.js"(exports, module) {
+      "use strict";
+      var { clone } = require_utils();
+      var ModuleRegistry = class {
+        constructor() {
+          this.modules = /* @__PURE__ */ new Map();
+          this.events = /* @__PURE__ */ new Map();
+          this.selectors = /* @__PURE__ */ new Map();
+          this.processes = /* @__PURE__ */ new Map();
+          this.stateOwners = /* @__PURE__ */ new Map();
+        }
+        register(definition) {
+          const module2 = normalizeModule(definition);
+          if (this.modules.has(module2.id)) throw new Error(`duplicate_module:${module2.id}`);
+          for (const dependency of module2.dependencies) {
+            if (!this.modules.has(dependency)) throw new Error(`missing_module_dependency:${module2.id}:${dependency}`);
+          }
+          assertRoutesAvailable(this.events, module2.events, "event");
+          assertRoutesAvailable(this.selectors, module2.selectors, "selector");
+          assertRoutesAvailable(this.processes, module2.processes, "process");
+          for (const path of module2.stateAccess.owns) {
+            const owner = this.stateOwners.get(path);
+            if (owner) throw new Error(`duplicate_state_owner:${path}:${owner}`);
+          }
+          this.modules.set(module2.id, module2);
+          registerRoutes(this.events, module2, module2.events);
+          registerRoutes(this.selectors, module2, module2.selectors);
+          registerRoutes(this.processes, module2, module2.processes);
+          for (const path of module2.stateAccess.owns) this.stateOwners.set(path, module2.id);
+          return this;
+        }
+        dispatch(schema2, state2, event, rng2) {
+          const type = event && event.id;
+          const route = this.events.get(type);
+          if (!route) return unknownEvent(state2, type);
+          const workingState = clone(state2);
+          const rngSnapshot = snapshotRng(rng2);
+          let result;
+          try {
+            result = route.handler({
+              schema: schema2,
+              state: workingState,
+              event,
+              params: event && event.params || event || {},
+              rng: rng2,
+              registry: this,
+              module: route.module
+            });
+          } catch (error) {
+            restoreRng(rng2, rngSnapshot);
+            return moduleFailure(state2, type, "module_exception", error && error.message);
+          }
+          if (!validResult(result)) {
+            restoreRng(rng2, rngSnapshot);
+            return moduleFailure(state2, type, "module_contract", "Module must return { state, log[] }.");
+          }
+          if (!result.log.some((entry) => entry && entry.ok === true)) {
+            restoreRng(rng2, rngSnapshot);
+            return { state: state2, log: result.log };
+          }
+          return result;
+        }
+        select(id, ...args) {
+          const route = this.selectors.get(id);
+          if (!route) throw new Error(`unknown_selector:${id}`);
+          return route.handler(...args);
+        }
+        runProcess(id, ...args) {
+          const route = this.processes.get(id);
+          if (!route) throw new Error(`unknown_process:${id}`);
+          return route.handler(...args);
+        }
+        eventIds() {
+          return Array.from(this.events.keys());
+        }
+        selectorIds() {
+          return Array.from(this.selectors.keys());
+        }
+        processIds() {
+          return Array.from(this.processes.keys());
+        }
+        hasEvent(id) {
+          return this.events.has(id);
+        }
+        eventOwner(id) {
+          const route = this.events.get(id);
+          return route ? route.module.id : null;
+        }
+        selectorOwner(id) {
+          const route = this.selectors.get(id);
+          return route ? route.module.id : null;
+        }
+        processOwner(id) {
+          const route = this.processes.get(id);
+          return route ? route.module.id : null;
+        }
+        stateOwner(path) {
+          return this.stateOwners.get(path) || null;
+        }
+        getModule(id) {
+          return this.modules.get(id) || null;
+        }
+        listModules() {
+          return Array.from(this.modules.values()).map((module2) => ({
+            id: module2.id,
+            version: module2.version,
+            dependencies: module2.dependencies.slice(),
+            eventIds: Object.keys(module2.events),
+            selectorIds: Object.keys(module2.selectors),
+            processIds: Object.keys(module2.processes),
+            stateAccess: {
+              owns: module2.stateAccess.owns.slice(),
+              reads: module2.stateAccess.reads.slice(),
+              writes: module2.stateAccess.writes.slice()
+            }
+          }));
+        }
+      };
+      function normalizeModule(definition) {
+        if (!definition || typeof definition !== "object") throw new TypeError("invalid_module");
+        const id = String(definition.id || "").trim();
+        const version = String(definition.version || "").trim();
+        if (!id) throw new TypeError("missing_module_id");
+        if (!version) throw new TypeError(`missing_module_version:${id}`);
+        const dependencies = Array.isArray(definition.dependencies) ? Array.from(new Set(definition.dependencies.map((value) => String(value).trim()).filter(Boolean))) : [];
+        return Object.freeze({
+          id,
+          version,
+          dependencies,
+          events: normalizeRoutes(definition.events, id, "event"),
+          selectors: normalizeRoutes(definition.selectors, id, "selector"),
+          processes: normalizeRoutes(definition.processes, id, "process"),
+          stateAccess: normalizeStateAccess(definition.stateAccess),
+          initialState: typeof definition.initialState === "function" ? definition.initialState : null,
+          promptFacts: typeof definition.promptFacts === "function" ? definition.promptFacts : null,
+          migrations: definition.migrations || {}
+        });
+      }
+      function normalizeStateAccess(access) {
+        const source = access && typeof access === "object" ? access : {};
+        return Object.freeze({
+          owns: normalizePaths(source.owns),
+          reads: normalizePaths(source.reads),
+          writes: normalizePaths(source.writes)
+        });
+      }
+      function normalizePaths(paths) {
+        return Array.isArray(paths) ? Array.from(new Set(paths.map((path) => String(path).trim()).filter(Boolean))) : [];
+      }
+      function normalizeRoutes(routes, moduleId, kind) {
+        if (routes == null) return {};
+        if (!routes || typeof routes !== "object" || Array.isArray(routes)) throw new TypeError(`invalid_${kind}_routes:${moduleId}`);
+        const normalized = {};
+        for (const [id, handler] of Object.entries(routes)) {
+          const routeId = String(id || "").trim();
+          if (!routeId || typeof handler !== "function") throw new TypeError(`invalid_${kind}_handler:${moduleId}:${routeId}`);
+          normalized[routeId] = handler;
+        }
+        return Object.freeze(normalized);
+      }
+      function assertRoutesAvailable(registry, routes, kind) {
+        for (const id of Object.keys(routes)) {
+          const existing = registry.get(id);
+          if (existing) throw new Error(`duplicate_${kind}:${id}:${existing.module.id}`);
+        }
+      }
+      function registerRoutes(registry, module2, routes) {
+        for (const [id, handler] of Object.entries(routes)) registry.set(id, { module: module2, handler });
+      }
+      function unknownEvent(state2, type) {
+        return { state: state2, log: [{ ok: false, event: type, reason: "unknown_event", detail: `Unknown event id: ${type}` }] };
+      }
+      function snapshotRng(rng2) {
+        return rng2 && typeof rng2.snapshot === "function" && typeof rng2.restore === "function" ? { supported: true, value: rng2.snapshot() } : { supported: false };
+      }
+      function restoreRng(rng2, snapshot) {
+        if (snapshot && snapshot.supported) rng2.restore(snapshot.value);
+      }
+      function validResult(result) {
+        return !!result && typeof result === "object" && result.state != null && typeof result.state === "object" && Array.isArray(result.log) && result.log.length > 0 && result.log.every((entry) => entry && typeof entry === "object" && typeof entry.ok === "boolean");
+      }
+      function moduleFailure(state2, type, reason, detail) {
+        return { state: state2, log: [{ ok: false, event: type, reason, ...detail ? { detail: String(detail) } : {} }] };
+      }
+      module.exports = { ModuleRegistry, unknownEvent };
+    }
+  });
+
+  // ../engine/core/modules/legacy.js
+  var require_legacy = __commonJS({
+    "../engine/core/modules/legacy.js"(exports, module) {
+      "use strict";
+      var LEGACY_EVENT_IDS = Object.freeze([
+        "checkin",
+        "checkout",
+        "sale",
+        "upgrade",
+        "hire",
+        "set_wage",
+        "fire",
+        "set_outfit",
+        "reward",
+        "attempt_quest",
+        "gold_delta",
+        "traffic_wave",
+        "incident_choice",
+        "lodging_review",
+        "lodging_accept",
+        "lodging_reject",
+        "mail_check",
+        "mail_open",
+        "day_end"
+      ]);
+      function createLegacyModule(applyLegacyEvent) {
+        if (typeof applyLegacyEvent !== "function") throw new TypeError("legacy_handler_required");
+        const events = {};
+        for (const id of LEGACY_EVENT_IDS) {
+          events[id] = ({ schema: schema2, state: state2, event, rng: rng2 }) => applyLegacyEvent(schema2, state2, event, rng2);
+        }
+        return {
+          id: "legacy.monolith",
+          version: "1.0.0",
+          dependencies: ["core.stats", "core.inventory", "combat.turnbased"],
+          stateAccess: {
+            owns: ["day", "gold", "facilities.*", "staff", "rooms.*", "mail", "traffic", "pendingQuest", "questAttempts", "claimedRewards", "npcs.*.outfit"],
+            reads: ["combat", "player.*"],
+            writes: ["combat", "resources.*", "reputation.*", "npcs.*.<scale>", "npcs.*.<scale>DeltaToday"]
+          },
+          events,
+          selectors: {},
+          processes: {},
+          migrations: {}
+        };
+      }
+      module.exports = { LEGACY_EVENT_IDS, createLegacyModule };
+    }
+  });
+
+  // ../engine/core/modules/eventSupport.js
+  var require_eventSupport = __commonJS({
+    "../engine/core/modules/eventSupport.js"(exports, module) {
+      "use strict";
+      function scopedEvent(handler) {
+        if (typeof handler !== "function") throw new TypeError("event_handler_required");
+        return (context) => {
+          const type = context.event && context.event.id;
+          const next = context.state;
+          const log = [];
+          const fail = (reason, detail) => ({ state: context.state, log: [{ ok: false, event: type, reason, detail }] });
+          const ok = (entry) => {
+            log.push(Object.assign({ ok: true, event: type }, entry || {}));
+            return { state: next, log };
+          };
+          return handler(Object.assign({}, context, { state: next, log, ok, fail }));
+        };
+      }
+      module.exports = { scopedEvent };
+    }
+  });
+
+  // ../engine/core/modules/stats.js
+  var require_stats = __commonJS({
+    "../engine/core/modules/stats.js"(exports, module) {
+      "use strict";
+      var { tierOf } = require_selectors();
+      var { clamp, clone, ladderById, normalizeInt, rankIndex, scaleById } = require_utils();
+      var { scopedEvent } = require_eventSupport();
+      function createStatsModule() {
+        return {
+          id: "core.stats",
+          version: "1.0.0",
+          dependencies: [],
+          stateAccess: {
+            owns: ["player.level", "player.exp", "npcs.*.<scale>", "npcs.*.<scale>DeltaToday", "scaleMults.*", "reputation.*"],
+            reads: [],
+            writes: []
+          },
+          events: {
+            scale_delta: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => scaleDelta(schema2, state2, params, ok, fail)),
+            set_scale_mult: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => setScaleMult(schema2, state2, params, ok, fail)),
+            rep_event: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => repEvent(schema2, state2, params, rng2, ok, fail)),
+            exp_gain: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => expGain(schema2, state2, params, rng2, ok, fail))
+          },
+          selectors: {
+            "stats/tier": tierOf
+          },
+          processes: {},
+          migrations: {}
+        };
+      }
+      function scaleDelta(schema2, state2, params, ok, fail) {
+        const scaleId = params.scale || "affinity";
+        const target = params.target || params.npcId;
+        const scale = scaleById(schema2, scaleId);
+        if (!scale) return fail("unknown_scale", scaleId);
+        if (!target || !state2.npcs || !state2.npcs[target]) return fail("unknown_target", target);
+        const counterKey = `${scaleId}DeltaToday`;
+        const cap = Number(scale.dailyCapPerTarget || scale.dailyCap || 0);
+        const used = Number(state2.npcs[target][counterKey] || 0);
+        const before = Number(state2.npcs[target][scaleId] || scale.default || 0);
+        if (cap && used >= cap) return ok({ scale: scaleId, target, before, after: before, delta: 0, capped: true, reason: params.reason || "" });
+        const size = params.size || "S";
+        const direction = params.direction === "-" ? "-" : "+";
+        const key = direction === "-" ? `${size}-` : size;
+        const base = Number(scale.steps && scale.steps[key]);
+        if (!Number.isFinite(base)) return fail("unknown_scale_step", key);
+        const bonusLimit = Math.abs(Number(scale.charBonus || 0));
+        const charBonus = clamp(normalizeInt(params.charBonus, 0), -bonusLimit, bonusLimit);
+        const multRaw = Number((state2.scaleMults || {})[scaleId]);
+        const mult = Number.isFinite(multRaw) && multRaw > 0 ? Math.min(3, Math.max(0.5, multRaw)) : 1;
+        const rawDelta = Math.floor((base + charBonus) * mult + 0.5);
+        const range = scale.range || [0, 200];
+        const after = clamp(before + rawDelta, Number(range[0]), Number(range[1]));
+        const fromTier = tierOf(schema2, scaleId, before);
+        const toTier = tierOf(schema2, scaleId, after);
+        state2.npcs[target][scaleId] = after;
+        state2.npcs[target][counterKey] = used + 1;
+        const entry = { scale: scaleId, target, before, after, delta: after - before, size, direction, charBonus, reason: params.reason || "" };
+        if ((fromTier && fromTier.label) !== (toTier && toTier.label)) entry.tierChanged = { from: fromTier || null, to: toTier || null };
+        return ok(entry);
+      }
+      function setScaleMult(schema2, state2, params, ok, fail) {
+        const scale = params.scale;
+        if (!scaleById(schema2, scale)) return fail("unknown_scale", scale);
+        const raw = params.mult;
+        if (typeof raw !== "number" || !Number.isFinite(raw)) return fail("invalid_mult", params.mult);
+        const mult = Math.round(Math.min(3, Math.max(0.5, raw)) * 10) / 10;
+        state2.scaleMults = state2.scaleMults || {};
+        const beforeRaw = Number(state2.scaleMults[scale]);
+        const before = Number.isFinite(beforeRaw) ? beforeRaw : 1;
+        state2.scaleMults[scale] = mult;
+        return ok({ scale, before, mult });
+      }
+      function repEvent(schema2, state2, params, rng2, ok, fail) {
+        const ladder = ladderById(schema2, "reputation");
+        const axis = params.axis;
+        const category = params.category;
+        if (!ladder || !ladder.axes.includes(axis)) return fail("unknown_reputation_axis", axis);
+        const table = ladder.categories && ladder.categories[axis];
+        const range = table && table[category];
+        if (!range) return fail("unknown_reputation_category", `${axis}:${category}`);
+        const delta = Array.isArray(range) ? rng2.int(range[0], range[1]) : Number(range);
+        const current = state2.reputation[axis] || { rank: "E", exp: 0 };
+        const before = { rank: current.rank, exp: current.exp };
+        let rank = current.rank;
+        let exp = Number(current.exp || 0) + delta;
+        let changed = null;
+        if (delta >= 0) {
+          const idx = rankIndex(ladder, rank);
+          const next = (ladder.ranks || [])[idx];
+          if (next && next.next != null && exp >= Number(next.next)) {
+            const promoted = (ladder.ranks || [])[idx + 1];
+            if (promoted) {
+              changed = { from: rank, to: promoted.id, type: "promote" };
+              rank = promoted.id;
+              exp = 0;
+            }
+          }
+        } else {
+          while (exp < 0) {
+            const idx = rankIndex(ladder, rank);
+            if (idx <= 0) {
+              rank = ladder.floor && ladder.floor.rank || "E";
+              exp = Number(ladder.floor && ladder.floor.exp || 0);
+              break;
+            }
+            const previous = (ladder.ranks || [])[idx - 1];
+            const previousThreshold = Number(previous.next || 0);
+            changed = { from: rank, to: previous.id, type: "demote" };
+            rank = previous.id;
+            exp = previousThreshold + exp;
+          }
+        }
+        state2.reputation[axis] = { rank, exp };
+        return ok({ axis, category, delta, before, after: state2.reputation[axis], rankChanged: changed, reason: params.reason || "" });
+      }
+      function expGain(schema2, state2, params, rng2, ok, fail) {
+        const ladder = ladderById(schema2, "player_level");
+        if (!ladder) return fail("missing_player_level_ladder");
+        const source = ladder.sources && ladder.sources[params.category];
+        if (!source) return fail("unknown_exp_category", params.category);
+        const amount = Array.isArray(source) ? rng2.int(source[0], source[1]) : Number(source.value == null ? source : source.value);
+        const before = { level: state2.player.level, exp: state2.player.exp };
+        state2.player.exp = Number(state2.player.exp || 0) + amount;
+        const levelUps = [];
+        while (state2.player.level <= (ladder.thresholds || []).length) {
+          const threshold = Number(ladder.thresholds[state2.player.level - 1]);
+          if (!threshold || state2.player.exp < threshold) break;
+          state2.player.exp -= threshold;
+          state2.player.level += 1;
+          levelUps.push(state2.player.level);
+        }
+        return ok({ category: params.category, amount, before, after: clone(state2.player), levelUps, reason: params.reason || "" });
+      }
+      module.exports = { createStatsModule };
+    }
+  });
+
+  // ../engine/core/modules/inventory.js
+  var require_inventory = __commonJS({
+    "../engine/core/modules/inventory.js"(exports, module) {
+      "use strict";
+      var { poolHeal } = require_pools();
+      var { availableMenu: availableMenu2, usableItems, menuTrade } = require_selectors();
+      var { findMenu, normalizeInt } = require_utils();
+      var { scopedEvent } = require_eventSupport();
+      function createInventoryModule() {
+        return {
+          id: "core.inventory",
+          version: "1.0.0",
+          dependencies: ["core.stats"],
+          stateAccess: {
+            owns: ["resources.*", "items.*"],
+            reads: ["combat.active"],
+            writes: ["gold", "player.pools.*"]
+          },
+          events: {
+            gain_resource: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => gainResource(schema2, state2, params, rng2, ok, fail)),
+            resource_delta: scopedEvent(({ state: state2, params, ok, fail }) => resourceDelta(state2, params, ok, fail)),
+            use_item: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => useItem(schema2, state2, params, ok, fail)),
+            buy_item: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => buyItem(schema2, state2, params, ok, fail)),
+            purchase: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => purchase(schema2, state2, params, ok, fail)),
+            purchase_batch: scopedEvent(({ schema: schema2, state: state2, params, ok, fail }) => purchaseBatch(schema2, state2, params, ok, fail))
+          },
+          selectors: {
+            "inventory/usable-items": usableItems,
+            "inventory/available-menu": availableMenu2
+          },
+          processes: {},
+          migrations: {}
+        };
+      }
+      function useItem(schema2, state2, params, ok, fail) {
+        if (Object.entries(params).some(([key, value]) => key !== "itemId" && (["amount", "heal", "hp", "mp", "sp"].includes(key) || value !== "" && Number.isFinite(Number(value))))) return fail("item_number_not_allowed");
+        const itemId = params.itemId;
+        const item = (schema2.resources || []).find((resource) => resource.id === itemId && resource.effect);
+        if (!item) return fail("unknown_item", itemId);
+        const count2 = Number(state2.resources && state2.resources[itemId] || 0);
+        if (count2 < 1) return fail("out_of_stock", itemId);
+        if (state2.player && state2.player.dead) return fail("player_dead");
+        const pool = state2.player && state2.player.pools && state2.player.pools[item.effect.pool];
+        if (!pool) return fail("no_pool", item.effect.pool);
+        const before = Number(pool.cur);
+        if (before >= Number(pool.max)) return fail("pool_full", item.effect.pool);
+        const healed = poolHeal(pool, item.effect.amount);
+        state2.player.pools[item.effect.pool] = healed;
+        state2.resources[itemId] = count2 - 1;
+        return ok({ itemId, pool: item.effect.pool, amount: healed.cur - before, before, after: healed.cur, remaining: state2.resources[itemId] });
+      }
+      function gainResource(schema2, state2, params, rng2, ok, fail) {
+        const resource = params.resource || params.resourceId;
+        if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
+        const table = schema2 && schema2.gather || {};
+        const requestedScale = params.scale || "small";
+        const scale = table[requestedScale] ? requestedScale : "small";
+        const range = table[scale];
+        if (!isNumberRange(range)) return fail("unknown_gather_scale", scale);
+        const qty = rng2.int(range[0], range[1]);
+        const before = Number(state2.resources[resource] || 0);
+        state2.resources[resource] = before + qty;
+        return ok({ resource, qty, scale, before, after: state2.resources[resource], reason: params.reason || "" });
+      }
+      function resourceDelta(state2, params, ok, fail) {
+        const resource = params.resource || params.resourceId;
+        const amount = normalizeInt(params.amount);
+        if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
+        const before = Number(state2.resources[resource] || 0);
+        state2.resources[resource] = Math.max(0, before + amount);
+        return ok({ resource, amount, before, after: state2.resources[resource], reason: params.reason || "" });
+      }
+      function buyItem(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
+        if (Object.keys(params).some((key) => !["menuName", "qty"].includes(key))) return fail("item_number_not_allowed");
+        const menu = findMenu(schema2, params.menuName);
+        if (!menu) return fail("unknown_menu", params.menuName);
+        if (menuTrade(menu) !== "buy") return fail("menu_not_buyable", params.menuName);
+        const qty = normalizeInt(params.qty, 1);
+        if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
+        const cost = Number(menu.price || 0) * qty;
+        if (Number(state2.gold || 0) < cost) return fail("insufficient_gold", params.menuName);
+        state2.gold = Number(state2.gold || 0) - cost;
+        if (!state2.items || typeof state2.items !== "object") state2.items = {};
+        state2.items[menu.name] = Number(state2.items[menu.name] || 0) + qty;
+        return ok({ menuName: menu.name, qty, goldDelta: -cost, owned: state2.items[menu.name] });
+      }
+      function purchase(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
+        const resource = params.resource || params.resourceId;
+        const qty = normalizeInt(params.qty, 1);
+        const def = (schema2.resources || []).find((entry) => entry.id === resource);
+        if (!def || resource === "gold") return fail("unknown_resource", resource);
+        if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
+        const cost = Number(def.basePrice || 0) * qty;
+        if (state2.gold < cost) return fail("insufficient_gold", resource);
+        state2.gold -= cost;
+        state2.resources[resource] = Number(state2.resources[resource] || 0) + qty;
+        return ok({ resource, qty, goldDelta: -cost });
+      }
+      function purchaseBatch(schema2, state2, params, ok, fail) {
+        if (state2.combat && state2.combat.active) return fail("in_combat");
+        const items = Array.isArray(params.items) ? params.items : [];
+        if (!items.length) return fail("empty_purchase_batch");
+        const normalized = [];
+        let total = 0;
+        for (const item of items) {
+          const resource = item && (item.resource || item.resourceId);
+          const qty = normalizeInt(item && item.qty, 0);
+          const def = (schema2.resources || []).find((entry) => entry.id === resource);
+          if (!def || resource === "gold") return fail("unknown_resource", resource);
+          if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
+          const cost = Number(def.basePrice || 0) * qty;
+          total += cost;
+          normalized.push({ resource, qty, cost });
+        }
+        if (Number(state2.gold || 0) < total) return fail("insufficient_gold", total);
+        state2.gold = Number(state2.gold || 0) - total;
+        for (const item of normalized) state2.resources[item.resource] = Number(state2.resources[item.resource] || 0) + item.qty;
+        return ok({ items: normalized, goldDelta: -total });
+      }
+      function isNumberRange(range) {
+        if (!Array.isArray(range) || range.length !== 2) return false;
+        const min = Number(range[0]);
+        const max = Number(range[1]);
+        return Number.isFinite(min) && Number.isFinite(max) && max >= min;
+      }
+      module.exports = { createInventoryModule };
+    }
+  });
+
+  // ../engine/core/modules/combat.js
+  var require_combat2 = __commonJS({
+    "../engine/core/modules/combat.js"(exports, module) {
+      "use strict";
+      var { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require_combat();
+      var { availableActions: availableActions2 } = require_selectors();
+      var { scopedEvent } = require_eventSupport();
+      function createCombatModule() {
+        return {
+          id: "combat.turnbased",
+          version: "1.0.0",
+          dependencies: ["core.stats", "core.inventory"],
+          stateAccess: {
+            owns: ["combat"],
+            reads: ["player.*"],
+            writes: ["player.*", "gold", "pendingQuest.cleared"]
+          },
+          events: {
+            start_encounter: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => startEncounter(schema2, state2, params, rng2, ok, fail)),
+            combat_action: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => combatAction(schema2, state2, params, rng2, ok, fail)),
+            enemy_action: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => enemyAction(schema2, state2, params, rng2, ok, fail)),
+            enemy_turn: scopedEvent(({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) => enemyTurn(schema2, state2, params, rng2, ok, fail)),
+            end_encounter: scopedEvent(endEncounterEvent)
+          },
+          selectors: {
+            "combat/available-actions": availableActions2
+          },
+          processes: {},
+          migrations: {}
+        };
+      }
+      function endEncounterEvent({ schema: schema2, state: state2, params, rng: rng2, ok, fail }) {
+        const combatQuestId = state2.combat && state2.combat.questId;
+        const result = endEncounter(schema2, state2, params, rng2, ok, fail);
+        const logEntry = result.log && result.log[0];
+        if (logEntry && logEntry.ok && logEntry.outcome === "victory" && result.state.pendingQuest && result.state.pendingQuest.questId === combatQuestId) {
+          result.state.pendingQuest.cleared = true;
+        }
+        return result;
+      }
+      module.exports = { createCombatModule };
+    }
+  });
+
   // ../engine/core/applyEvent.js
   var require_applyEvent = __commonJS({
     "../engine/core/applyEvent.js"(exports, module) {
       "use strict";
       var { runDayEnd } = require_dayEnd();
-      var { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require_combat();
-      var { staffMax: staffMax3, tierOf, menuTrade } = require_selectors();
-      var { poolHeal } = require_pools();
+      var { startEncounter } = require_combat();
+      var { staffMax: staffMax3, menuTrade } = require_selectors();
       var { resolveCheck } = require_resolveCheck();
       var { rollQuestEncounter } = require_questEncounter();
       var { activeQuests } = require_quests();
       var { rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require_traffic();
+      var { ModuleRegistry } = require_moduleRegistry();
+      var { createLegacyModule } = require_legacy();
+      var { createStatsModule } = require_stats();
+      var { createInventoryModule } = require_inventory();
+      var { createCombatModule } = require_combat2();
       var {
         clone,
-        clamp,
         findById,
         findRoom,
         findMenu,
-        scaleById,
-        ladderById,
-        rankIndex,
         normalizeInt,
         saleConsumes
       } = require_utils();
-      function applyEvent2(schema2, state2, event, rng2) {
+      function applyLegacyEvent(schema2, state2, event, rng2) {
         const type = event && event.id;
         const params = event && event.params || event || {};
         if (type === "day_end") {
@@ -6602,34 +7464,14 @@ select:focus { border-color: var(--amber-line); }
             return reward(schema2, next, params, rng2, ok, fail);
           case "attempt_quest":
             return attemptQuest(schema2, next, params, rng2, ok, fail);
-          case "gain_resource":
-            return gainResource(schema2, next, params, rng2, ok, fail);
-          case "resource_delta":
-            return resourceDelta(next, params, ok, fail);
-          case "use_item":
-            return useItem(schema2, next, params, ok, fail);
-          case "buy_item":
-            return buyItem(schema2, next, params, ok, fail);
-          case "scale_delta":
-            return scaleDelta(schema2, next, params, ok, fail);
-          case "set_scale_mult":
-            return setScaleMult(schema2, next, params, ok, fail);
           case "set_outfit":
             return setOutfit(next, params, ok, fail);
-          case "rep_event":
-            return repEvent(schema2, next, params, rng2, ok, fail);
-          case "exp_gain":
-            return expGain(schema2, next, params, rng2, ok, fail);
           case "checkin":
             return checkin(schema2, next, params, ok, fail);
           case "checkout":
             return checkout(next, params, ok, fail);
           case "sale":
             return sale(schema2, next, params, ok, fail);
-          case "purchase":
-            return purchase(schema2, next, params, ok, fail);
-          case "purchase_batch":
-            return purchaseBatch(schema2, next, params, ok, fail);
           case "hire":
             return hire(schema2, next, params, ok, fail);
           case "set_wage":
@@ -6665,43 +7507,9 @@ select:focus { border-color: var(--amber-line); }
             const result = openMail(schema2, next, params.mailId);
             return result.ok ? ok(result) : fail(result.reason, result.detail);
           }
-          case "start_encounter":
-            return startEncounter(schema2, next, params, rng2, ok, fail);
-          case "combat_action":
-            return combatAction(schema2, next, params, rng2, ok, fail);
-          case "enemy_action":
-            return enemyAction(schema2, next, params, rng2, ok, fail);
-          case "enemy_turn":
-            return enemyTurn(schema2, next, params, rng2, ok, fail);
-          case "end_encounter": {
-            const combatQuestId = next.combat && next.combat.questId;
-            const result = endEncounter(schema2, next, params, rng2, ok, fail);
-            const logEntry = result.log && result.log[0];
-            if (logEntry && logEntry.ok && logEntry.outcome === "victory" && result.state.pendingQuest && result.state.pendingQuest.questId === combatQuestId) {
-              result.state.pendingQuest.cleared = true;
-            }
-            return result;
-          }
           default:
             return fail("unknown_event", `Unknown event id: ${type}`);
         }
-      }
-      function useItem(schema2, state2, params, ok, fail) {
-        if (Object.entries(params).some(([key, value]) => key !== "itemId" && (["amount", "heal", "hp", "mp", "sp"].includes(key) || value !== "" && Number.isFinite(Number(value))))) return fail("item_number_not_allowed");
-        const itemId = params.itemId;
-        const item = (schema2.resources || []).find((resource) => resource.id === itemId && resource.effect);
-        if (!item) return fail("unknown_item", itemId);
-        const count2 = Number(state2.resources && state2.resources[itemId] || 0);
-        if (count2 < 1) return fail("out_of_stock", itemId);
-        if (state2.player && state2.player.dead) return fail("player_dead");
-        const pool = state2.player && state2.player.pools && state2.player.pools[item.effect.pool];
-        if (!pool) return fail("no_pool", item.effect.pool);
-        const before = Number(pool.cur);
-        if (before >= Number(pool.max)) return fail("pool_full", item.effect.pool);
-        const healed = poolHeal(pool, item.effect.amount);
-        state2.player.pools[item.effect.pool] = healed;
-        state2.resources[itemId] = count2 - 1;
-        return ok({ itemId, pool: item.effect.pool, amount: healed.cur - before, before, after: healed.cur, remaining: state2.resources[itemId] });
       }
       function goldDelta(state2, params, ok) {
         const amount = normalizeInt(params.amount);
@@ -6782,74 +7590,6 @@ select:focus { border-color: var(--amber-line); }
         state2.facilities[facility] = level;
         return ok({ facility, level, goldDelta: -Number(cost) });
       }
-      function gainResource(schema2, state2, params, rng2, ok, fail) {
-        const resource = params.resource || params.resourceId;
-        if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
-        const table = schema2 && schema2.gather || {};
-        const requestedScale = params.scale || "small";
-        const scale = table[requestedScale] ? requestedScale : "small";
-        const range = table[scale];
-        if (!isRewardRange(range)) return fail("unknown_gather_scale", scale);
-        const qty = rng2.int(range[0], range[1]);
-        const before = Number(state2.resources[resource] || 0);
-        state2.resources[resource] = before + qty;
-        return ok({ resource, qty, scale, before, after: state2.resources[resource], reason: params.reason || "" });
-      }
-      function resourceDelta(state2, params, ok, fail) {
-        const resource = params.resource || params.resourceId;
-        const amount = normalizeInt(params.amount);
-        if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
-        const before = Number(state2.resources[resource] || 0);
-        state2.resources[resource] = Math.max(0, before + amount);
-        return ok({ resource, amount, before, after: state2.resources[resource], reason: params.reason || "" });
-      }
-      function scaleDelta(schema2, state2, params, ok, fail) {
-        const scaleId = params.scale || "affinity";
-        const target = params.target || params.npcId;
-        const scale = scaleById(schema2, scaleId);
-        if (!scale) return fail("unknown_scale", scaleId);
-        if (!target || !state2.npcs || !state2.npcs[target]) return fail("unknown_target", target);
-        const counterKey = `${scaleId}DeltaToday`;
-        const cap = Number(scale.dailyCapPerTarget || scale.dailyCap || 0);
-        const used = Number(state2.npcs[target][counterKey] || 0);
-        const before = Number(state2.npcs[target][scaleId] || scale.default || 0);
-        if (cap && used >= cap) {
-          return ok({ scale: scaleId, target, before, after: before, delta: 0, capped: true, reason: params.reason || "" });
-        }
-        const size = params.size || "S";
-        const direction = params.direction === "-" ? "-" : "+";
-        const key = direction === "-" ? `${size}-` : size;
-        const base = Number(scale.steps && scale.steps[key]);
-        if (!Number.isFinite(base)) return fail("unknown_scale_step", key);
-        const bonusLimit = Math.abs(Number(scale.charBonus || 0));
-        const charBonus = clamp(normalizeInt(params.charBonus, 0), -bonusLimit, bonusLimit);
-        const multRaw = Number((state2.scaleMults || {})[scaleId]);
-        const mult = Number.isFinite(multRaw) && multRaw > 0 ? Math.min(3, Math.max(0.5, multRaw)) : 1;
-        const rawDelta = Math.floor((base + charBonus) * mult + 0.5);
-        const range = scale.range || [0, 200];
-        const after = clamp(before + rawDelta, Number(range[0]), Number(range[1]));
-        const fromTier = tierOf(schema2, scaleId, before);
-        const toTier = tierOf(schema2, scaleId, after);
-        state2.npcs[target][scaleId] = after;
-        state2.npcs[target][counterKey] = used + 1;
-        const entry = { scale: scaleId, target, before, after, delta: after - before, size, direction, charBonus, reason: params.reason || "" };
-        if ((fromTier && fromTier.label) !== (toTier && toTier.label)) {
-          entry.tierChanged = { from: fromTier || null, to: toTier || null };
-        }
-        return ok(entry);
-      }
-      function setScaleMult(schema2, state2, params, ok, fail) {
-        const scale = params.scale;
-        if (!scaleById(schema2, scale)) return fail("unknown_scale", scale);
-        const raw = params.mult;
-        if (typeof raw !== "number" || !Number.isFinite(raw)) return fail("invalid_mult", params.mult);
-        const mult = Math.round(Math.min(3, Math.max(0.5, raw)) * 10) / 10;
-        state2.scaleMults = state2.scaleMults || {};
-        const beforeRaw = Number(state2.scaleMults[scale]);
-        const before = Number.isFinite(beforeRaw) ? beforeRaw : 1;
-        state2.scaleMults[scale] = mult;
-        return ok({ scale, before, mult });
-      }
       function setOutfit(state2, params, ok, fail) {
         const npcId = params.npcId;
         if (!state2.npcs || !state2.npcs[npcId]) return fail("unknown_target", npcId);
@@ -6858,67 +7598,6 @@ select:focus { border-color: var(--amber-line); }
         const before = state2.npcs[npcId].outfit;
         state2.npcs[npcId].outfit = outfit;
         return ok({ npcId, before, outfit });
-      }
-      function repEvent(schema2, state2, params, rng2, ok, fail) {
-        const ladder = ladderById(schema2, "reputation");
-        const axis = params.axis;
-        const category = params.category;
-        if (!ladder || !ladder.axes.includes(axis)) return fail("unknown_reputation_axis", axis);
-        const table = ladder.categories && ladder.categories[axis];
-        const range = table && table[category];
-        if (!range) return fail("unknown_reputation_category", `${axis}:${category}`);
-        const delta = Array.isArray(range) ? rng2.int(range[0], range[1]) : Number(range);
-        const current = state2.reputation[axis] || { rank: "E", exp: 0 };
-        const before = { rank: current.rank, exp: current.exp };
-        let rank = current.rank;
-        let exp = Number(current.exp || 0) + delta;
-        let changed = null;
-        if (delta >= 0) {
-          const idx = rankIndex(ladder, rank);
-          const next = (ladder.ranks || [])[idx];
-          if (next && next.next != null && exp >= Number(next.next)) {
-            const promoted = (ladder.ranks || [])[idx + 1];
-            if (promoted) {
-              changed = { from: rank, to: promoted.id, type: "promote" };
-              rank = promoted.id;
-              exp = 0;
-            }
-          }
-        } else {
-          while (exp < 0) {
-            const idx = rankIndex(ladder, rank);
-            if (idx <= 0) {
-              rank = ladder.floor && ladder.floor.rank || "E";
-              exp = Number(ladder.floor && ladder.floor.exp || 0);
-              break;
-            }
-            const previous = (ladder.ranks || [])[idx - 1];
-            const previousThreshold = Number(previous.next || 0);
-            changed = { from: rank, to: previous.id, type: "demote" };
-            rank = previous.id;
-            exp = previousThreshold + exp;
-          }
-        }
-        state2.reputation[axis] = { rank, exp };
-        return ok({ axis, category, delta, before, after: state2.reputation[axis], rankChanged: changed, reason: params.reason || "" });
-      }
-      function expGain(schema2, state2, params, rng2, ok, fail) {
-        const ladder = ladderById(schema2, "player_level");
-        if (!ladder) return fail("missing_player_level_ladder");
-        const source = ladder.sources && ladder.sources[params.category];
-        if (!source) return fail("unknown_exp_category", params.category);
-        const amount = Array.isArray(source) ? rng2.int(source[0], source[1]) : Number(source.value == null ? source : source.value);
-        const before = { level: state2.player.level, exp: state2.player.exp };
-        state2.player.exp = Number(state2.player.exp || 0) + amount;
-        const levelUps = [];
-        while (state2.player.level <= (ladder.thresholds || []).length) {
-          const threshold = Number(ladder.thresholds[state2.player.level - 1]);
-          if (!threshold || state2.player.exp < threshold) break;
-          state2.player.exp -= threshold;
-          state2.player.level += 1;
-          levelUps.push(state2.player.level);
-        }
-        return ok({ category: params.category, amount, before, after: clone(state2.player), levelUps, reason: params.reason || "" });
       }
       function checkin(schema2, state2, params, ok, fail) {
         const roomNo = String(params.roomNo);
@@ -6972,55 +7651,6 @@ select:focus { border-color: var(--amber-line); }
         state2.gold += goldDelta2;
         return ok({ menuName: menu.name, qty, goldDelta: goldDelta2, consumed });
       }
-      function buyItem(schema2, state2, params, ok, fail) {
-        if (state2.combat && state2.combat.active) return fail("in_combat");
-        if (Object.keys(params).some((key) => !["menuName", "qty"].includes(key))) return fail("item_number_not_allowed");
-        const menu = findMenu(schema2, params.menuName);
-        if (!menu) return fail("unknown_menu", params.menuName);
-        if (menuTrade(menu) !== "buy") return fail("menu_not_buyable", params.menuName);
-        const qty = normalizeInt(params.qty, 1);
-        if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
-        const cost = Number(menu.price || 0) * qty;
-        if (Number(state2.gold || 0) < cost) return fail("insufficient_gold", params.menuName);
-        state2.gold = Number(state2.gold || 0) - cost;
-        if (!state2.items || typeof state2.items !== "object") state2.items = {};
-        state2.items[menu.name] = Number(state2.items[menu.name] || 0) + qty;
-        return ok({ menuName: menu.name, qty, goldDelta: -cost, owned: state2.items[menu.name] });
-      }
-      function purchase(schema2, state2, params, ok, fail) {
-        if (state2.combat && state2.combat.active) return fail("in_combat");
-        const resource = params.resource || params.resourceId;
-        const qty = normalizeInt(params.qty, 1);
-        const def = (schema2.resources || []).find((entry) => entry.id === resource);
-        if (!def || resource === "gold") return fail("unknown_resource", resource);
-        if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
-        const cost = Number(def.basePrice || 0) * qty;
-        if (state2.gold < cost) return fail("insufficient_gold", resource);
-        state2.gold -= cost;
-        state2.resources[resource] = Number(state2.resources[resource] || 0) + qty;
-        return ok({ resource, qty, goldDelta: -cost });
-      }
-      function purchaseBatch(schema2, state2, params, ok, fail) {
-        if (state2.combat && state2.combat.active) return fail("in_combat");
-        const items = Array.isArray(params.items) ? params.items : [];
-        if (!items.length) return fail("empty_purchase_batch");
-        const normalized = [];
-        let total = 0;
-        for (const item of items) {
-          const resource = item && (item.resource || item.resourceId);
-          const qty = normalizeInt(item && item.qty, 0);
-          const def = (schema2.resources || []).find((entry) => entry.id === resource);
-          if (!def || resource === "gold") return fail("unknown_resource", resource);
-          if (qty <= 0 || qty > 999) return fail("invalid_qty", qty);
-          const cost = Number(def.basePrice || 0) * qty;
-          total += cost;
-          normalized.push({ resource, qty, cost });
-        }
-        if (Number(state2.gold || 0) < total) return fail("insufficient_gold", total);
-        state2.gold = Number(state2.gold || 0) - total;
-        for (const item of normalized) state2.resources[item.resource] = Number(state2.resources[item.resource] || 0) + item.qty;
-        return ok({ items: normalized, goldDelta: -total });
-      }
       function hire(schema2, state2, params, ok, fail) {
         const npcId = params.npcId;
         const wage = normalizeInt(params.dailyWage);
@@ -7048,13 +7678,28 @@ select:focus { border-color: var(--amber-line); }
         state2.staff = before.filter((staff) => staff.npcId !== npcId);
         return ok({ npcId });
       }
-      module.exports = { applyEvent: applyEvent2 };
+      var defaultModuleRegistry = new ModuleRegistry();
+      defaultModuleRegistry.register(createStatsModule());
+      defaultModuleRegistry.register(createInventoryModule());
+      defaultModuleRegistry.register(createCombatModule());
+      defaultModuleRegistry.register(createLegacyModule(applyLegacyEvent));
+      function applyEvent2(schema2, state2, event, rng2) {
+        return defaultModuleRegistry.dispatch(schema2, state2, event, rng2);
+      }
+      function getDefaultModuleRegistry() {
+        return defaultModuleRegistry;
+      }
+      function getRegisteredEventIds2() {
+        return defaultModuleRegistry.eventIds();
+      }
+      module.exports = { applyEvent: applyEvent2, getDefaultModuleRegistry, getRegisteredEventIds: getRegisteredEventIds2 };
     }
   });
 
   // src/ui/dom.js
   var require_dom = __commonJS({
     "src/ui/dom.js"(exports, module) {
+      "use strict";
       function hiddenBase3(node) {
         const wrap = el4("div", "play-hidden");
         wrap.append(node);
@@ -7145,6 +7790,7 @@ select:focus { border-color: var(--amber-line); }
   // src/llm/prompt.js
   var require_prompt = __commonJS({
     "src/llm/prompt.js"(exports, module) {
+      "use strict";
       var { simulateActivation: simulateActivation2 } = require_activate();
       var { estimateTokens: estimateTokens2 } = require_tokens();
       var { summarize: summarize3, npcSummary: npcSummary3 } = require_selectors();
@@ -7274,11 +7920,11 @@ select:focus { border-color: var(--amber-line); }
         return `[\uC5D4\uC9C4 \uD310\uC815 \u2014 \uC9C1\uC804 \uD134 \uC0AC\uAC74 \uCC98\uB9AC \uACB0\uACFC]
 ${lines.join("\n")}`;
       }
-      function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput, lastVerdicts, emotions: emotions2, recentChanges }) {
+      function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput, lastVerdicts, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges }) {
         const combatCapable = isCombatCapable(schema2);
         const stateText = summarize3(schema2, state2);
         const npcIds = relatedNpcIds(schema2, state2, recentMessages, userInput);
-        const npcText = npcIds.map((id) => npcSummary3(schema2, state2, id)).filter(Boolean).join("\n");
+        const npcText = npcIds.map((id) => npcStateLine(schema2, state2, id)).filter(Boolean).join("\n");
         const repCats = reputationCategories(schema2);
         const expCats = expCategories(schema2);
         const npcList = npcListText(schema2);
@@ -7291,6 +7937,7 @@ ${lines.join("\n")}`;
         const loreText = loreContext(lore, recentMessages, userInput);
         const verdictText = formatEngineVerdicts(lastVerdicts);
         const changesText = formatRecentChanges(recentChanges);
+        const speakerText = speakerCatalogText(speakerCatalog2, npcIds);
         const context = [
           "[\uC0C1\uD0DC]",
           stateText,
@@ -7303,6 +7950,7 @@ ${lines.join("\n")}`;
           repCats ? "[\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC]\n" + repCats + "\n" : "",
           expCats ? "[\uACBD\uD5D8\uCE58 \uCE74\uD14C\uACE0\uB9AC]\n" + expCats + "\n" : "",
           npcList ? "[NPC \uBAA9\uB85D]\n" + npcList + "\n" : "",
+          speakerText ? "[NPC\uBCC4 \uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uAC10\uC815 \uC2A4\uD504\uB77C\uC774\uD2B8]\n" + speakerText + "\n" : "",
           menuList ? "[\uBA54\uB274 \uBAA9\uB85D]\n" + menuList + "\n" : "",
           roomList ? "[\uAC1D\uC2E4 \uBAA9\uB85D]\n" + roomList + "\n" : "",
           facilityList ? "[\uC2DC\uC124 \uBAA9\uB85D]\n" + facilityList + "\n" : "",
@@ -7310,7 +7958,7 @@ ${lines.join("\n")}`;
           itemList ? "[\uC18C\uBAA8\uD488 \uBAA9\uB85D]\n" + itemList + "\n" : "",
           questList ? "[\uC758\uB8B0 \uBAA9\uB85D]\n" + questList + "\n" : "",
           Array.isArray(emotions2) && emotions2.length ? `\uC751\uB2F5 JSON\uC5D0\uB294 events \uBC30\uC5F4\uC744 \uBC18\uB4DC\uC2DC \uADF8\uB300\uB85C \uC720\uC9C0\uD55C \uCC44, \uC120\uD0DD \uD544\uB4DC "emotion"(\uC8FC\uC778\uACF5\uC758 \uD604\uC7AC \uD45C\uC815)\uC744 \uD568\uAED8 \uB123\uC5B4\uB3C4 \uB41C\uB2E4. \uAC12\uC740 \uBC18\uB4DC\uC2DC \uB2E4\uC74C \uC911 \uD558\uB098: ${emotions2.join(", ")}` : "",
-          '\uB4F1\uC7A5 \uC778\uBB3C\uC774 \uC788\uC73C\uBA74 "speakers":[{"npcId","emotion","focus"}]\uB3C4 \uB123\uC5B4\uB77C(\uCD5C\uB300 3, focus\uB294 \uC8FC \uD654\uC790 1\uC778). npcId\uB294 [\uC9C1\uC6D0 \uAD00\uACC4 \uC0C1\uD0DC]\xB7[NPC]\uC5D0 \uB098\uC628 id \uADF8\uB300\uB85C. emotion\uC740 \uC2A4\uD504\uB77C\uC774\uD2B8 \uAC10\uC815\uBA85(\uC8FC\uC778\uACF5 \uAC10\uC815 \uBAA9\uB85D\uACFC \uAC19\uC740 \uC5B4\uD718, \uD655\uC2E0 \uC5C6\uC73C\uBA74 \uC0DD\uB7B5).',
+          '\uB4F1\uC7A5 \uC778\uBB3C\uC774 \uC788\uC73C\uBA74 "speakers":[{"npcId","emotion","focus"}]\uB3C4 \uB123\uC5B4\uB77C(\uCD5C\uB300 3, focus\uB294 \uC8FC \uD654\uC790 \uC815\uD655\uD788 1\uC778). npcId\uB294 [NPC \uBAA9\uB85D]\uC758 id \uADF8\uB300\uB85C. emotion\uC740 [NPC\uBCC4 \uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uAC10\uC815 \uC2A4\uD504\uB77C\uC774\uD2B8]\uC5D0 \uD574\uB2F9 NPC\uAC00 \uC788\uC744 \uB54C \uADF8 \uBAA9\uB85D\uC5D0\uC11C\uB9CC \uACE0\uB974\uACE0, \uC5C6\uAC70\uB098 \uD655\uC2E0 \uC5C6\uC73C\uBA74 \uC0DD\uB7B5.',
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -7324,6 +7972,7 @@ ${lines.join("\n")}`;
           repCats: estimateTokens2(repCats),
           expCats: estimateTokens2(expCats),
           npcList: estimateTokens2(npcList),
+          speakers: estimateTokens2(speakerText),
           menuList: estimateTokens2(menuList),
           roomList: estimateTokens2(roomList),
           facilityList: estimateTokens2(facilityList),
@@ -7340,17 +7989,20 @@ ${lines.join("\n")}`;
           injectedTokens,
           injectedParts,
           relatedNpcIds: npcIds,
-          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, ...questList ? { quests: questList } : {}, lore: loreText }
+          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, speakers: speakerText, items: itemList, ...questList ? { quests: questList } : {}, lore: loreText }
         };
       }
-      function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages, emotions: emotions2, recentChanges, decisionContext, eventType }) {
+      function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges, decisionContext, eventType }) {
         const stateText = summarize3(schema2, state2);
         const combatActive = !!(state2.combat && state2.combat.active);
         const combatLine = stateText.split("\n").find((line) => line.startsWith("[\uC804\uD22C]")) || "[\uC804\uD22C] \uC885\uB8CC\uB428";
         const managementLines = stateText.split("\n").filter((line) => /^\[(자원|여관|직원|객실|소지품)\]/.test(line)).slice(0, 5).join("\n") || "\uC0C1\uD0DC \uBCC0\uD654 \uC5C6\uC74C";
-        const narrationNpcIds = (state2.staff || []).map((item) => item.npcId);
-        const narrationNpcText = narrationNpcIds.map((id) => npcSummary3(schema2, state2, id)).filter(Boolean).join("\n");
         const resultText = (results || []).map((result) => typeof result === "string" ? result : String(result && result.text || "")).filter(Boolean).join("\n");
+        const narrationNpcIds = relatedNpcIds(schema2, state2, recentMessages, `${resultText}
+${flavorText || ""}`);
+        const narrationNpcText = narrationNpcIds.map((id) => npcStateLine(schema2, state2, id)).filter(Boolean).join("\n");
+        const npcList = npcListText(schema2);
+        const speakerText = speakerCatalogText(speakerCatalog2, narrationNpcIds);
         const changesText = formatRecentChanges(recentChanges);
         const context = [
           combatActive ? "[\uD655\uC815\uB41C \uC804\uD22C \uACB0\uACFC]" : "[\uD655\uC815\uB41C \uACB0\uACFC]",
@@ -7361,15 +8013,19 @@ ${lines.join("\n")}`;
           changesText ? "" : "",
           decisionContext || "",
           combatActive ? combatLine : managementLines,
-          narrationNpcText ? `[\uC9C1\uC6D0 \uAD00\uACC4 \uC0C1\uD0DC \u2014 \uC218\uCE58\uB098 \uB2E8\uACC4\uAC00 \uBCC0\uD588\uC744 \uB54C\uB9CC \uC11C\uC0AC\uC5D0 \uC5B8\uAE09\uD558\uACE0, \uBCC0\uD654\uAC00 \uC5C6\uC73C\uBA74 \uAD00\uACC4 \uBB18\uC0AC\uB97C \uC0DD\uB7B5\uD558\uB77C. \uC774\uC804 \uC11C\uC0AC\uC5D0\uC11C \uC4F4 \uAD00\uACC4 \uBB18\uC0AC \uBB38\uAD6C\uB97C \uADF8\uB300\uB85C \uBC18\uBCF5\uD558\uC9C0 \uB9C8\uB77C]
+          narrationNpcText ? `[NPC \uAD00\uACC4 \uC0C1\uD0DC \u2014 \uC218\uCE58\uB098 \uB2E8\uACC4\uAC00 \uBCC0\uD588\uC744 \uB54C\uB9CC \uC11C\uC0AC\uC5D0 \uC5B8\uAE09\uD558\uACE0, \uBCC0\uD654\uAC00 \uC5C6\uC73C\uBA74 \uAD00\uACC4 \uBB18\uC0AC\uB97C \uC0DD\uB7B5\uD558\uB77C. \uC774\uC804 \uC11C\uC0AC\uC5D0\uC11C \uC4F4 \uAD00\uACC4 \uBB18\uC0AC \uBB38\uAD6C\uB97C \uADF8\uB300\uB85C \uBC18\uBCF5\uD558\uC9C0 \uB9C8\uB77C]
 ${narrationNpcText}` : "",
+          npcList ? `[NPC \uBAA9\uB85D \u2014 \uB4F1\uC7A5\uC778\uBB3C\uC758 npcId\uB294 \uBC18\uB4DC\uC2DC \uC774 id \uC0AC\uC6A9]
+${npcList}` : "",
+          speakerText ? `[NPC\uBCC4 \uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uAC10\uC815 \uC2A4\uD504\uB77C\uC774\uD2B8]
+${speakerText}` : "",
           flavorText ? `\uD50C\uB808\uC774\uC5B4\uC758 \uC5F0\uCD9C \uC758\uB3C4: ${flavorText}` : "",
           Array.isArray(emotions2) && emotions2.length ? `\uC11C\uC0AC \uB4A4\uC5D0 \`\`\`json {"emotion":"\uAC12"} \`\`\` \uBE14\uB85D\uC744 \uB367\uBD99\uC5EC\uB3C4 \uB41C\uB2E4. \uAC12\uC740 \uBC18\uB4DC\uC2DC \uB2E4\uC74C \uC911 \uD558\uB098: ${emotions2.join(", ")}` : "",
-          '\uB4F1\uC7A5 \uC778\uBB3C\uC774 \uC788\uC73C\uBA74 "speakers":[{"npcId","emotion","focus"}]\uB3C4 \uB123\uC5B4\uB77C(\uCD5C\uB300 3, focus\uB294 \uC8FC \uD654\uC790 1\uC778). npcId\uB294 [\uC9C1\uC6D0 \uAD00\uACC4 \uC0C1\uD0DC]\xB7[NPC]\uC5D0 \uB098\uC628 id \uADF8\uB300\uB85C. emotion\uC740 \uC2A4\uD504\uB77C\uC774\uD2B8 \uAC10\uC815\uBA85(\uC8FC\uC778\uACF5 \uAC10\uC815 \uBAA9\uB85D\uACFC \uAC19\uC740 \uC5B4\uD718, \uD655\uC2E0 \uC5C6\uC73C\uBA74 \uC0DD\uB7B5).'
+          '\uB4F1\uC7A5 \uC778\uBB3C\uC774 \uC788\uC73C\uBA74 "speakers":[{"npcId","emotion","focus"}]\uB3C4 \uB123\uC5B4\uB77C(\uCD5C\uB300 3, focus\uB294 \uC8FC \uD654\uC790 \uC815\uD655\uD788 1\uC778). npcId\uB294 [NPC \uBAA9\uB85D]\uC758 id \uADF8\uB300\uB85C. emotion\uC740 [NPC\uBCC4 \uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uAC10\uC815 \uC2A4\uD504\uB77C\uC774\uD2B8]\uC5D0 \uD574\uB2F9 NPC\uAC00 \uC788\uC744 \uB54C \uADF8 \uBAA9\uB85D\uC5D0\uC11C\uB9CC \uACE0\uB974\uACE0, \uC5C6\uAC70\uB098 \uD655\uC2E0 \uC5C6\uC73C\uBA74 \uC0DD\uB7B5.'
         ].filter(Boolean).join("\n");
         const messages2 = conversationMessages([...(recentMessages || []).slice(-4), { role: "user", content: context }]);
         const injectedState = combatActive ? combatLine : managementLines;
-        const injectedParts = { state: estimateTokens2(injectedState), results: estimateTokens2(resultText), flavor: estimateTokens2(flavorText || "") };
+        const injectedParts = { state: estimateTokens2(injectedState), results: estimateTokens2(resultText), flavor: estimateTokens2(flavorText || ""), npcList: estimateTokens2(npcList), speakers: estimateTokens2(speakerText) };
         return {
           system: buildSystemPrompt(schema2, state2).split("\n\n[\uC808\uB300 \uADDC\uCE59]")[0] + `
 
@@ -7378,7 +8034,7 @@ ${narrationNpcText}` : "",
           injectedTokens: Object.values(injectedParts).reduce((sum, value) => sum + value, 0),
           injectedParts,
           relatedNpcIds: narrationNpcIds,
-          injectedText: { state: injectedState, results: resultText, flavorText: flavorText || "" },
+          injectedText: { state: injectedState, results: resultText, npcList, speakers: speakerText, flavorText: flavorText || "" },
           timeoutMs: 3e4,
           retries429: 1
         };
@@ -7405,6 +8061,7 @@ ${narrationNpcText}` : "",
         let events = [];
         let emotion;
         let speakers;
+        let speakersProvided = false;
         let jsonBlock = null;
         let removeBlock = null;
         if (blocks.length) {
@@ -7414,7 +8071,10 @@ ${narrationNpcText}` : "",
             const parsed = JSON.parse(jsonBlock);
             events = Array.isArray(parsed.events) ? parsed.events : [];
             if (typeof parsed.emotion === "string") emotion = parsed.emotion;
-            if (Array.isArray(parsed.speakers)) speakers = parsed.speakers;
+            if (Array.isArray(parsed.speakers)) {
+              speakers = parsed.speakers;
+              speakersProvided = true;
+            }
           } catch (_) {
             events = [];
           }
@@ -7425,7 +8085,10 @@ ${narrationNpcText}` : "",
             removeBlock = terminal.raw;
             events = Array.isArray(terminal.parsed.events) ? terminal.parsed.events : [];
             if (typeof terminal.parsed.emotion === "string") emotion = terminal.parsed.emotion;
-            if (Array.isArray(terminal.parsed.speakers)) speakers = terminal.parsed.speakers;
+            if (Array.isArray(terminal.parsed.speakers)) {
+              speakers = terminal.parsed.speakers;
+              speakersProvided = true;
+            }
           }
         }
         const validEvents = events.filter((event) => event && typeof event.id === "string" && event.id.trim());
@@ -7441,7 +8104,7 @@ ${narrationNpcText}` : "",
           if (validSpeakers.length === 3) break;
         }
         const rawNarrative = jsonBlock ? source.slice(0, source.lastIndexOf(removeBlock)).trim() : source.trim();
-        return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...emotion !== void 0 ? { emotion } : {}, ...validSpeakers.length ? { speakers: validSpeakers } : {} };
+        return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...emotion !== void 0 ? { emotion } : {}, ...speakersProvided ? { speakers: validSpeakers } : {} };
       }
       function terminalJson(source) {
         const starts = [];
@@ -7468,6 +8131,10 @@ ${narrationNpcText}` : "",
           return names.some((name) => name && haystack.includes(name));
         }).map((npc) => npc.id);
       }
+      function npcStateLine(schema2, state2, id) {
+        const summary = npcSummary3(schema2, state2, id);
+        return summary ? `${id}: ${summary}` : "";
+      }
       function reputationCategories(schema2) {
         const ladder = (schema2.ladders || []).find((entry) => entry.id === "reputation");
         if (!ladder || !Array.isArray(ladder.axes)) return "";
@@ -7480,6 +8147,14 @@ ${narrationNpcText}` : "",
       }
       function npcListText(schema2) {
         return npcEntities(schema2).map((npc) => `${npc.id}: ${npc.nameKo}${npc.class ? ` (${npc.class})` : ""}`).join("\n");
+      }
+      function speakerCatalogText(catalog, npcIds) {
+        if (!Array.isArray(catalog) || !catalog.length) return "";
+        const wanted = new Set((npcIds || []).map((id) => String(id).toLowerCase()));
+        return catalog.filter((item) => item && item.npcId && (!wanted.size || wanted.has(String(item.npcId).toLowerCase()))).map((item) => {
+          const values = Array.isArray(item.emotions) ? item.emotions.filter(Boolean) : [];
+          return values.length ? `${item.npcId}: ${values.join(", ")}` : "";
+        }).filter(Boolean).join("\n");
       }
       function consumableListText(schema2, state2) {
         return (schema2.resources || []).filter((resource) => resource && resource.effect && Number(state2.resources && state2.resources[resource.id] || 0) >= 1).map((resource) => {
@@ -7539,6 +8214,88 @@ ${row3.entry.content}`).join("\n\n");
         return block && Array.isArray(block.instances) ? block.instances : [];
       }
       module.exports = { SYSTEM_PROMPT, buildSystemPrompt, formatEngineVerdicts, buildPrompt: buildPrompt2, buildNarrationPrompt: buildNarrationPrompt2, parseAssistantResponse: parseAssistantResponse2 };
+    }
+  });
+
+  // src/speakerResolver.js
+  var require_speakerResolver = __commonJS({
+    "src/speakerResolver.js"(exports, module) {
+      "use strict";
+      function normalized(value) {
+        return String(value == null ? "" : value).trim().normalize("NFKC").toLowerCase();
+      }
+      function npcEntities(schema2) {
+        const block = (schema2 && schema2.entities || []).find((entry) => entry && entry.type === "npc");
+        return block && Array.isArray(block.instances) ? block.instances : [];
+      }
+      function aliasesOf(npc) {
+        if (!npc) return [];
+        const aliases = Array.isArray(npc.aliases) ? npc.aliases : [];
+        return [npc.id, npc.name, npc.nameKo, npc.nameEn, ...aliases].filter(Boolean);
+      }
+      function findNpc(schema2, reference) {
+        const key = normalized(reference);
+        if (!key) return null;
+        return npcEntities(schema2).find((npc) => aliasesOf(npc).some((alias) => normalized(alias) === key)) || null;
+      }
+      function groupAliases(group) {
+        if (!group) return [];
+        return [group.charId, group.profile && group.profile.name].filter(Boolean);
+      }
+      function findGroup(groups, npc, reference) {
+        const keys = new Set([reference, ...aliasesOf(npc)].map(normalized).filter(Boolean));
+        return (groups || []).find((group) => groupAliases(group).some((alias) => keys.has(normalized(alias)))) || null;
+      }
+      function stateNpc(state2, canonicalId, reference) {
+        const npcs2 = state2 && state2.npcs || {};
+        const wanted = new Set([canonicalId, reference].map(normalized).filter(Boolean));
+        const key = Object.keys(npcs2).find((id) => wanted.has(normalized(id)));
+        return key ? npcs2[key] : null;
+      }
+      function emotionOf(group, requestedEmotion, preferEmotion) {
+        if (!group || !group.emotions || typeof group.emotions.keys !== "function") return void 0;
+        const wanted = normalized(requestedEmotion);
+        if (wanted) {
+          const exact = Array.from(group.emotions.keys()).find((emotion) => normalized(emotion) === wanted);
+          if (exact) return exact;
+        }
+        return typeof preferEmotion === "function" ? preferEmotion(group) : Array.from(group.emotions.keys())[0];
+      }
+      function resolveSpeaker2({ schema: schema2, groups, state: state2, reference, requestedEmotion, preferEmotion, pickAsset } = {}) {
+        const raw = String(reference == null ? "" : reference).trim();
+        if (!raw) return null;
+        const npc = findNpc(schema2, raw);
+        const group = findGroup(groups, npc, raw);
+        const id = String(npc && npc.id || group && group.charId || raw);
+        const name = String(npc && (npc.nameKo || npc.name || npc.nameEn) || group && group.profile && group.profile.name || id);
+        const emotion = emotionOf(group, requestedEmotion, preferEmotion);
+        const npcState = stateNpc(state2, id, raw);
+        const outfit = npcState && Number.isFinite(Number(npcState.outfit)) ? Number(npcState.outfit) : void 0;
+        const picked = group && emotion && typeof pickAsset === "function" ? pickAsset(group, emotion, outfit) : null;
+        return { id, name, npc, group, emotion, outfit, asset: picked && picked.asset };
+      }
+      function resolveSpeakerList2({ schema: schema2, groups, state: state2, items, preferEmotion, pickAsset } = {}) {
+        const resolved = [];
+        const byId = /* @__PURE__ */ new Map();
+        for (const item of Array.isArray(items) ? items : []) {
+          if (!item || typeof item !== "object") continue;
+          const presentation = resolveSpeaker2({ schema: schema2, groups, state: state2, reference: item.npcId, requestedEmotion: item.emotion, preferEmotion, pickAsset });
+          if (!presentation || !presentation.group) continue;
+          if (byId.has(presentation.id)) {
+            if (item.focus === true) byId.get(presentation.id).requestedFocus = true;
+            continue;
+          }
+          const entry = { npcId: presentation.id, emotion: presentation.emotion, focus: false, requestedFocus: item.focus === true };
+          byId.set(presentation.id, entry);
+          resolved.push(entry);
+          if (resolved.length === 3) break;
+        }
+        let focusIndex = -1;
+        for (let i = 0; i < resolved.length; i += 1) if (resolved[i].requestedFocus) focusIndex = i;
+        if (focusIndex < 0 && resolved.length) focusIndex = resolved.length - 1;
+        return resolved.map((entry, index) => ({ npcId: entry.npcId, emotion: entry.emotion, focus: index === focusIndex }));
+      }
+      module.exports = { aliasesOf, findNpc, findGroup, normalized, resolveSpeaker: resolveSpeaker2, resolveSpeakerList: resolveSpeakerList2 };
     }
   });
 
@@ -7926,6 +8683,7 @@ ${row3.entry.content}`).join("\n\n");
   // src/llm/byokSettings.js
   var require_byokSettings = __commonJS({
     "src/llm/byokSettings.js"(exports, module) {
+      "use strict";
       var { providerDef } = require_providers();
       function providerConfig3(settings3) {
         return {
@@ -8029,6 +8787,17 @@ skills\uC5D0\uB294 \uB8F0\uBD81\uC5D0 \uC774\uB984\uACFC \uCF54\uC2A4\uD2B8\xB7\
         return SYSTEM_PROMPT + SETTLEMENT_SCHEMA_APPENDIX + TRADE_SCHEMA_APPENDIX + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX + QUEST_SCHEMA_APPENDIX + INCIDENT_SCHEMA_APPENDIX;
       }
       function buildCompilerInput2(lore, mined) {
+        const coverage = analyzeCompilerCoverage(lore, mined);
+        if (!coverage.totalEntries && !coverage.minedBlock) return promptTemplate().replace("{{RULEBOOK}}", mockRulebook());
+        if (coverage.omittedEntries > 0 && typeof console !== "undefined" && console.info) {
+          console.info("[simbot] compiler input trimmed", {
+            included: coverage.includedEntries,
+            omitted: coverage.omittedEntries
+          });
+        }
+        return promptTemplate().replace("{{RULEBOOK}}", coverage.rulebookText);
+      }
+      function analyzeCompilerCoverage(lore, mined) {
         const entries = Array.isArray(lore && lore.entries) ? lore.entries : [];
         const rows = entries.filter((entry) => String(entry && entry.content || "").trim()).map((entry, index) => ({
           index,
@@ -8037,23 +8806,36 @@ skills\uC5D0\uB294 \uB8F0\uBD81\uC5D0 \uC774\uB984\uACFC \uCF54\uC2A4\uD2B8\xB7\
           content: String(entry.content || "")
         }));
         const minedBlock = formatMinedRules(mined);
-        if (!rows.length && !minedBlock) return promptTemplate().replace("{{RULEBOOK}}", mockRulebook());
         const constantRows = rows.filter((row3) => row3.constant);
         const restRows = rows.filter((row3) => !row3.constant).sort((a, b) => b.content.length - a.content.length || a.index - b.index);
-        const selected = minedBlock ? [minedBlock] : [];
+        const selectedBlocks = minedBlock ? [minedBlock] : [];
+        const selectedRows = [];
         let used = minedBlock.length;
         for (const row3 of constantRows.concat(restRows)) {
           const block = formatEntry(row3);
-          if (used + block.length > MAX_RULEBOOK_CHARS && selected.length) continue;
-          selected.push(block);
+          if (used + block.length > MAX_RULEBOOK_CHARS && selectedBlocks.length) continue;
+          selectedBlocks.push(block);
+          selectedRows.push(row3);
           used += block.length;
           if (used >= MAX_RULEBOOK_CHARS) break;
         }
-        const omitted = rows.length - (selected.length - (minedBlock ? 1 : 0));
-        if (omitted > 0 && typeof console !== "undefined" && console.info) {
-          console.info("[simbot] compiler input trimmed", { included: rows.length - omitted, omitted });
-        }
-        return promptTemplate().replace("{{RULEBOOK}}", selected.join("\n\n").slice(0, MAX_RULEBOOK_CHARS));
+        const selectedIndexes = new Set(selectedRows.map((row3) => row3.index));
+        const omittedRows = rows.filter((row3) => !selectedIndexes.has(row3.index));
+        return {
+          maxChars: MAX_RULEBOOK_CHARS,
+          totalEntries: rows.length,
+          includedEntries: selectedRows.length,
+          omittedEntries: omittedRows.length,
+          includedChars: selectedRows.reduce((sum, row3) => sum + row3.content.length, 0),
+          omittedChars: omittedRows.reduce((sum, row3) => sum + row3.content.length, 0),
+          included: selectedRows.map(publicCoverageRow),
+          omitted: omittedRows.map(publicCoverageRow),
+          minedBlock,
+          rulebookText: selectedBlocks.join("\n\n").slice(0, MAX_RULEBOOK_CHARS)
+        };
+      }
+      function publicCoverageRow(row3) {
+        return { index: row3.index, name: row3.name, constant: row3.constant, chars: row3.content.length };
       }
       function parseCompilerOutput2(text) {
         const source = String(text || "");
@@ -8158,7 +8940,7 @@ ${row3.content}`;
       function clone(value) {
         return JSON.parse(JSON.stringify(value));
       }
-      module.exports = { SYSTEM_PROMPT, buildCompilerInput: buildCompilerInput2, parseCompilerOutput: parseCompilerOutput2, mockCompilerOutput: mockCompilerOutput2, formatMinedRules };
+      module.exports = { SYSTEM_PROMPT, buildCompilerInput: buildCompilerInput2, analyzeCompilerCoverage, parseCompilerOutput: parseCompilerOutput2, mockCompilerOutput: mockCompilerOutput2, formatMinedRules };
     }
   });
 
@@ -8206,13 +8988,40 @@ ${row3.content}`;
             tableCount: tableNames.length,
             ruleTableCount: ruleTableNames.length,
             ruleTableNames,
-            setVarCount
+            setVarCount,
+            moduleSummary: summarizeModule(moduleRoot),
+            cardScriptSummary: {
+              luaEffects: cardScripts.luaParts.length,
+              luaChars: cardLua.length,
+              defaultVariableLines: cardScripts.defaultVars.totalLines
+            }
           };
           logMine(result);
           return result;
         } catch (err) {
           return fallback(err && err.message ? err.message : String(err || "mining failed"));
         }
+      }
+      function summarizeModule(moduleRoot) {
+        if (!moduleRoot || typeof moduleRoot !== "object") return null;
+        const triggers = Array.isArray(moduleRoot.trigger) ? moduleRoot.trigger : [];
+        const regex = Array.isArray(moduleRoot.regex) ? moduleRoot.regex : [];
+        const lorebook = Array.isArray(moduleRoot.lorebook) ? moduleRoot.lorebook : [];
+        const assets = Array.isArray(moduleRoot.assets) ? moduleRoot.assets : [];
+        const effects = triggers.flatMap((trigger) => Array.isArray(trigger && trigger.effect) ? trigger.effect : []);
+        const effectTypes = {};
+        for (const effect of effects) {
+          const type = String(effect && effect.type || "unknown");
+          effectTypes[type] = (effectTypes[type] || 0) + 1;
+        }
+        return {
+          name: String(moduleRoot.name || ""),
+          triggerCount: triggers.length,
+          regexCount: regex.length,
+          loreCount: lorebook.length,
+          assetCount: assets.length,
+          effectTypes
+        };
       }
       function collectCardScripts(parsed) {
         const risuai = parsed && parsed.card && parsed.card.data && parsed.card.data.extensions && parsed.card.data.extensions.risuai;
@@ -8601,6 +9410,205 @@ ${row3.content}`;
         parseNumberRange,
         normalizeRanges
       };
+    }
+  });
+
+  // src/llm/cardDiagnosis.js
+  var require_cardDiagnosis = __commonJS({
+    "src/llm/cardDiagnosis.js"(exports, module) {
+      "use strict";
+      var { mineCard: mineCard2 } = require_luaMine();
+      var { analyzeCompilerCoverage } = require_compilerPrompt();
+      var CAPABILITY_RULES = [
+        ["combat", /전투|공략|레이드|combat|battle|raid/i, "rpg.combat"],
+        ["quests", /퀘스트|의뢰|임무|목표|quest|mission|objective/i, "rpg.quests"],
+        ["progression", /레벨|경험치|스탯 포인트|성장|level|\bexp\b|growth/i, "core.progression"],
+        ["inventory", /인벤토리|소지품|아이템|inventory|items?/i, "core.inventory"],
+        ["equipment", /장비|무기|방어구|장신구|equipment|weapon|armou?r|accessor/i, "core.equipment"],
+        ["party", /파티|제대|분대|편성|party|echelon|squad|formation/i, "rpg.party"],
+        ["time", /날짜|시간|달력|일정|주간|date|time|calendar|schedule|weekly/i, "core.time"],
+        ["location", /장소|지역|지도|이동|location|region|map|travel/i, "core.location"],
+        ["economy", /경제|가격|재화|화폐|골드|코인|상점|시장|econom|price|currency|gold|coin|shop|store|market/i, "rpg.shop"],
+        ["facilities", /시설\s*(?:관리|경영|레벨|업그레이드)|기지\s*(?:관리|경영|건설)|영지\s*(?:운영|경영)|facility\s*(?:management|level|upgrade)|base\s*(?:management|building)|domain\s*management/i, "core.facilities"],
+        ["factions", /세력|길드|협회|조직|faction|guild|association|organization/i, "core.factions"],
+        ["relations", /호감도|관계도|친밀도|relationship\s+affinity|affinity\s+(?:with|toward)/i, "core.relations"],
+        ["crafting", /제작|연금술|조합|craft|alchemy|recipe/i, "rpg.crafting"],
+        ["jobs", /제조\s*(?:시간|대기|완료)|수복\s*(?:시간|대기|완료)|건설\s*(?:시간|대기|완료)|manufactur(?:ing)?\s*(?:queue|time|complete)|repair\s*(?:queue|time|complete)|construction\s*(?:queue|time|project)/i, "core.jobs"],
+        ["screens", /상태창|패널|화면|status window|panel|screen|\bhud\b/i, null],
+        ["events", /사건|이벤트|돌발|incident|event|encounter/i, null]
+      ];
+      function diagnoseCard2(parsed, lore, suppliedMined) {
+        const mined = suppliedMined || mineCard2(parsed);
+        const data = cardData(parsed);
+        const entries = Array.isArray(lore && lore.entries) ? lore.entries : [];
+        const realEntries = entries.filter((entry) => !entry.isFolder && String(entry.content || "").trim());
+        const description = String(data.description || "");
+        const firstMessage = String(data.first_mes || "");
+        const postInstructions = String(data.post_history_instructions || "");
+        const alternateGreetings = Array.isArray(data.alternate_greetings) ? data.alternate_greetings : [];
+        const risu = data.extensions && data.extensions.risuai || {};
+        const assets = Array.isArray(parsed && parsed.assets) ? parsed.assets : [];
+        const coverage = analyzeCompilerCoverage(lore, mined);
+        const macroStats = countMacros([description, firstMessage, postInstructions, ...alternateGreetings, ...realEntries.map((entry) => entry.content)].join("\n"));
+        const capabilities = detectCapabilities(description, realEntries);
+        const assetSummary = summarizeAssets(assets);
+        const htmlChars = String(risu.backgroundHTML || "").length + String(risu.inlayViewScreen || "").length;
+        const luaChars = Number(mined && mined.luaSize || 0) + Number(mined && mined.cardLuaSize || 0);
+        const regexCount = Number(mined && mined.moduleSummary && mined.moduleSummary.regexCount || 0);
+        const issues = [];
+        if (coverage.omittedEntries > 0) issues.push(issue(
+          "warn",
+          "compiler_input_trimmed",
+          `\uCEF4\uD30C\uC77C \uC785\uB825\uC5D0\uC11C \uB85C\uC5B4 ${coverage.omittedEntries}\uAC1C(${coverage.omittedChars.toLocaleString("ko-KR")}\uC790)\uAC00 \uC81C\uC678\uB429\uB2C8\uB2E4.`,
+          coverage.omitted.slice(0, 20).map((entry) => entry.name)
+        ));
+        if (luaChars > 0) issues.push(issue(
+          "warn",
+          "embedded_runtime_code",
+          `Lua ${luaChars.toLocaleString("ko-KR")}\uC790\uB294 \uC2E4\uD589\uD558\uC9C0 \uC54A\uACE0 \uC815\uC801 \uBD84\uC11D\uB9CC \uD569\uB2C8\uB2E4.`,
+          mined && mined.moduleSummary && mined.moduleSummary.name ? [mined.moduleSummary.name] : []
+        ));
+        if (regexCount > 0) issues.push(issue(
+          "info",
+          "display_regex_requires_translation",
+          `\uC815\uADDC\uC2DD\xB7\uD654\uBA74 \uBCC0\uD658 ${regexCount}\uAC1C\uB294 \uC548\uC804\uD55C \uC704\uC82F\uC73C\uB85C \uC62E\uAE38\uC9C0 \uAC80\uD1A0\uD574\uC57C \uD569\uB2C8\uB2E4.`
+        ));
+        if (htmlChars > 0) issues.push(issue(
+          "info",
+          "html_requires_translation",
+          `\uCE74\uB4DC HTML ${htmlChars.toLocaleString("ko-KR")}\uC790\uB294 \uADF8\uB300\uB85C \uC2E4\uD589\uD558\uC9C0 \uC54A\uACE0 \uD654\uBA74 \uC120\uC5B8\uC73C\uB85C \uBCC0\uD658\uD574\uC57C \uD569\uB2C8\uB2E4.`
+        ));
+        if (assetSummary.nonUnderscoreSchemes > 0) issues.push(issue(
+          "info",
+          "asset_naming_requires_mapping",
+          `\uC5D0\uC14B ${assetSummary.nonUnderscoreSchemes.toLocaleString("ko-KR")}\uAC1C\uAC00 \uC810\xB7\uACF5\uBC31\xB7& \uBA85\uBA85\uBC95\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4. canonical \uC778\uBB3C \uB9E4\uD551\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.`
+        ));
+        const entityKeys = entityKeySet(realEntries);
+        const featureFlags = Object.entries(mined && mined.defaultVars && mined.defaultVars.numbers || {}).filter(([id, value]) => (value === 0 || value === 1) && !entityKeys.has(String(id).toLowerCase())).slice(0, 100).map(([id, value]) => ({ id, enabled: value === 1 }));
+        return {
+          contract: "card-diagnosis/0.1",
+          card: {
+            name: String(data.name || parsed && parsed.name || parsed && parsed.source || "\uC774\uB984 \uC5C6\uB294 \uCE74\uB4DC"),
+            format: String(parsed && parsed.format || "unknown"),
+            spec: String(parsed && parsed.card && parsed.card.spec || parsed && parsed.spec || ""),
+            source: String(parsed && parsed.source || "")
+          },
+          classification: classify({ assets: assets.length, realEntries: realEntries.length, description, luaChars, regexCount, macroStats, capabilities }),
+          content: {
+            loreEntries: realEntries.length,
+            loreChars: realEntries.reduce((sum, entry) => sum + String(entry.content || "").length, 0),
+            constantEntries: realEntries.filter((entry) => entry.constant).length,
+            alternateGreetings: alternateGreetings.length,
+            descriptionChars: description.length,
+            firstMessageChars: firstMessage.length,
+            postInstructionChars: postInstructions.length
+          },
+          runtime: {
+            embeddedModule: mined && mined.moduleSummary || null,
+            luaChars,
+            cardScripts: mined && mined.cardScriptSummary || null,
+            defaultVariableLines: Number(mined && mined.defaultVars && mined.defaultVars.totalLines || 0),
+            featureFlags,
+            macros: macroStats,
+            htmlChars
+          },
+          assets: assetSummary,
+          dependencies: {
+            sourceRefs: Array.isArray(risu.source) ? risu.source.slice() : [],
+            additionalAssets: Array.isArray(risu.additionalAssets) ? risu.additionalAssets.length : 0,
+            embeddedModules: Array.isArray(parsed && parsed.embeddedModules) ? parsed.embeddedModules.slice() : []
+          },
+          capabilities,
+          suggestedModules: Array.from(new Set(capabilities.map((item) => item.module).filter(Boolean))),
+          compilerCoverage: {
+            maxChars: coverage.maxChars,
+            totalEntries: coverage.totalEntries,
+            includedEntries: coverage.includedEntries,
+            omittedEntries: coverage.omittedEntries,
+            includedChars: coverage.includedChars,
+            omittedChars: coverage.omittedChars,
+            omitted: coverage.omitted
+          },
+          issues
+        };
+      }
+      function entityKeySet(entries) {
+        const out = /* @__PURE__ */ new Set();
+        for (const entry of entries) {
+          if (entry && entry.name) out.add(String(entry.name).trim().toLowerCase());
+          for (const key of Array.isArray(entry && entry.keys) ? entry.keys : []) {
+            if (String(key).trim()) out.add(String(key).trim().toLowerCase());
+          }
+        }
+        return out;
+      }
+      function cardData(parsed) {
+        const card = parsed && parsed.card || {};
+        return card.data || card || {};
+      }
+      function detectCapabilities(description, entries) {
+        const sources = [{ name: "\uCE74\uB4DC \uC124\uBA85", content: description }, ...entries.map((entry) => ({
+          name: String(entry.name || entry.comment || "\uC774\uB984 \uC5C6\uB294 \uB85C\uC5B4"),
+          content: `${entry.name || ""}
+${entry.content || ""}`
+        }))];
+        return CAPABILITY_RULES.flatMap(([id, pattern, module2]) => {
+          const evidence = sources.filter((source) => pattern.test(source.content)).slice(0, 8).map((source) => source.name);
+          return evidence.length ? [{ id, module: module2, evidence }] : [];
+        });
+      }
+      function countMacros(text) {
+        const counts = {};
+        for (const match of String(text || "").matchAll(/\{\{\s*([^}:\s]+)(?:::|:|\s|\}\})/g)) {
+          const key = String(match[1]).toLowerCase();
+          counts[key] = (counts[key] || 0) + 1;
+        }
+        return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([id, count2]) => ({ id, count: count2 }));
+      }
+      function summarizeAssets(assets) {
+        const media = {};
+        const naming = { underscore: 0, dot: 0, ampersand: 0, space: 0, plain: 0 };
+        for (const asset of assets) {
+          const mediaType = String(asset && (asset.mime || asset.ext) || "unknown");
+          media[mediaType] = (media[mediaType] || 0) + 1;
+          const name = String(asset && asset.name || "");
+          let matched = false;
+          if (name.includes("_")) {
+            naming.underscore++;
+            matched = true;
+          }
+          if (name.includes(".")) {
+            naming.dot++;
+            matched = true;
+          }
+          if (name.includes("&")) {
+            naming.ampersand++;
+            matched = true;
+          }
+          if (name.includes(" ")) {
+            naming.space++;
+            matched = true;
+          }
+          if (!matched) naming.plain++;
+        }
+        const nonUnderscoreSchemes = assets.filter((asset) => {
+          const name = String(asset && asset.name || "");
+          return !name.includes("_") && (name.includes(".") || name.includes("&") || name.includes(" "));
+        }).length;
+        return { count: assets.length, media, naming, nonUnderscoreSchemes };
+      }
+      function classify(input2) {
+        if (input2.assets > 0 && !input2.realEntries && !input2.description && !input2.luaChars) return "asset-pack";
+        if (input2.luaChars > 0 || input2.regexCount > 0) return "script-assisted-sim";
+        const variableMacros = input2.macroStats.filter((item) => ["getvar", "setvar", "addvar", "incvar", "decvar"].includes(item.id)).reduce((sum, item) => sum + item.count, 0);
+        if (variableMacros >= 20) return "declarative-sim";
+        if (input2.capabilities.length >= 4) return "prose-sim";
+        return "narrative-card";
+      }
+      function issue(level, code, message, evidence = []) {
+        return { level, code, message, evidence };
+      }
+      module.exports = { diagnoseCard: diagnoseCard2, detectCapabilities, countMacros, summarizeAssets };
     }
   });
 
@@ -9955,13 +10963,13 @@ ${row3.content}`;
     }
   });
 
-  // ../schema/hunters-combat.v0.json
-  var require_hunters_combat_v0 = __commonJS({
-    "../schema/hunters-combat.v0.json"(exports, module) {
+  // ../schema/generic-combat.v0.json
+  var require_generic_combat_v0 = __commonJS({
+    "../schema/generic-combat.v0.json"(exports, module) {
       module.exports = {
         meta: {
-          id: "hunters-combat",
-          title: "\uD5CC\uD130 \uC804\uD22C \uCF54\uC5B4 (\uCC38\uC870 \uC2A4\uD0A4\uB9C8)",
+          id: "generic-combat-reference",
+          title: "\uBC94\uC6A9 \uC804\uD22C \uCF54\uC5B4 (\uCC38\uC870 \uC2A4\uD0A4\uB9C8 \xB7 \uC5BC\uD5CC \uC544\uB2D8)",
           schemaVersion: "0.1"
         },
         pools: [
@@ -10019,6 +11027,7 @@ ${row3.content}`;
 
   // src/main.js
   var import_parseCard = __toESM(require_parseCard());
+  var import_risuCompatibility = __toESM(require_risuCompatibility());
   var import_cardAssets = __toESM(require_cardAssets());
   var import_normalize2 = __toESM(require_normalize());
 
@@ -10607,7 +11616,7 @@ ${Array.from(extras).join(" ")}` : text;
   // src/engineSession.js
   var defaultSchema = require_yongsa_inn_v0();
   var { createState } = require_createState();
-  var { applyEvent } = require_applyEvent();
+  var { applyEvent, getRegisteredEventIds } = require_applyEvent();
   var { createRng } = require_rng();
   var activeSchema = defaultSchema;
   var seedValue = 42;
@@ -10615,42 +11624,9 @@ ${Array.from(extras).join(" ")}` : text;
   var rng = createRng(seedValue);
   var logs = [];
   var eventCount = 0;
-  var eventTypes = [
-    "checkin",
-    "checkout",
-    "sale",
-    "purchase",
-    "purchase_batch",
-    "upgrade",
-    "gain_resource",
-    "hire",
-    "set_wage",
-    "fire",
-    "scale_delta",
-    "set_scale_mult",
-    "set_outfit",
-    "rep_event",
-    "exp_gain",
-    "reward",
-    "attempt_quest",
-    "gold_delta",
-    "resource_delta",
-    "use_item",
-    "buy_item",
-    "start_encounter",
-    "combat_action",
-    "enemy_action",
-    "enemy_turn",
-    "end_encounter",
-    "traffic_wave",
-    "incident_choice",
-    "lodging_review",
-    "lodging_accept",
-    "lodging_reject",
-    "mail_check",
-    "mail_open",
-    "day_end"
-  ];
+  function getEventTypes() {
+    return getRegisteredEventIds();
+  }
   var buttonOnlyEvents = /* @__PURE__ */ new Set([
     "traffic_wave",
     "incident_choice",
@@ -10927,7 +11903,7 @@ ${Array.from(extras).join(" ")}` : text;
     const panel = el("section", "engine-console");
     const form = el("div", "engine-form");
     const select = el("select");
-    for (const type of eventTypes) appendOption(select, type, type, false);
+    for (const type of getEventTypes()) appendOption(select, type, type, false);
     select.value = selectedEvent;
     select.addEventListener("change", () => {
       selectedEvent = select.value;
@@ -11256,6 +12232,7 @@ ${Array.from(extras).join(" ")}` : text;
   var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement, roomStatus: roomStatus2, staffMax: staffMax2 } = require_selectors();
   var { estimateTokens, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
   var { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require_prompt();
+  var { resolveSpeaker, resolveSpeakerList } = require_speakerResolver();
   var { PROVIDERS, callProvider } = require_providers();
   var { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require_byokSettings();
   var { el: el2, button: button2, field: field2, row, notice, hiddenBase, namedInput: namedInput2, namedTextarea, namedSelect: namedSelect2, appendOption: appendOption2, copyFallback: fallbackCopy } = require_dom();
@@ -11684,32 +12661,32 @@ ${Array.from(extras).join(" ")}` : text;
     } else showInitial();
     return wrap;
   }
-  function npcPresentation(schema2, npcId) {
-    const npc = entityInstances(schema2, "npc").find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
-    const group = stageGroup(npcId);
-    const pick = group && selectAsset(group, preferredEmotion(group), outfitOf(npcId));
-    return { name: npc && (npc.nameKo || npc.name || npc.nameEn) || String(npcId), asset: pick && pick.asset, group };
-  }
-  function stageGroup(npcId) {
-    const npc = entityInstances(getSchema() || {}, "npc").find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
-    const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
-    return npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+  function npcPresentation(schema2, npcId, emotion) {
+    return resolveSpeaker({
+      schema: schema2,
+      groups: npcGroups,
+      state: getEngineState(),
+      reference: npcId,
+      requestedEmotion: emotion,
+      preferEmotion: preferredEmotion,
+      pickAsset: selectAsset
+    }) || { id: String(npcId), name: String(npcId), asset: null, group: null };
   }
   function applySpeakers(parsed) {
-    if (!parsed || !Array.isArray(parsed.speakers)) return;
-    stage = parsed.speakers.slice(0, 3).filter((item) => stageGroup(item.npcId)).map((item) => ({
-      npcId: item.npcId,
-      ...typeof item.emotion === "string" ? { emotion: item.emotion } : {},
-      focus: item.focus === true
-    }));
-    if (stage.length && !stage.some((item) => item.focus)) stage[stage.length - 1].focus = true;
+    stage = resolveSpeakerList({
+      schema: getSchema() || {},
+      groups: npcGroups,
+      state: getEngineState(),
+      items: parsed && parsed.speakers,
+      preferEmotion: preferredEmotion,
+      pickAsset: selectAsset
+    });
+    return stage.map((item) => item.npcId);
   }
   function renderStage(ctx) {
     let entries = stage.map((item) => {
-      const presentation = npcPresentation(getSchema() || {}, item.npcId);
-      const emotion = presentation.group.emotions.has(item.emotion) ? item.emotion : preferredEmotion(presentation.group);
-      const pick = selectAsset(presentation.group, emotion, outfitOf(item.npcId));
-      return pick && { name: presentation.name, asset: pick.asset, focus: item.focus };
+      const presentation = npcPresentation(getSchema() || {}, item.npcId, item.emotion);
+      return presentation.asset && { name: presentation.name, asset: presentation.asset, focus: item.focus };
     }).filter(Boolean);
     if (!entries.length) {
       if (!character || !character.group || !character.asset) return null;
@@ -11758,10 +12735,10 @@ ${Array.from(extras).join(" ")}` : text;
   function promptNpcIds(prompt) {
     return prompt && Array.isArray(prompt.relatedNpcIds) && prompt.relatedNpcIds.length ? [...prompt.relatedNpcIds] : void 0;
   }
-  function assistantMessage(content, chips, prompt = lastPrompt) {
+  function assistantMessage(content, chips, prompt = lastPrompt, npcIdsOverride) {
     const message = { role: "assistant", content, chips };
-    const npcIds = promptNpcIds(prompt);
-    if (npcIds) message.npcIds = npcIds;
+    const npcIds = npcIdsOverride === void 0 ? promptNpcIds(prompt) : npcIdsOverride;
+    if (npcIds && npcIds.length) message.npcIds = npcIds;
     return message;
   }
   function sceneLine() {
@@ -11771,6 +12748,12 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function emotions() {
     return character && character.group ? Array.from(character.group.emotions.keys()) : [];
+  }
+  function speakerCatalog() {
+    return npcGroups.map((group) => {
+      const presentation = npcPresentation(getSchema() || {}, group.charId);
+      return { npcId: presentation.id, name: presentation.name, emotions: Array.from(group.emotions.keys()) };
+    });
   }
   function outfitOf(npcId) {
     const state2 = getEngineState();
@@ -12156,12 +13139,11 @@ ${Array.from(extras).join(" ")}` : text;
     appendEventChips(event.id, result.entries, chips, resultTexts);
     const pending = { role: "assistant", content: "", chips };
     try {
-      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
+      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
       lastPrompt = prompt;
-      pending.npcIds = promptNpcIds(prompt);
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       applyEmotion(parsed.emotion);
-      applySpeakers(parsed);
+      pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -12197,12 +13179,11 @@ ${Array.from(extras).join(" ")}` : text;
     }
     const pending = { role: "assistant", content: "", chips };
     try {
-      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges, eventType: "lodging_batch" });
+      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: "lodging_batch" });
       lastPrompt = prompt;
-      pending.npcIds = promptNpcIds(prompt);
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       applyEmotion(parsed.emotion);
-      applySpeakers(parsed);
+      pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -12536,12 +13517,12 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const narrationResults = fastCombat ? [...fastCombatLog, ...resultTexts] : resultTexts;
       const recentChanges = ledgerDeltas.slice();
       if (fastCombat) fastCombatLog = [];
-      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges });
+      const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
-      applySpeakers(parsed);
+      pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
       pending.content = parsed.narrative || "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -12582,12 +13563,14 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const recentChanges = ledgerDeltas.slice();
     try {
       const instruction = "\uC774\uBC88 \uC7A5\uBA74\uC5D0 \uC5B4\uC6B8\uB9AC\uB294 \uC801 \uBA85\uBD80\uB85C start_encounter \uC0AC\uAC74 \uD558\uB098\uB9CC JSON\uC73C\uB85C \uB0B4\uB77C. \uC11C\uC0AC\uB294 1~2\uBB38\uC7A5\uB9CC \uD5C8\uC6A9\uD55C\uB2E4.";
-      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), recentChanges });
+      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
       lastPrompt = prompt;
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+      applyEmotion(parsed.emotion);
+      const speakerIds = applySpeakers(parsed);
       const event = parsed.events.find((item) => item.id === "start_encounter");
       if (!event) {
-        messages.push(assistantMessage(parsed.narrative || "", [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }]));
+        messages.push(assistantMessage(parsed.narrative || "", [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }], prompt, speakerIds));
       } else {
         const result = runEvent(event);
         const entry = result.entries[0] || { ok: false, reason: "empty_log" };
@@ -12596,7 +13579,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
         const item = summarizeEventItem("start_encounter", entry, formatMoney2);
         const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
         if (ignored > 0) chips.push({ ok: false, kind: "system", text: `\uB2E4\uB978 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
-        messages.push(assistantMessage(parsed.narrative, chips));
+        messages.push(assistantMessage(parsed.narrative, chips, prompt, speakerIds));
       }
     } catch (_) {
       messages.push(assistantMessage("", [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }]));
@@ -12613,12 +13596,12 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const recentChanges = ledgerDeltas.slice();
     try {
       const schema2 = getSchema();
-      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), recentChanges });
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
-      applySpeakers(parsed);
+      const speakerIds = applySpeakers(parsed);
       const chips = [];
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
@@ -12630,7 +13613,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
         const item = summarizeEventItem(event.id, first, formatMoney2);
         chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
       }
-      messages.push(assistantMessage(parsed.narrative || raw, chips));
+      messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
     } catch (err) {
       messages.push(assistantMessage(safeError(err), [{ ok: false, kind: "system", text: "API \uC624\uB958" }]));
     } finally {
@@ -12648,12 +13631,12 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     try {
       const schema2 = getSchema();
       const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === "assistant");
-      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), recentChanges });
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
       applyEmotion(parsed.emotion);
-      applySpeakers(parsed);
+      const speakerIds = applySpeakers(parsed);
       const chips = [];
       if (parsed.dropped > 0) chips.push({ ok: false, kind: "system", text: `\uD615\uC2DD \uC624\uB958 \uC0AC\uAC74 ${parsed.dropped}\uAC1C \uBB34\uC2DC\uB428` });
       const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
@@ -12668,7 +13651,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
       const combatNow = getEngineState().combat;
       if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
-      messages.push(assistantMessage(parsed.narrative || raw, chips));
+      messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
     } catch (err) {
       messages.push(assistantMessage(safeError(err), [{ ok: false, kind: "system", text: "API \uC624\uB958" }]));
     } finally {
@@ -12839,6 +13822,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   // src/importView.js
   var { buildCompilerInput, parseCompilerOutput, mockCompilerOutput } = require_compilerPrompt();
   var { mineCard } = require_luaMine();
+  var { diagnoseCard } = require_cardDiagnosis();
   var { patchSchemaWithMined } = require_schemaPatch();
   var { PROVIDERS: PROVIDERS2, callProvider: callProvider2 } = require_providers();
   var { providerConfig: providerConfig2, loadSettings: loadSettings2, saveSettings: saveSettings2, registerCustomOrigin: registerCustomOrigin2, readKey: readKey2, keyName: keyName2, defaultModel: defaultModel2 } = require_byokSettings();
@@ -12970,11 +13954,11 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       addLog(ctx, "\uB0B4\uC7A5(\uAE30\uBCF8) \uC2A4\uD0A4\uB9C8\uB85C \uB418\uB3CC\uB838\uC2B5\uB2C8\uB2E4. \uD50C\uB808\uC774 \uD0ED\uC5D0\uC11C \uB9E4\uB044\uB7FD\uAC8C \uD50C\uB808\uC774\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
       render2();
     });
-    const combatSchema = button3("\uB0B4\uC7A5 \uC804\uD22C \uC2A4\uD0A4\uB9C8(\uD5CC\uD130) \uC801\uC6A9", "secondary-btn");
+    const combatSchema = button3("\uBC94\uC6A9 \uC804\uD22C \uCF54\uC5B4 \uC0D8\uD50C \uC801\uC6A9", "secondary-btn");
     combatSchema.disabled = busy2;
     combatSchema.addEventListener("click", () => {
-      setActiveSchema(require_hunters_combat_v0());
-      addLog(ctx, "\uB0B4\uC7A5 \uC804\uD22C \uC2A4\uD0A4\uB9C8 \uC801\uC6A9\uB428 \xB7 \uD50C\uB808\uC774 \uD0ED\uC5D0\uC11C \uC804\uD22C\uB97C \uD14C\uC2A4\uD2B8\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4");
+      setActiveSchema(require_generic_combat_v0());
+      addLog(ctx, "\uBC94\uC6A9 \uC804\uD22C \uCF54\uC5B4 \uC0D8\uD50C \uC801\uC6A9\uB428 \xB7 Alternate Hunters V2 \uAD6C\uD604\uC774 \uC544\uB2CC \uCEE4\uB110 \uD14C\uC2A4\uD2B8\uC6A9\uC785\uB2C8\uB2E4.");
       ctx.goToPlay();
     });
     buttonRow.append(compile, revert, combatSchema);
@@ -13020,8 +14004,88 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
       log.append(list);
     }
-    panel.append(status, log);
+    panel.append(status);
+    if (ctx && ctx.parsed) panel.append(renderCardDiagnosis(ctx));
+    panel.append(log);
     return panel;
+  }
+  function renderCardDiagnosis(ctx) {
+    const report = diagnosisFor(ctx);
+    const section = titled2("\uCE74\uB4DC MRI \xB7 \uCEF4\uD30C\uC77C \uC804 \uC9C4\uB2E8");
+    const summary = el3("p", "muted-line");
+    summary.textContent = `${classificationLabel(report.classification)} \xB7 \uB85C\uC5B4 ${report.content.loreEntries}\uAC1C \xB7 \uC5D0\uC14B ${report.assets.count.toLocaleString("ko-KR")}\uAC1C`;
+    section.append(summary);
+    const list = el3("div", "engine-list");
+    const moduleName = report.runtime.embeddedModule && report.runtime.embeddedModule.name;
+    const rows = [
+      ["\uB0B4\uC7A5 \uBAA8\uB4C8", moduleName || "\uC5C6\uC74C"],
+      ["Lua", `${report.runtime.luaChars.toLocaleString("ko-KR")}\uC790`],
+      ["\uAE30\uB2A5 \uC2E0\uD638", report.capabilities.length ? report.capabilities.map((item) => item.id).join(", ") : "\uC5C6\uC74C"],
+      ["\uCD94\uCC9C \uBAA8\uB4C8", report.suggestedModules.length ? report.suggestedModules.join(", ") : "\uC5C6\uC74C"],
+      ["\uCEF4\uD30C\uC77C \uC785\uB825", `${report.compilerCoverage.includedEntries}/${report.compilerCoverage.totalEntries}\uAC1C \uD3EC\uD568`]
+    ];
+    for (const [label, value] of rows) {
+      const rowNode = el3("div", "engine-list-row");
+      rowNode.textContent = `${label}: ${value}`;
+      list.append(rowNode);
+    }
+    section.append(list);
+    if (ctx && ctx.compatibility) section.append(renderCompatibilitySummary(ctx.compatibility));
+    if (report.runtime.featureFlags.length) {
+      const flags = el3("p", "muted-line");
+      flags.textContent = `\uAE30\uB2A5 \uD1A0\uAE00: ${report.runtime.featureFlags.map((flag) => `${flag.id}=${flag.enabled ? "\uCF1C\uC9D0" : "\uAEBC\uC9D0"}`).join(", ")}`;
+      section.append(flags);
+    }
+    if (report.issues.length) {
+      const issues = el3("div", "engine-list");
+      for (const item of report.issues) {
+        const rowNode = el3("div", item.level === "warn" ? "engine-list-row engine-warning" : "engine-list-row");
+        rowNode.textContent = `${item.level === "warn" ? "\uAC80\uD1A0 \uD544\uC694" : "\uC548\uB0B4"} \xB7 ${item.message}`;
+        issues.append(rowNode);
+      }
+      section.append(issues);
+    }
+    if (report.compilerCoverage.omittedEntries > 0) {
+      const details = el3("details", "import-raw-details");
+      const detailsSummary = el3("summary");
+      detailsSummary.textContent = `\uCEF4\uD30C\uC77C\uC5D0\uC11C \uC81C\uC678\uB420 \uB85C\uC5B4 ${report.compilerCoverage.omittedEntries}\uAC1C \uBCF4\uAE30`;
+      const omitted = el3("p", "muted-line");
+      omitted.textContent = report.compilerCoverage.omitted.map((entry) => entry.name).join(", ");
+      details.append(detailsSummary, omitted);
+      section.append(details);
+    }
+    return section;
+  }
+  function renderCompatibilitySummary(envelope) {
+    const wrap = el3("div", "compatibility-summary");
+    const heading = el3("h4");
+    heading.textContent = "Risu \uD638\uD658\uC131 \xB7 \uC6D0\uBCF8 \uBCF4\uC874 \uC0C1\uD0DC";
+    const totals = envelope.compatibility && envelope.compatibility.totals || {};
+    const summary = el3("p", "muted-line");
+    summary.textContent = `\uC9C0\uC6D0 ${totals.supported || 0} \xB7 \uC548\uC804 \uBCC0\uD658 ${totals.translated || 0} \xB7 \uC6D0\uBCF8 \uBCF4\uC874 ${totals.preserved || 0} \xB7 \uC800\uD558 ${totals.degraded || 0} \xB7 \uC2E4\uD589 \uCC28\uB2E8 ${totals.blocked || 0}`;
+    wrap.append(heading, summary);
+    const list = el3("div", "engine-list");
+    const labels = { supported: "\uC9C0\uC6D0", translated: "\uC548\uC804 \uBCC0\uD658", preserved: "\uC6D0\uBCF8 \uBCF4\uC874", degraded: "\uC77C\uBD80 \uC800\uD558", blocked: "\uC2E4\uD589 \uCC28\uB2E8" };
+    for (const feature of envelope.compatibility.features || []) {
+      const rowNode = el3("div", `engine-list-row compatibility-${feature.status}`);
+      rowNode.textContent = `${labels[feature.status] || feature.status} \xB7 ${feature.label}${feature.count ? ` ${feature.count}\uAC1C` : ""} \u2014 ${feature.reason}`;
+      list.append(rowNode);
+    }
+    wrap.append(list);
+    const raw = envelope.raw || {};
+    const preserved = el3("p", "muted-line");
+    preserved.textContent = `\uC6D0\uBCF8 \uCEE8\uD14C\uC774\uB108 ${Array.isArray(raw.containerEntries) ? raw.containerEntries.length : 0}\uAC1C \uD56D\uBAA9 \xB7 \uC6D0\uBCF8 \uBC14\uC774\uD2B8 ${raw.sourceBytes ? "\uBCF4\uC874\uB428" : "\uC5C6\uC74C"}`;
+    wrap.append(preserved);
+    return wrap;
+  }
+  function classificationLabel(value) {
+    return {
+      "asset-pack": "\uC5D0\uC14B \uD329",
+      "narrative-card": "\uB300\uD654\uD615 \uCE74\uB4DC",
+      "prose-sim": "\uC0B0\uBB38 \uADDC\uCE59\uD615 \uC2DC\uBBAC",
+      "declarative-sim": "\uC120\uC5B8\uD615 \uC2DC\uBBAC",
+      "script-assisted-sim": "\uC2A4\uD06C\uB9BD\uD2B8 \uBCF4\uC870\uD615 \uC2DC\uBBAC"
+    }[value] || value;
   }
   function renderSettings2(render2) {
     const details = el3("details", "play-settings import-settings");
@@ -13283,7 +14347,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     const cfg = providerConfig2(settings2);
     let mined = null;
     if (cfg.provider !== "mock") {
-      mined = mineCard(ctx && ctx.parsed);
+      mined = minedFor(ctx);
       addLog(ctx, formatMineLog(mined));
     }
     render2();
@@ -13308,6 +14372,20 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       busy2 = false;
       refreshImport();
     }
+  }
+  function minedFor(ctx) {
+    const key = cardKey(ctx);
+    const entry = stateByCard.get(key) || { log: [] };
+    if (!entry.mined) entry.mined = mineCard(ctx && ctx.parsed);
+    stateByCard.set(key, entry);
+    return entry.mined;
+  }
+  function diagnosisFor(ctx) {
+    const key = cardKey(ctx);
+    const entry = stateByCard.get(key) || { log: [] };
+    if (!entry.diagnosis) entry.diagnosis = diagnoseCard(ctx && ctx.parsed, ctx && ctx.lore, minedFor(ctx));
+    stateByCard.set(key, entry);
+    return entry.diagnosis;
   }
   function formatMineLog(mined) {
     if (!mined || !mined.hasModule) {
@@ -13424,6 +14502,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
   var state = {
     parsed: null,
     lore: null,
+    compatibility: null,
     file: null,
     activeTab: "play",
     shellMode: "player",
@@ -13628,8 +14707,10 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       const bytes = new Uint8Array(await file.arrayBuffer());
       const parsed = (0, import_parseCard.parseCard)(bytes, file.name, { lazy: true });
       const lore = (0, import_normalize2.extractLorebook)(parsed.card);
+      const compatibility = (0, import_risuCompatibility.createRisuCompatibilityEnvelope)(parsed, lore);
       state.parsed = parsed;
       state.lore = lore;
+      state.compatibility = compatibility;
       state.file = { name: file.name, size: file.size, type: file.type || "" };
       state.activeTab = "play";
       state.shellMode = "player";
@@ -13647,6 +14728,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     } catch (err) {
       state.parsed = null;
       state.lore = null;
+      state.compatibility = null;
       state.file = null;
       state.error = err && err.message ? err.message : String(err);
       setMessage(`\uD30C\uC2F1 \uC2E4\uD328: ${state.error}`);
@@ -13704,6 +14786,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     return {
       parsed: state.parsed,
       lore: state.lore,
+      compatibility: state.compatibility,
       file: state.file,
       objectUrlFor,
       revokeViewUrls,

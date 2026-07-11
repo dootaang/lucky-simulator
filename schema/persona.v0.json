@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simbot.local/schema/persona.v0.json",
+  "title": "Persona 0.1",
+  "type": "object",
+  "required": ["contract", "id", "name", "prompt", "icon", "note", "embeddedModule", "source", "version"],
+  "properties": {
+    "contract": { "const": "persona/0.1" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "prompt": { "type": "string" },
+    "icon": { "type": "string" },
+    "note": { "type": "string" },
+    "embeddedModule": { "type": ["object", "null"] },
+    "source": { "type": ["object", "null"] },
+    "version": { "type": "integer", "minimum": 1 }
+  },
+  "additionalProperties": false
+}

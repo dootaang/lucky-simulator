@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simbot.local/schema/risu-compatibility-envelope.v0.json",
+  "title": "Risu Compatibility Envelope 0.1",
+  "type": "object",
+  "required": ["contract", "source", "raw", "normalized", "compatibility", "provenance"],
+  "properties": {
+    "contract": { "const": "risu-compatibility/0.1" },
+    "source": {
+      "type": "object",
+      "required": ["format", "version", "fileName", "displayName"],
+      "properties": {
+        "format": { "enum": ["charx", "png", "jpeg", "json", "risum", "persona-png", "risup", "unknown"] },
+        "version": { "type": "string" },
+        "fileName": { "type": "string" },
+        "displayName": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "raw": {
+      "type": "object",
+      "required": ["card", "sourceBytes", "containerEntries", "extensions"],
+      "properties": {
+        "card": {},
+        "sourceBytes": { "description": "Runtime Uint8Array or null; binary serialization is handled by the package layer" },
+        "containerEntries": { "type": "array", "items": { "$ref": "#/$defs/containerEntry" } },
+        "extensions": { "type": "object" }
+      }
+    },
+    "normalized": {
+      "type": "object",
+      "required": ["character", "lorebooks", "assets", "modules", "persona", "promptPreset"],
+      "properties": {
+        "character": { "type": ["object", "null"] },
+        "lorebooks": { "type": "array" },
+        "assets": { "type": "array" },
+        "modules": { "type": "array" },
+        "persona": { "type": ["object", "null"] },
+        "promptPreset": { "type": ["object", "null"] }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["features", "totals"],
+      "properties": {
+        "features": { "type": "array", "items": { "$ref": "#/$defs/feature" } },
+        "totals": { "type": "object" }
+      }
+    },
+    "provenance": { "type": "array" }
+  },
+  "$defs": {
+    "containerEntry": {
+      "type": "object",
+      "required": ["name", "size", "kind"],
+      "properties": { "name": { "type": "string" }, "size": { "type": "number", "minimum": 0 }, "kind": { "type": "string" } }
+    },
+    "feature": {
+      "type": "object",
+      "required": ["id", "label", "status", "count", "reason", "evidence"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "status": { "enum": ["supported", "preserved", "translated", "degraded", "blocked"] },
+        "count": { "type": "number", "minimum": 0 },
+        "reason": { "type": "string" },
+        "evidence": { "type": "array" }
+      }
+    }
+  }
+}

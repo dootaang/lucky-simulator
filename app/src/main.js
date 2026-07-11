@@ -1,4 +1,5 @@
 import { parseCard } from '../core/card/parseCard.js';
+import { createRisuCompatibilityEnvelope } from '../core/compat/risuCompatibility.js';
 import { cardAssetBytes } from '../core/card/cardAssets.js';
 import { extractLorebook, loreStats } from '../core/lorebook/normalize.js';
 import { renderNpcGallery, buildNpcClusters } from './npcGallery.js';
@@ -36,6 +37,7 @@ let allowedCustomOrigin = '';
 const state = {
   parsed: null,
   lore: null,
+  compatibility: null,
   file: null,
   activeTab: 'play',
   shellMode: 'player',
@@ -241,8 +243,10 @@ async function loadFile(file) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const parsed = parseCard(bytes, file.name, { lazy: true });
     const lore = extractLorebook(parsed.card);
+    const compatibility = createRisuCompatibilityEnvelope(parsed, lore);
     state.parsed = parsed;
     state.lore = lore;
+    state.compatibility = compatibility;
     state.file = { name: file.name, size: file.size, type: file.type || '' };
     state.activeTab = 'play';
     state.shellMode = 'player';
@@ -260,6 +264,7 @@ async function loadFile(file) {
   } catch (err) {
     state.parsed = null;
     state.lore = null;
+    state.compatibility = null;
     state.file = null;
     state.error = err && err.message ? err.message : String(err);
     setMessage(`파싱 실패: ${state.error}`);
@@ -322,6 +327,7 @@ function createContext() {
   return {
     parsed: state.parsed,
     lore: state.lore,
+    compatibility: state.compatibility,
     file: state.file,
     objectUrlFor,
     revokeViewUrls,

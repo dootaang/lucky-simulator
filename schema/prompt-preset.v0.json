@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simbot.local/schema/prompt-preset.v0.json",
+  "title": "Prompt Preset 0.1",
+  "type": "object",
+  "required": ["contract", "id", "name", "compatibilityMode", "version", "blocks", "settings", "raw"],
+  "properties": {
+    "contract": { "const": "prompt-preset/0.1" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "compatibilityMode": { "enum": ["risu", "simpack"] },
+    "version": { "type": "integer", "minimum": 1 },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "name", "enabled", "source"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["plain", "jailbreak", "description", "persona", "lorebook", "chat", "authornote", "memory", "cache", "postEverything", "engineFacts", "availableActions", "groundedMemory"] },
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "source": { "type": ["object", "null"] }
+        },
+        "additionalProperties": true
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": ["assistantPrefill", "sendNames", "sendChatAsSystem"],
+      "properties": {
+        "assistantPrefill": { "type": "string" },
+        "sendNames": { "type": "boolean" },
+        "sendChatAsSystem": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "raw": {}
+  },
+  "additionalProperties": false
+}

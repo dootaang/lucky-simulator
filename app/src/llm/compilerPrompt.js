@@ -52,6 +52,21 @@ function promptTemplate() {
 }
 
 function buildCompilerInput(lore, mined) {
+  const coverage = analyzeCompilerCoverage(lore, mined);
+  if (!coverage.totalEntries && !coverage.minedBlock) return promptTemplate().replace('{{RULEBOOK}}', mockRulebook());
+
+  if (coverage.omittedEntries > 0 && typeof console !== 'undefined' && console.info) {
+    console.info('[simbot] compiler input trimmed', {
+      included: coverage.includedEntries,
+      omitted: coverage.omittedEntries,
+    });
+  }
+  return promptTemplate().replace('{{RULEBOOK}}', coverage.rulebookText);
+}
+
+// 컴파일 전에 무엇이 모델 입력에 들어가고 무엇이 잘리는지 같은 규칙으로 계산한다.
+// UI와 Card MRI가 이 결과를 사용해야 실제 컴파일과 진단 보고서가 어긋나지 않는다.
+function analyzeCompilerCoverage(lore, mined) {
   const entries = Array.isArray(lore && lore.entries) ? lore.entries : [];
   const rows = entries
     .filter((entry) => String(entry && entry.content || '').trim())
@@ -63,26 +78,40 @@ function buildCompilerInput(lore, mined) {
     }));
 
   const minedBlock = formatMinedRules(mined);
-  if (!rows.length && !minedBlock) return promptTemplate().replace('{{RULEBOOK}}', mockRulebook());
 
   const constantRows = rows.filter((row) => row.constant);
   const restRows = rows.filter((row) => !row.constant).sort((a, b) => b.content.length - a.content.length || a.index - b.index);
-  const selected = minedBlock ? [minedBlock] : [];
+  const selectedBlocks = minedBlock ? [minedBlock] : [];
+  const selectedRows = [];
   let used = minedBlock.length;
 
   for (const row of constantRows.concat(restRows)) {
     const block = formatEntry(row);
-    if (used + block.length > MAX_RULEBOOK_CHARS && selected.length) continue;
-    selected.push(block);
+    if (used + block.length > MAX_RULEBOOK_CHARS && selectedBlocks.length) continue;
+    selectedBlocks.push(block);
+    selectedRows.push(row);
     used += block.length;
     if (used >= MAX_RULEBOOK_CHARS) break;
   }
 
-  const omitted = rows.length - (selected.length - (minedBlock ? 1 : 0));
-  if (omitted > 0 && typeof console !== 'undefined' && console.info) {
-    console.info('[simbot] compiler input trimmed', { included: rows.length - omitted, omitted });
-  }
-  return promptTemplate().replace('{{RULEBOOK}}', selected.join('\n\n').slice(0, MAX_RULEBOOK_CHARS));
+  const selectedIndexes = new Set(selectedRows.map((row) => row.index));
+  const omittedRows = rows.filter((row) => !selectedIndexes.has(row.index));
+  return {
+    maxChars: MAX_RULEBOOK_CHARS,
+    totalEntries: rows.length,
+    includedEntries: selectedRows.length,
+    omittedEntries: omittedRows.length,
+    includedChars: selectedRows.reduce((sum, row) => sum + row.content.length, 0),
+    omittedChars: omittedRows.reduce((sum, row) => sum + row.content.length, 0),
+    included: selectedRows.map(publicCoverageRow),
+    omitted: omittedRows.map(publicCoverageRow),
+    minedBlock,
+    rulebookText: selectedBlocks.join('\n\n').slice(0, MAX_RULEBOOK_CHARS),
+  };
+}
+
+function publicCoverageRow(row) {
+  return { index: row.index, name: row.name, constant: row.constant, chars: row.content.length };
 }
 
 function parseCompilerOutput(text) {
@@ -201,4 +230,4 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-module.exports = { SYSTEM_PROMPT, buildCompilerInput, parseCompilerOutput, mockCompilerOutput, formatMinedRules };
+module.exports = { SYSTEM_PROMPT, buildCompilerInput, analyzeCompilerCoverage, parseCompilerOutput, mockCompilerOutput, formatMinedRules };

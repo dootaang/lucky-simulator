@@ -55,7 +55,9 @@ function parseCard(bytes, hintName, opts = {}) {
     else if (fmt === 'risum') parsed = opts.lazy ? parseRisumIndex(b) : parseRisumCard(b);
     else parsed = parseJsonCard(b); // jpeg(평문 JSON) / json
   }
-  return Object.assign({ format: fmt, source: hintName || null }, parsed);
+  // 원본 바이트는 호환 봉투가 알 수 없는 필드·컨테이너를 훗날 손실 없이 다시 내보내는 근거다.
+  // 복사하지 않고 입력 Uint8Array 참조를 공유하므로 대형 카드 메모리를 두 배로 쓰지 않는다.
+  return Object.assign({ format: fmt, source: hintName || null, _sourceBytes: b }, parsed);
 }
 
 module.exports = { parseCard, detectFormat, embeddedZipStart };

@@ -82,6 +82,7 @@ function parseJsonCard(bytesIn) {
     assets,
     card,
     embeddedUnresolved,
+    containerEntries: [{ name: 'card.json', size: b.length, kind: 'json-document' }],
   };
 }
 

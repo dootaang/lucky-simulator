@@ -46,12 +46,40 @@ function mineCard(parsed) {
       ruleTableCount: ruleTableNames.length,
       ruleTableNames,
       setVarCount,
+      moduleSummary: summarizeModule(moduleRoot),
+      cardScriptSummary: {
+        luaEffects: cardScripts.luaParts.length,
+        luaChars: cardLua.length,
+        defaultVariableLines: cardScripts.defaultVars.totalLines,
+      },
     };
     logMine(result);
     return result;
   } catch (err) {
     return fallback(err && err.message ? err.message : String(err || 'mining failed'));
   }
+}
+
+function summarizeModule(moduleRoot) {
+  if (!moduleRoot || typeof moduleRoot !== 'object') return null;
+  const triggers = Array.isArray(moduleRoot.trigger) ? moduleRoot.trigger : [];
+  const regex = Array.isArray(moduleRoot.regex) ? moduleRoot.regex : [];
+  const lorebook = Array.isArray(moduleRoot.lorebook) ? moduleRoot.lorebook : [];
+  const assets = Array.isArray(moduleRoot.assets) ? moduleRoot.assets : [];
+  const effects = triggers.flatMap((trigger) => Array.isArray(trigger && trigger.effect) ? trigger.effect : []);
+  const effectTypes = {};
+  for (const effect of effects) {
+    const type = String(effect && effect.type || 'unknown');
+    effectTypes[type] = (effectTypes[type] || 0) + 1;
+  }
+  return {
+    name: String(moduleRoot.name || ''),
+    triggerCount: triggers.length,
+    regexCount: regex.length,
+    loreCount: lorebook.length,
+    assetCount: assets.length,
+    effectTypes,
+  };
 }
 
 function collectCardScripts(parsed) {

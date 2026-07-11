@@ -93,6 +93,11 @@ test('card scripts and defaultVariables are mined without module.risum', () => {
   assert.deepEqual(mined.tables.upgradeCosts, { room: [10, 20] });
   assert.equal(mined.defaultVars.numbers.v19, 19);
   assert.equal(mined.cardLuaSize > 0, true);
+  assert.deepEqual(mined.cardScriptSummary, {
+    luaEffects: 1,
+    luaChars: mined.cardLuaSize,
+    defaultVariableLines: 20,
+  });
 });
 
 test('missing module and card scripts retains prose fallback', () => {

@@ -35,7 +35,9 @@ function parseCharxIndex(bytes) {
       found: exists, size: exists ? (sizes[path] || 0) : 0, bytes: null,
     };
   });
-  return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, lazy: true, _bytes: b };
+  const embeddedModules = Array.from(names).filter((name) => /\.risum$/i.test(name));
+  const containerEntries = Array.from(names).sort().map((name) => ({ name, size: sizes[name] || 0, kind: 'zip-entry' }));
+  return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, embeddedModules, containerEntries, lazy: true, _bytes: b };
 }
 
 // 지연 에셋 1개를 압축해제(캐시). bytes는 색인에 쓴 원본 charx 버퍼.
@@ -72,7 +74,9 @@ function parseCharx(bytes) {
     };
   });
 
-  return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card };
+  const embeddedModules = Object.keys(files).filter((name) => /\.risum$/i.test(name));
+  const containerEntries = Object.keys(files).sort().map((name) => ({ name, size: files[name].length, kind: 'zip-entry' }));
+  return { spec: card.spec, specVersion: card.spec_version, name: data.name, assets, card, embeddedModules, containerEntries };
 }
 
 module.exports = { parseCharx, parseCharxIndex, decodeCharxAsset, assetDataUrl, autoMap, deriveTag, buildImageMappings };
