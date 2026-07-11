@@ -13,7 +13,7 @@
         "recallAt10": 0.16,
         "mrr": 0.125,
         "ndcgAt10": 0.13392789260714374,
-        "attributionPrecision": 1,
+        "attributionPrecision": 0.050333333333333334,
         "supersededRejectionRate": 1
       },
       "facts": {
@@ -33,7 +33,7 @@
         "recallAt10": 0.73,
         "mrr": 0.35865397510985764,
         "ndcgAt10": 0.43463058392957543,
-        "attributionPrecision": 1,
+        "attributionPrecision": 0.1178333333333332,
         "supersededRejectionRate": 1
       },
       "facts": {
@@ -51,9 +51,9 @@
         "recallAt1": 0.1,
         "recallAt5": 0.22,
         "recallAt10": 0.5,
-        "mrr": 0.18515854978354973,
+        "mrr": 0.18399188311688305,
         "ndcgAt10": 0.24508617206035105,
-        "attributionPrecision": 1,
+        "attributionPrecision": 0.04450000000000002,
         "supersededRejectionRate": 1
       },
       "facts": {
@@ -69,20 +69,20 @@
     "D. simbot-hybrid": {
       "retrieval": {
         "recallAt1": 0.16,
-        "recallAt5": 0.48,
-        "recallAt10": 0.7,
-        "mrr": 0.2981031972413551,
-        "ndcgAt10": 0.3829649020134454,
-        "attributionPrecision": 1,
+        "recallAt5": 0.49,
+        "recallAt10": 0.72,
+        "mrr": 0.3049532175340998,
+        "ndcgAt10": 0.3939983338383455,
+        "attributionPrecision": 0.10099999999999998,
         "supersededRejectionRate": 1
       },
       "facts": {
         "supersededAsCurrentCount": 0,
-        "forbiddenClaimCount": 30
+        "forbiddenClaimCount": 31
       },
       "resources": {
-        "meanMemoryTokens": 139.95833333333334,
-        "maxMemoryTokens": 193,
+        "meanMemoryTokens": 141.21666666666667,
+        "maxMemoryTokens": 186,
         "budgetTokens": 2000
       }
     }

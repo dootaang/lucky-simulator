@@ -114,6 +114,8 @@ function renderReport(results, provider) {
   lines.push('');
   lines.push('## 해석 주의');
   lines.push('');
+  lines.push('- **근거 정확도(top5)** = 상위 5 hit 중 실제 정답 근거인 비율(precision@5). 정답 없는 negative는 제외. (이전 버전은 "출처 필드 존재"만 봐 항상 100%였던 것을 교정.)');
+  lines.push('- **폐기 기억 거부율**은 `supersededRecordIds`를 가진 질문(current-fact 20문항)에서 "폐기된 과거값이 현재 사실 블록에 안 들어갔는지"를 측정한다. superseded 카테고리 질문은 정답 자체가 과거값(회상 대상)이라 이 지표의 대상이 아니며, 대신 forbiddenClaims로 "과거를 현재로 단정" 여부를 잡는다.');
   lines.push('- negative 카테고리는 정답 record가 없으므로 Recall 집계에서 제외되고, "금지 문구 회상" 건수로만 평가한다.');
   lines.push('- 고정 provider는 어휘가 겹치는 바꿔 말하기에만 신호를 준다. 진짜 동의어·의역 회수 능력은 Voyage 측정에서 판단한다.');
   lines.push('- authoritative 현재 사실은 구조화 lookup(B·D)만 제공한다. A·C는 현재 사실 블록이 비어 폐기값 노출 위험이 구조적으로 다르다.');

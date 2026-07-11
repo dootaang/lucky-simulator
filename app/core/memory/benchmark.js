@@ -39,17 +39,17 @@ function ndcgAt(hits, relevant, k) {
   return idcg === 0 ? 0 : dcg / idcg;
 }
 
-// 근거 정확도 — 상위 k hit이 실제 근거 message/event를 갖는 비율.
+// 근거 정확도(precision@k) — 상위 k hit 중 실제 정답 근거(relevant record)인 비율.
+// 감사 지적 반영: 이전 정의는 "출처 필드 존재"만 봐서 오답을 검색해도 100%가 나오는
+// 착시였다. 이제 정답 집합 대비 정밀도를 재므로 무관한 검색은 점수가 떨어진다.
 function attributionPrecision(hits, question, corpus, k = 5) {
-  const top = hits.slice(0, k);
-  if (!top.length) return null;
   const relevant = relevantIdsOf(question, corpus);
-  if (!relevant.size) return null;
-  let attributed = 0;
-  for (const hit of top) {
-    if ((hit.sourceMessageIds && hit.sourceMessageIds.length) || (hit.sourceEventIndexes && hit.sourceEventIndexes.length)) attributed += 1;
-  }
-  return attributed / top.length;
+  if (!relevant.size) return null; // 정답 없는 negative 등은 집계 제외
+  const top = hits.slice(0, k);
+  if (!top.length) return 0;
+  let correct = 0;
+  for (const hit of top) if (relevant.has(hit.recordId)) correct += 1;
+  return correct / top.length;
 }
 
 // 폐기 기억 거부율 — supersededRecordIds가 상위 k "현재 사실"에 안 들어간 비율.

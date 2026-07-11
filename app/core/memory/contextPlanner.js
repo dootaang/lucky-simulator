@@ -15,6 +15,14 @@ function currentRecords(records, atTurn) {
   return records.filter((r) => r.validFromTurn <= atTurn && (r.validToTurn == null || r.validToTurn >= atTurn));
 }
 
+// authoritative "현재 사실"로 취급하는 종류 — B·D 비교군이 동일 집합을 쓰도록 공유
+// (감사 지적: event 포함 여부가 두 플래너에서 엇갈렸음). 위치(event)·수치(engine-fact)·
+// 관계(relation)는 전부 현재 상태이며, 폐기값은 currentRecords 필터가 이미 배제한다.
+const CURRENT_FACT_KINDS = new Set(['engine-fact', 'relation', 'event']);
+function authoritativeFacts(records, atTurn) {
+  return currentRecords(records, atTurn).filter((r) => CURRENT_FACT_KINDS.has(r.kind));
+}
+
 function hitOf(record, extra) {
   return Object.assign({
     recordId: record.id,
@@ -40,8 +48,7 @@ function planRecentOnly(corpus, question, { recentMessages = 12 } = {}) {
 
 // B. Structured + lexical — 현재 사실 exact lookup + 어휘 검색.
 function planStructuredLexical(corpus, question, lexicalIndex, { topK = 20 } = {}) {
-  const current = currentRecords(corpus.records, question.atTurn);
-  const currentFacts = current.filter((r) => r.kind === 'engine-fact' || r.kind === 'relation' || r.kind === 'event');
+  const currentFacts = authoritativeFacts(corpus.records, question.atTurn);
   const lex = lexicalSearch(lexicalIndex, question.query, topK);
   const hits = lex.map((s, i) => hitOf(s.record, { score: s.score, lexicalScore: s.score, selectedBecause: ['lexical', `rank-${i + 1}`] }));
   return { hits, currentFacts: currentFacts.map((r) => hitOf(r, { selectedBecause: ['structured-current'] })) };
@@ -72,8 +79,11 @@ async function planHypaV3(corpus, question, semanticIndex, options = {}) {
     added += 1;
   }
   // 무작위 기억 — Math.random 대신 seed LCG(결정론 재현). hypa-compatible-random 격리.
+  // 시드는 queryId 문자열 전체를 FNV 해시(감사 지적: length만 쓰면 같은 길이 질문끼리 셔플 충돌).
   const remaining = pool.filter((r) => !selected.has(r.id));
-  let state = (seed ^ question.queryId.length) >>> 0;
+  let qhash = 2166136261;
+  for (let i = 0; i < question.queryId.length; i += 1) { qhash ^= question.queryId.charCodeAt(i); qhash = Math.imul(qhash, 16777619); }
+  let state = (seed ^ (qhash >>> 0)) >>> 0;
   const nextRand = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
   const shuffled = remaining
     .map((r) => ({ r, k: nextRand() }))
@@ -85,12 +95,12 @@ async function planHypaV3(corpus, question, semanticIndex, options = {}) {
 }
 
 // D. Simbot hybrid — authoritative facts > structured events > important > lexical > semantic > summary.
-async function planSimbotHybrid(corpus, question, lexicalIndex, semanticIndex, { topK = 20 } = {}) {
-  const current = currentRecords(corpus.records, question.atTurn);
-  // 1) authoritative 현재 사실 — 폐기값 제외.
-  const currentFacts = current.filter((r) => r.kind === 'engine-fact' || r.kind === 'relation');
-  const lex = lexicalSearch(lexicalIndex, question.query, topK);
-  const sem = await semanticSearch(semanticIndex, question.query, topK);
+async function planSimbotHybrid(corpus, question, lexicalIndex, semanticIndex, { topK = 20, poolK = 50 } = {}) {
+  // 1) authoritative 현재 사실 — B와 동일 집합, 폐기값 제외.
+  const currentFacts = authoritativeFacts(corpus.records, question.atTurn);
+  // 융합 전엔 넉넉히(poolK) 뽑고 최종만 topK로 자른다(감사 지적: 조기 삭감으로 상위 후보 유실 방지).
+  const lex = lexicalSearch(lexicalIndex, question.query, poolK);
+  const sem = await semanticSearch(semanticIndex, question.query, poolK);
   // 2) 어휘·의미 순위를 RRF로 융합해 relevance를 1순위로 두고, 사용자 고정 important 기억은
   //    약한 가산 부스트로만 반영한다(하드 재정렬은 정확 매칭을 밀어내 recall을 떨어뜨린다).
   const fused = reciprocalRankFusion([lex.map((s) => s.recordId), sem.map((s) => s.recordId)]);
