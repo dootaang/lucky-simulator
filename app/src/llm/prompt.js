@@ -146,11 +146,11 @@ function formatEngineVerdicts(chips) {
   return `[엔진 판정 — 직전 턴 사건 처리 결과]\n${lines.join('\n')}`;
 }
 
-function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions, recentChanges }) {
+function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions, speakerCatalog, recentChanges }) {
   const combatCapable = isCombatCapable(schema);
   const stateText = summarize(schema, state);
   const npcIds = relatedNpcIds(schema, state, recentMessages, userInput);
-  const npcText = npcIds.map((id) => npcSummary(schema, state, id)).filter(Boolean).join('\n');
+  const npcText = npcIds.map((id) => npcStateLine(schema, state, id)).filter(Boolean).join('\n');
   const repCats = reputationCategories(schema);
   const expCats = expCategories(schema);
   const npcList = npcListText(schema);
@@ -163,6 +163,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   const loreText = loreContext(lore, recentMessages, userInput);
   const verdictText = formatEngineVerdicts(lastVerdicts);
   const changesText = formatRecentChanges(recentChanges);
+  const speakerText = speakerCatalogText(speakerCatalog, npcIds);
 
   const context = [
     '[상태]',
@@ -176,6 +177,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     repCats ? '[평판 카테고리]\n' + repCats + '\n' : '',
     expCats ? '[경험치 카테고리]\n' + expCats + '\n' : '',
     npcList ? '[NPC 목록]\n' + npcList + '\n' : '',
+    speakerText ? '[NPC별 사용 가능한 감정 스프라이트]\n' + speakerText + '\n' : '',
     menuList ? '[메뉴 목록]\n' + menuList + '\n' : '',
     roomList ? '[객실 목록]\n' + roomList + '\n' : '',
     facilityList ? '[시설 목록]\n' + facilityList + '\n' : '',
@@ -183,7 +185,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     itemList ? '[소모품 목록]\n' + itemList + '\n' : '',
     questList ? '[의뢰 목록]\n' + questList + '\n' : '',
     Array.isArray(emotions) && emotions.length ? `응답 JSON에는 events 배열을 반드시 그대로 유지한 채, 선택 필드 "emotion"(주인공의 현재 표정)을 함께 넣어도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
-    '등장 인물이 있으면 "speakers":[{"npcId","emotion","focus"}]도 넣어라(최대 3, focus는 주 화자 1인). npcId는 [직원 관계 상태]·[NPC]에 나온 id 그대로. emotion은 스프라이트 감정명(주인공 감정 목록과 같은 어휘, 확신 없으면 생략).',
+    '등장 인물이 있으면 "speakers":[{"npcId","emotion","focus"}]도 넣어라(최대 3, focus는 주 화자 정확히 1인). npcId는 [NPC 목록]의 id 그대로. emotion은 [NPC별 사용 가능한 감정 스프라이트]에 해당 NPC가 있을 때 그 목록에서만 고르고, 없거나 확신 없으면 생략.',
     '[세계 정보]',
     loreText || (lore ? '없음' : '카드를 드롭하면 세계관 로어북이 자동 주입됩니다'),
     '',
@@ -200,6 +202,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     repCats: estimateTokens(repCats),
     expCats: estimateTokens(expCats),
     npcList: estimateTokens(npcList),
+    speakers: estimateTokens(speakerText),
     menuList: estimateTokens(menuList),
     roomList: estimateTokens(roomList),
     facilityList: estimateTokens(facilityList),
@@ -217,18 +220,20 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     injectedTokens,
     injectedParts,
     relatedNpcIds: npcIds,
-    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, ...(questList ? { quests: questList } : {}), lore: loreText },
+    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, speakers: speakerText, items: itemList, ...(questList ? { quests: questList } : {}), lore: loreText },
   };
 }
 
-function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages, emotions, recentChanges, decisionContext, eventType }) {
+function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages, emotions, speakerCatalog, recentChanges, decisionContext, eventType }) {
   const stateText = summarize(schema, state);
   const combatActive = !!(state.combat && state.combat.active);
   const combatLine = stateText.split('\n').find((line) => line.startsWith('[전투]')) || '[전투] 종료됨';
   const managementLines = stateText.split('\n').filter((line) => /^\[(자원|여관|직원|객실|소지품)\]/.test(line)).slice(0, 5).join('\n') || '상태 변화 없음';
-  const narrationNpcIds = (state.staff || []).map((item) => item.npcId);
-  const narrationNpcText = narrationNpcIds.map((id) => npcSummary(schema, state, id)).filter(Boolean).join('\n');
   const resultText = (results || []).map((result) => typeof result === 'string' ? result : String((result && result.text) || '')).filter(Boolean).join('\n');
+  const narrationNpcIds = relatedNpcIds(schema, state, recentMessages, `${resultText}\n${flavorText || ''}`);
+  const narrationNpcText = narrationNpcIds.map((id) => npcStateLine(schema, state, id)).filter(Boolean).join('\n');
+  const npcList = npcListText(schema);
+  const speakerText = speakerCatalogText(speakerCatalog, narrationNpcIds);
   const changesText = formatRecentChanges(recentChanges);
   const context = [
     combatActive ? '[확정된 전투 결과]' : '[확정된 결과]',
@@ -239,21 +244,23 @@ function buildNarrationPrompt({ schema, state, results, flavorText, recentMessag
     changesText ? '' : '',
     decisionContext || '',
     combatActive ? combatLine : managementLines,
-    narrationNpcText ? `[직원 관계 상태 — 수치나 단계가 변했을 때만 서사에 언급하고, 변화가 없으면 관계 묘사를 생략하라. 이전 서사에서 쓴 관계 묘사 문구를 그대로 반복하지 마라]\n${narrationNpcText}` : '',
+    narrationNpcText ? `[NPC 관계 상태 — 수치나 단계가 변했을 때만 서사에 언급하고, 변화가 없으면 관계 묘사를 생략하라. 이전 서사에서 쓴 관계 묘사 문구를 그대로 반복하지 마라]\n${narrationNpcText}` : '',
+    npcList ? `[NPC 목록 — 등장인물의 npcId는 반드시 이 id 사용]\n${npcList}` : '',
+    speakerText ? `[NPC별 사용 가능한 감정 스프라이트]\n${speakerText}` : '',
     flavorText ? `플레이어의 연출 의도: ${flavorText}` : '',
     Array.isArray(emotions) && emotions.length ? `서사 뒤에 \`\`\`json {"emotion":"값"} \`\`\` 블록을 덧붙여도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
-    '등장 인물이 있으면 "speakers":[{"npcId","emotion","focus"}]도 넣어라(최대 3, focus는 주 화자 1인). npcId는 [직원 관계 상태]·[NPC]에 나온 id 그대로. emotion은 스프라이트 감정명(주인공 감정 목록과 같은 어휘, 확신 없으면 생략).',
+    '등장 인물이 있으면 "speakers":[{"npcId","emotion","focus"}]도 넣어라(최대 3, focus는 주 화자 정확히 1인). npcId는 [NPC 목록]의 id 그대로. emotion은 [NPC별 사용 가능한 감정 스프라이트]에 해당 NPC가 있을 때 그 목록에서만 고르고, 없거나 확신 없으면 생략.',
   ].filter(Boolean).join('\n');
   const messages = conversationMessages([...(recentMessages || []).slice(-4), { role: 'user', content: context }]);
   const injectedState = combatActive ? combatLine : managementLines;
-  const injectedParts = { state: estimateTokens(injectedState), results: estimateTokens(resultText), flavor: estimateTokens(flavorText || '') };
+  const injectedParts = { state: estimateTokens(injectedState), results: estimateTokens(resultText), flavor: estimateTokens(flavorText || ''), npcList: estimateTokens(npcList), speakers: estimateTokens(speakerText) };
   return {
     system: buildSystemPrompt(schema, state).split('\n\n[절대 규칙]')[0] + `\n\n아래 [확정된${combatActive ? ' 전투' : ''} 결과]는 엔진이 이미 계산·반영한 사실이다. 이 수치${combatActive ? '·생사' : ''}를 그대로 따라 한국어로 짧게(250자 내외) 서사화하라. 결과를 바꾸거나 새 사건 JSON을 내지 마라. 엔진 결과에 없는 날짜·시간 경과, 거래, 재고 변화, 파견 과정, 직원 신분을 창작하지 마라.${eventType === 'day_end' ? '' : ' 날짜와 일차를 진행시키지 마라.'}${decisionContext ? ' 화면의 결정 카드가 선택지를 담당한다. 본문에 대응 방법을 제안·열거하거나 사용자에게 무엇을 선택할지 묻지 마라.' : ''}`,
     messages,
     injectedTokens: Object.values(injectedParts).reduce((sum, value) => sum + value, 0),
     injectedParts,
     relatedNpcIds: narrationNpcIds,
-    injectedText: { state: injectedState, results: resultText, flavorText: flavorText || '' },
+    injectedText: { state: injectedState, results: resultText, npcList, speakers: speakerText, flavorText: flavorText || '' },
     timeoutMs: 30000,
     retries429: 1,
   };
@@ -287,6 +294,7 @@ function parseAssistantResponse(text) {
   let events = [];
   let emotion;
   let speakers;
+  let speakersProvided = false;
   let jsonBlock = null;
   let removeBlock = null;
   if (blocks.length) {
@@ -296,7 +304,7 @@ function parseAssistantResponse(text) {
       const parsed = JSON.parse(jsonBlock);
       events = Array.isArray(parsed.events) ? parsed.events : [];
       if (typeof parsed.emotion === 'string') emotion = parsed.emotion;
-      if (Array.isArray(parsed.speakers)) speakers = parsed.speakers;
+      if (Array.isArray(parsed.speakers)) { speakers = parsed.speakers; speakersProvided = true; }
     } catch (_) {
       events = [];
     }
@@ -307,7 +315,7 @@ function parseAssistantResponse(text) {
       removeBlock = terminal.raw;
       events = Array.isArray(terminal.parsed.events) ? terminal.parsed.events : [];
       if (typeof terminal.parsed.emotion === 'string') emotion = terminal.parsed.emotion;
-      if (Array.isArray(terminal.parsed.speakers)) speakers = terminal.parsed.speakers;
+      if (Array.isArray(terminal.parsed.speakers)) { speakers = terminal.parsed.speakers; speakersProvided = true; }
     }
   }
   const validEvents = events.filter((event) => event && typeof event.id === 'string' && event.id.trim());
@@ -325,7 +333,7 @@ function parseAssistantResponse(text) {
   const rawNarrative = jsonBlock
     ? source.slice(0, source.lastIndexOf(removeBlock)).trim()
     : source.trim();
-  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...(emotion !== undefined ? { emotion } : {}), ...(validSpeakers.length ? { speakers: validSpeakers } : {}) };
+  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...(emotion !== undefined ? { emotion } : {}), ...(speakersProvided ? { speakers: validSpeakers } : {}) };
 }
 
 function terminalJson(source) {
@@ -363,6 +371,11 @@ function relatedNpcIds(schema, state, recentMessages, userInput) {
   }).map((npc) => npc.id);
 }
 
+function npcStateLine(schema, state, id) {
+  const summary = npcSummary(schema, state, id);
+  return summary ? `${id}: ${summary}` : '';
+}
+
 function reputationCategories(schema) {
   const ladder = (schema.ladders || []).find((entry) => entry.id === 'reputation');
   if (!ladder || !Array.isArray(ladder.axes)) return '';
@@ -378,6 +391,16 @@ function expCategories(schema) {
 
 function npcListText(schema) {
   return npcEntities(schema).map((npc) => `${npc.id}: ${npc.nameKo}${npc.class ? ` (${npc.class})` : ''}`).join('\n');
+}
+
+function speakerCatalogText(catalog, npcIds) {
+  if (!Array.isArray(catalog) || !catalog.length) return '';
+  const wanted = new Set((npcIds || []).map((id) => String(id).toLowerCase()));
+  return catalog.filter((item) => item && item.npcId && (!wanted.size || wanted.has(String(item.npcId).toLowerCase())))
+    .map((item) => {
+      const values = Array.isArray(item.emotions) ? item.emotions.filter(Boolean) : [];
+      return values.length ? `${item.npcId}: ${values.join(', ')}` : '';
+    }).filter(Boolean).join('\n');
 }
 
 function consumableListText(schema, state) {

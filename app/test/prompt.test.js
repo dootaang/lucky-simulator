@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const innSchema = require('../../schema/yongsa-inn.v0.json');
-const hunterSchema = require('../../schema/hunters-combat.v0.json');
+const hunterSchema = require('../../schema/generic-combat.v0.json');
 const { createState } = require('../../engine/core/createState.js');
 const { summarize } = require('../../engine/core/selectors.js');
 const { buildSystemPrompt, formatEngineVerdicts, buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('../src/llm/prompt.js');
@@ -43,9 +43,9 @@ test('button-only intents never leak into the LLM vocabulary', () => {
   }
 });
 
-test('hunter system prompt is combat-specific and contains no inn vocabulary', () => {
+test('generic combat reference prompt is combat-specific and contains no inn vocabulary', () => {
   const system = buildSystemPrompt(hunterSchema);
-  assert.match(system, /"헌터 전투 코어 \(참조 스키마\)"의 내레이터/);
+  assert.match(system, /"범용 전투 코어 \(참조 스키마 · 얼헌 아님\)"의 내레이터/);
   for (const word of ['용사여관', '여관', 'sale', 'checkin', 'upgrade', 'hire']) assert.doesNotMatch(system, new RegExp(word));
   for (const phrase of [
     'start_encounter를 절대 다시 내지 마라',
@@ -114,11 +114,11 @@ test('parseAssistantResponse accepts terminal unfenced speakers without events o
   assert.deepEqual(parsed.speakers, [{ npcId: 'silvia', focus: true }]);
 });
 
-test('parseAssistantResponse drops invalid speakers and omits an empty speakers field', () => {
+test('parseAssistantResponse drops invalid speakers and preserves an explicit empty speakers field', () => {
   const mixed = parseAssistantResponse('```json\n{"speakers":["silvia",{}, {"npcId":"  "},{"npcId":"iris","emotion":3,"focus":"yes"}]}\n```');
   assert.deepEqual(mixed.speakers, [{ npcId: 'iris', focus: false }]);
   const invalid = parseAssistantResponse('```json\n{"speakers":[null,"silvia",{}, {"npcId":""}]}\n```');
-  assert.equal(Object.hasOwn(invalid, 'speakers'), false);
+  assert.deepEqual(invalid.speakers, []);
 });
 
 test('parseAssistantResponse accepts and removes terminal unfenced event JSON', () => {
@@ -153,6 +153,32 @@ test('buildNarrationPrompt fixes engine results and includes flavor text', () =>
   assert.match(prompt.messages.at(-1).content, /\[확정된 전투 결과\]/);
   assert.match(prompt.messages.at(-1).content, /공격 · e1 명중 · 피해 12/);
   assert.match(prompt.messages.at(-1).content, /플레이어의 연출 의도: 낮게 파고든다/);
+});
+
+test('narration prompt exposes canonical staff ids for speaker sprites', () => {
+  const state = createState(innSchema);
+  state.staff = [{ npcId: 'silvia', dailyWage: 10000 }];
+  const prompt = buildNarrationPrompt({ schema: innSchema, state, results: ['영업 완료'], recentMessages: [] });
+  assert.match(prompt.messages.at(-1).content, /silvia: 실비아:/);
+  assert.match(prompt.messages.at(-1).content, /npcId는 \[NPC 목록\]/);
+});
+
+test('narration prompt exposes non-staff npc ids and per-npc emotion vocabularies', () => {
+  const state = createState(innSchema);
+  const prompt = buildNarrationPrompt({
+    schema: innSchema,
+    state,
+    results: ['미에리안 샤인이 방문했다'],
+    recentMessages: [],
+    speakerCatalog: [
+      { npcId: 'silvia', emotions: ['default', 'smile'] },
+      { npcId: 'mierian', emotions: ['normal', 'surprised'] },
+    ],
+  });
+  const context = prompt.messages.at(-1).content;
+  assert.match(context, /\[NPC 목록/);
+  assert.match(context, /mierian: 미에리안 샤인/);
+  assert.match(context, /mierian: normal, surprised/);
 });
 
 test('buildNarrationPrompt adds chronological whole-combat instruction only for long result lists', () => {

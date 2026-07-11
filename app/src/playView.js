@@ -1,6 +1,7 @@
 const { summarize, npcSummary, availableActions, availableManagement, roomStatus, staffMax } = require('../../engine/core/selectors.js');
 const { estimateTokens, estimateLorebookTokens } = require('../core/lorebook/tokens.js');
 const { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('./llm/prompt.js');
+const { resolveSpeaker, resolveSpeakerList } = require('./speakerResolver.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
 const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
@@ -367,32 +368,32 @@ function characterAvatar(ctx, asset, className, initialName) {
   } else showInitial();
   return wrap;
 }
-function npcPresentation(schema, npcId) {
-  const npc = entityInstances(schema, 'npc').find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
-  const group = stageGroup(npcId);
-  const pick = group && selectAsset(group, preferredEmotion(group), outfitOf(npcId));
-  return { name: (npc && (npc.nameKo || npc.name || npc.nameEn)) || String(npcId), asset: pick && pick.asset, group };
-}
-function stageGroup(npcId) {
-  const npc = entityInstances(getSchema() || {}, 'npc').find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
-  const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
-  return npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+function npcPresentation(schema, npcId, emotion) {
+  return resolveSpeaker({
+    schema,
+    groups: npcGroups,
+    state: getEngineState(),
+    reference: npcId,
+    requestedEmotion: emotion,
+    preferEmotion: preferredEmotion,
+    pickAsset: selectAsset,
+  }) || { id: String(npcId), name: String(npcId), asset: null, group: null };
 }
 function applySpeakers(parsed) {
-  if (!parsed || !Array.isArray(parsed.speakers)) return;
-  stage = parsed.speakers.slice(0, 3).filter((item) => stageGroup(item.npcId)).map((item) => ({
-    npcId: item.npcId,
-    ...(typeof item.emotion === 'string' ? { emotion: item.emotion } : {}),
-    focus: item.focus === true,
-  }));
-  if (stage.length && !stage.some((item) => item.focus)) stage[stage.length - 1].focus = true;
+  stage = resolveSpeakerList({
+    schema: getSchema() || {},
+    groups: npcGroups,
+    state: getEngineState(),
+    items: parsed && parsed.speakers,
+    preferEmotion: preferredEmotion,
+    pickAsset: selectAsset,
+  });
+  return stage.map((item) => item.npcId);
 }
 function renderStage(ctx) {
   let entries = stage.map((item) => {
-    const presentation = npcPresentation(getSchema() || {}, item.npcId);
-    const emotion = presentation.group.emotions.has(item.emotion) ? item.emotion : preferredEmotion(presentation.group);
-    const pick = selectAsset(presentation.group, emotion, outfitOf(item.npcId));
-    return pick && { name: presentation.name, asset: pick.asset, focus: item.focus };
+    const presentation = npcPresentation(getSchema() || {}, item.npcId, item.emotion);
+    return presentation.asset && { name: presentation.name, asset: presentation.asset, focus: item.focus };
   }).filter(Boolean);
   if (!entries.length) {
     if (!character || !character.group || !character.asset) return null;
@@ -430,14 +431,20 @@ function renderNpcAvatars(npcIds, ctx) {
   return row;
 }
 function promptNpcIds(prompt) { return prompt && Array.isArray(prompt.relatedNpcIds) && prompt.relatedNpcIds.length ? [...prompt.relatedNpcIds] : undefined; }
-function assistantMessage(content, chips, prompt = lastPrompt) {
+function assistantMessage(content, chips, prompt = lastPrompt, npcIdsOverride) {
   const message = { role: 'assistant', content, chips };
-  const npcIds = promptNpcIds(prompt);
-  if (npcIds) message.npcIds = npcIds;
+  const npcIds = npcIdsOverride === undefined ? promptNpcIds(prompt) : npcIdsOverride;
+  if (npcIds && npcIds.length) message.npcIds = npcIds;
   return message;
 }
 function sceneLine() { const schema = getSchema(), state = getEngineState(); if (!schema || !state) return '새로운 장면'; return summarize(schema, state).split('\n')[0] || '새로운 장면'; }
 function emotions() { return character && character.group ? Array.from(character.group.emotions.keys()) : []; }
+function speakerCatalog() {
+  return npcGroups.map((group) => {
+    const presentation = npcPresentation(getSchema() || {}, group.charId);
+    return { npcId: presentation.id, name: presentation.name, emotions: Array.from(group.emotions.keys()) };
+  });
+}
 function outfitOf(npcId) { const state = getEngineState(); return state && state.npcs && state.npcs[npcId] ? state.npcs[npcId].outfit : undefined; }
 function applyEmotion(value) { if (!value || !character || !character.group || !character.group.emotions.has(value)) return; const pick = selectAsset(character.group, value, outfitOf(character.group.charId)); if (pick) { character.asset = pick.asset; character.emotion = value; } }
 
@@ -776,12 +783,11 @@ async function runManagementTurn(event, input, ctx, render) {
   appendEventChips(event.id, result.entries, chips, resultTexts);
   const pending = { role: 'assistant', content: '', chips };
   try {
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
     lastPrompt = prompt;
-    pending.npcIds = promptNpcIds(prompt);
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     applyEmotion(parsed.emotion);
-    applySpeakers(parsed);
+    pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
@@ -817,12 +823,11 @@ async function runManagementBatch(items, input, ctx, render) {
   }
   const pending = { role: 'assistant', content: '', chips };
   try {
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges, eventType: 'lodging_batch' });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: 'lodging_batch' });
     lastPrompt = prompt;
-    pending.npcIds = promptNpcIds(prompt);
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     applyEmotion(parsed.emotion);
-    applySpeakers(parsed);
+    pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
@@ -1140,12 +1145,12 @@ async function runCombatTurn(event, input, ctx, render) {
     const narrationResults = fastCombat ? [...fastCombatLog, ...resultTexts] : resultTexts;
     const recentChanges = ledgerDeltas.slice();
     if (fastCombat) fastCombatLog = [];
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
-    applySpeakers(parsed);
+    pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
     pending.content = parsed.narrative || '전투 결과가 반영되었습니다.';
@@ -1190,12 +1195,14 @@ async function startCombat(ctx, render) {
   const recentChanges = ledgerDeltas.slice();
   try {
     const instruction = '이번 장면에 어울리는 적 명부로 start_encounter 사건 하나만 JSON으로 내라. 서사는 1~2문장만 허용한다.';
-    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), recentChanges });
+    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
     lastPrompt = prompt;
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
+    applyEmotion(parsed.emotion);
+    const speakerIds = applySpeakers(parsed);
     const event = parsed.events.find((item) => item.id === 'start_encounter');
     if (!event) {
-      messages.push(assistantMessage(parsed.narrative || '', [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }]));
+      messages.push(assistantMessage(parsed.narrative || '', [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }], prompt, speakerIds));
     } else {
       const result = runEvent(event);
       const entry = result.entries[0] || { ok: false, reason: 'empty_log' };
@@ -1204,7 +1211,7 @@ async function startCombat(ctx, render) {
       const item = summarizeEventItem('start_encounter', entry, formatMoney);
       const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
       if (ignored > 0) chips.push({ ok: false, kind: 'system', text: `다른 사건 ${ignored}개 무시됨` });
-      messages.push(assistantMessage(parsed.narrative, chips));
+      messages.push(assistantMessage(parsed.narrative, chips, prompt, speakerIds));
     }
   } catch (_) {
     messages.push(assistantMessage('', [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }]));
@@ -1222,12 +1229,12 @@ async function openCannedScene(instruction, ctx, render) {
   const recentChanges = ledgerDeltas.slice();
   try {
     const schema = getSchema();
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), recentChanges });
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
-    applySpeakers(parsed);
+    const speakerIds = applySpeakers(parsed);
     const chips = [];
     if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
     // 버튼 전용 인텐트는 LLM 응답으로 실행하지 않는다 — 치트·이중 영업 채널 차단(감사 지적).
@@ -1240,7 +1247,7 @@ async function openCannedScene(instruction, ctx, render) {
       const item = summarizeEventItem(event.id, first, formatMoney);
       chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
     }
-    messages.push(assistantMessage(parsed.narrative || raw, chips));
+    messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
   } catch (err) {
     messages.push(assistantMessage(safeError(err), [{ ok: false, kind: 'system', text: 'API 오류' }]));
   } finally {
@@ -1259,12 +1266,12 @@ async function submitTurn(text, ctx, render) {
   try {
     const schema = getSchema();
     const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === 'assistant');
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), recentChanges });
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
     applyEmotion(parsed.emotion);
-    applySpeakers(parsed);
+    const speakerIds = applySpeakers(parsed);
     const chips = [];
     if (parsed.dropped > 0) chips.push({ ok: false, kind: 'system', text: `형식 오류 사건 ${parsed.dropped}개 무시됨` });
     // 버튼 전용 인텐트는 LLM 응답으로 실행하지 않는다 — 치트·이중 영업 채널 차단(감사 지적).
@@ -1282,7 +1289,7 @@ async function submitTurn(text, ctx, render) {
     }
     const combatNow = getEngineState().combat;
     if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
-    messages.push(assistantMessage(parsed.narrative || raw, chips));
+    messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
   } catch (err) {
     messages.push(assistantMessage(safeError(err), [{ ok: false, kind: 'system', text: 'API 오류' }]));
   } finally {
