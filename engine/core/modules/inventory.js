@@ -12,7 +12,8 @@ function createInventoryModule() {
     dependencies: ['core.stats'],
     stateAccess: {
       owns: ['resources.*', 'items.*'],
-      reads: ['combat.active'],
+      // use_item이 사망 여부와 풀 잔량을 읽는다(감사 지적: 실제 읽기 경로 빠짐없이 선언).
+      reads: ['combat.active', 'player.dead', 'player.pools.*'],
       writes: ['gold', 'player.pools.*'],
     },
     events: {

@@ -85,7 +85,9 @@ function compilePrompt(input) {
 
   const noteDepth = authorNote && Number.isFinite(Number(authorNote.depth)) ? Math.max(0, Math.trunc(Number(authorNote.depth))) : 0;
   const noteContentRaw = authorNote ? String(authorNote.content || '') : '';
-  let pendingNote = null; // { messages, depth } — 마지막 chat 조각에 주입.
+  // depth 주입 노트는 리스트로 모은다 — authornote 블록이 2개 이상이어도 유실 없이
+  // 전부 주입되어 trace와 messages가 일치해야 한다(감사 지적).
+  const pendingNotes = []; // { message, depth }
   let lastChatSegment = null; // { startInEmitted, length }
 
   if (preset.settings && preset.settings.sendNames === true) {
@@ -143,7 +145,7 @@ function compilePrompt(input) {
         if (!content.trim()) return pushInactive(block, index, 'empty', roleOf(block), 'input.authorNote');
         const role = roleOf(block);
         if (noteDepth > 0 && chatWillEmit) {
-          pendingNote = { message: { role, content }, depth: noteDepth };
+          pendingNotes.push({ message: { role, content }, depth: noteDepth });
           trace.push({
             blockId: block.id, blockType: block.type, sourcePath: 'input.authorNote', role, active: true, reason: 'ok',
             chars: content.length, tokensEstimate: estimateTokens(content), insertedAt: `chat[-${noteDepth}]`,
@@ -203,9 +205,13 @@ function compilePrompt(input) {
   }
 
   const messages = emitted.map((item) => item.message);
-  if (pendingNote && lastChatSegment) {
-    const offset = Math.max(0, lastChatSegment.length - pendingNote.depth);
-    messages.splice(lastChatSegment.startInEmitted + offset, 0, pendingNote.message);
+  if (pendingNotes.length && lastChatSegment) {
+    // 원본 위치 기준 오름차순(동일 위치는 블록 순서 유지 — 안정 정렬)으로 삽입.
+    // i번째 삽입 시점에는 앞선 i개가 전부 자기 위치 이하에 들어가 있으므로 +i 보정이 정확하다.
+    pendingNotes
+      .map((note) => ({ ...note, at: lastChatSegment.startInEmitted + Math.max(0, lastChatSegment.length - note.depth) }))
+      .sort((a, b) => a.at - b.at)
+      .forEach((note, i) => messages.splice(note.at + i, 0, note.message));
   }
 
   let finalMessages = messages;

@@ -34,8 +34,10 @@ function createLegacyModule(applyLegacyEvent) {
     dependencies: ['core.stats', 'core.inventory', 'combat.turnbased'],
     stateAccess: {
       owns: ['day', 'gold', 'facilities.*', 'staff', 'rooms.*', 'mail', 'traffic', 'pendingQuest', 'questAttempts', 'claimedRewards', 'npcs.*.outfit'],
-      reads: ['combat', 'player.*'],
-      writes: ['combat', 'resources.*', 'reputation.*', 'npcs.*.<scale>', 'npcs.*.<scale>DeltaToday'],
+      // reputation은 core.stats 소유 — 레거시는 우편/평판 배율에서 읽기만 한다(감사 지적: writes 오기재 교정).
+      reads: ['combat', 'player.*', 'reputation.*'],
+      // player.pools.*는 day_end의 pool_recover 정산이 쓴다(감사 지적: 누락 선언 보완).
+      writes: ['combat', 'resources.*', 'player.pools.*', 'npcs.*.<scale>', 'npcs.*.<scale>DeltaToday'],
     },
     events,
     selectors: {},
