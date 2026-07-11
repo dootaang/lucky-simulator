@@ -3398,8 +3398,8 @@ select:focus { border-color: var(--amber-line); }
             this.p = null;
           }
         };
-        Unzip2.prototype.register = function(decoder) {
-          this.o[decoder.compression] = decoder;
+        Unzip2.prototype.register = function(decoder2) {
+          this.o[decoder2.compression] = decoder2;
         };
         return Unzip2;
       })();
@@ -7842,7 +7842,7 @@ select:focus { border-color: var(--amber-line); }
     "core/session/playSession.js"(exports, module) {
       "use strict";
       var PLAY_SESSION_CONTRACT = "play-session/0.1";
-      function buildPlaySessionExport2({ journal: journal2, messages: messages2, promptRuns: promptRuns2, memory, savedAt, title }) {
+      function buildPlaySessionExport2({ journal: journal2, messages: messages2, promptRuns: promptRuns2, memory, personaBinding, promptPresetBinding, savedAt, title }) {
         if (!journal2 || journal2.contract !== "session-journal/0.1") throw new TypeError("play_session_journal_required");
         return {
           contract: PLAY_SESSION_CONTRACT,
@@ -7851,8 +7851,20 @@ select:focus { border-color: var(--amber-line); }
           journal: journal2,
           messages: sanitizeMessages(messages2),
           promptRuns: sanitizePromptRuns(promptRuns2),
-          ...sanitizeMemory(memory) ? { memory: sanitizeMemory(memory) } : {}
+          ...sanitizeMemory(memory) ? { memory: sanitizeMemory(memory) } : {},
+          ...sanitizePersonaBinding(personaBinding) ? { personaBinding: sanitizePersonaBinding(personaBinding) } : {},
+          ...sanitizePromptPresetBinding(promptPresetBinding) ? { promptPresetBinding: sanitizePromptPresetBinding(promptPresetBinding) } : {}
         };
+      }
+      function sanitizePersonaBinding(value) {
+        if (!value || typeof value !== "object" || typeof value.boundPersonaId !== "string" || !value.snapshot) return null;
+        const snapshot = value.snapshot;
+        if (!snapshot || snapshot.contract !== "persona/0.1" || typeof snapshot.id !== "string" || typeof snapshot.name !== "string" || typeof snapshot.prompt !== "string") return null;
+        return JSON.parse(JSON.stringify({ boundPersonaId: value.boundPersonaId, snapshot }));
+      }
+      function sanitizePromptPresetBinding(value) {
+        if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.hash !== "string" || !value.snapshot) return null;
+        return JSON.parse(JSON.stringify({ id: value.id, version: Number.isInteger(value.version) ? value.version : 1, hash: value.hash, snapshot: value.snapshot }));
       }
       function sanitizeMemory(memory) {
         if (!memory || typeof memory !== "object" || memory.contract !== "continuity-memory/0.1" || !Array.isArray(memory.records)) return null;
@@ -7935,7 +7947,9 @@ select:focus { border-color: var(--amber-line); }
           journal: parsed.journal,
           messages: sanitizeMessages(parsed.messages),
           promptRuns: sanitizePromptRuns(parsed.promptRuns),
-          ...sanitizeMemory(parsed.memory) ? { memory: sanitizeMemory(parsed.memory) } : {}
+          ...sanitizeMemory(parsed.memory) ? { memory: sanitizeMemory(parsed.memory) } : {},
+          ...sanitizePersonaBinding(parsed.personaBinding) ? { personaBinding: sanitizePersonaBinding(parsed.personaBinding) } : {},
+          ...sanitizePromptPresetBinding(parsed.promptPresetBinding) ? { promptPresetBinding: sanitizePromptPresetBinding(parsed.promptPresetBinding) } : {}
         };
       }
       module.exports = { PLAY_SESSION_CONTRACT, buildPlaySessionExport: buildPlaySessionExport2, parsePlaySessionImport: parsePlaySessionImport2 };
@@ -8187,7 +8201,7 @@ ${lines.join("\n")}`;
           return String(action.type || "");
         }).filter(Boolean).join("\n");
       }
-      function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput, lastVerdicts, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges, groundedMemory, currentMessageId }) {
+      function buildPrompt2({ schema: schema2, state: state2, lore, persona, recentMessages, userInput, lastVerdicts, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges, groundedMemory, currentMessageId }) {
         const combatCapable = isCombatCapable(schema2);
         const stateText = summarize3(schema2, state2);
         const npcIds = relatedNpcIds(schema2, state2, recentMessages, userInput);
@@ -8218,6 +8232,9 @@ ${actionText}` : "",
           changesText ? "" : "",
           currentMessageId ? `[\uD604\uC7AC \uC0AC\uC6A9\uC790 \uBA54\uC2DC\uC9C0 \uADFC\uAC70 ID]
 ${currentMessageId}` : "",
+          persona && String(persona.prompt || "").trim() ? `[\uD50C\uB808\uC774\uC5B4 \uD398\uB974\uC18C\uB098 \u2014 \uD50C\uB808\uC774\uC5B4\uC758 \uC815\uCCB4\uC131 \uC815\uBCF4\uC774\uBA70 NPC\uAC00 \uC790\uB3D9\uC73C\uB85C \uC544\uB294 \uC815\uBCF4\uAC00 \uC544\uB2C8\uB2E4]
+\uC774\uB984: ${String(persona.name || "User")}
+${String(persona.prompt)}` : "",
           groundedMemory ? `[\uADFC\uAC70\uAC00 \uD655\uC778\uB41C \uAD00\uB828 \uAE30\uC5B5 \u2014 \uB300\uAD04\uD638 \uC548 source\uB97C \uADFC\uAC70\uB85C\uB9CC \uC0AC\uC6A9. \uBAA9\uB85D\uC5D0 \uC5C6\uB294 \uACFC\uAC70 \uC0AC\uAC74\uC744 \uB9CC\uB4E4\uC5B4\uB0B4\uC9C0 \uB9C8\uB77C. scope:user\uB294 \uD50C\uB808\uC774\uC5B4/\uB0B4\uB808\uC774\uD130\uB9CC \uC544\uB294 \uC815\uBCF4\uB77C NPC \uB300\uC0AC\uB85C \uB204\uC124\uD558\uC9C0 \uB9C8\uB77C. NPC\uB294 scope:public \uB610\uB294 \uC790\uC2E0\uC758 scope:entity:<npcId>\uB9CC \uB9D0\uD560 \uC218 \uC788\uB2E4]
 ${groundedMemory}` : "",
           npcText ? "[NPC \uC0C1\uD0DC]\n" + npcText + "\n" : "",
@@ -8260,7 +8277,7 @@ ${groundedMemory}` : "",
         if (combatCapable) injectedParts.skills = estimateTokens3(skillList);
         const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
         return {
-          system: buildSystemPrompt(schema2, state2),
+          system: buildSystemPrompt(schema2, state2).replaceAll("{{user}}", String(persona && persona.name || "User")),
           messages: messages2,
           injectedTokens,
           injectedParts,
@@ -9447,7 +9464,7 @@ ${row3.content}`;
         return scanZipLocalHeaders(bytes, (name) => /\.risum$/i.test(name));
       }
       function scanZipLocalHeaders(bytes, acceptName) {
-        const decoder = textDecoder();
+        const decoder2 = textDecoder();
         let off = 0;
         while (off + 30 <= bytes.length) {
           if (u32(bytes, off) !== 67324752) {
@@ -9461,7 +9478,7 @@ ${row3.content}`;
           const nameStart = off + 30;
           const dataStart = nameStart + nameLen + extraLen;
           if (dataStart > bytes.length) return null;
-          const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLen));
+          const name = decoder2.decode(bytes.subarray(nameStart, nameStart + nameLen));
           let dataEnd = compressedSize > 0 ? dataStart + compressedSize : indexLocalHeader(bytes, dataStart + 1);
           if (dataEnd < 0) dataEnd = bytes.length;
           if (acceptName(name)) {
@@ -12619,8 +12636,8 @@ ${Array.from(extras).join(" ")}` : text;
   function hashPromptPayload(value) {
     return stateHash(value);
   }
-  function exportPlaySession({ messages: messages2, savedAt, title } = {}) {
-    return buildPlaySessionExport({ journal: journal.toJSON(), messages: messages2, promptRuns, memory: continuityMemory.toJSON(), savedAt, title });
+  function exportPlaySession({ messages: messages2, personaBinding, promptPresetBinding, savedAt, title } = {}) {
+    return buildPlaySessionExport({ journal: journal.toJSON(), messages: messages2, promptRuns, memory: continuityMemory.toJSON(), personaBinding, promptPresetBinding, savedAt, title });
   }
   function importPlaySession(payload) {
     const restored = restoreSessionJournal(activeSchema, payload.journal);
@@ -13441,6 +13458,125 @@ ${Array.from(extras).join(" ")}` : text;
     }
   }
 
+  // core/compat/personaPng.ts
+  var PNG_SIGNATURE = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  var encoder = new TextEncoder();
+  var decoder = new TextDecoder();
+  function importRisuPersonaPng(bytes, fileName = "persona.png") {
+    const chunks = readChunks(bytes);
+    const metadata = chunks.find((chunk) => chunk.type === "tEXt" && textKeyword(chunk.data) === "persona");
+    if (!metadata) throw new Error("Risu persona metadata not found");
+    const zero = metadata.data.indexOf(0);
+    const encoded = decoder.decode(metadata.data.subarray(zero + 1));
+    const raw = JSON.parse(decoder.decode(fromBase64(encoded)));
+    if (!raw || typeof raw.name !== "string" || typeof raw.personaPrompt !== "string") {
+      throw new Error("Invalid Risu persona metadata");
+    }
+    return {
+      contract: "persona/0.1",
+      id: stableId(`${fileName}:${raw.name}:${raw.personaPrompt}`),
+      name: raw.name,
+      prompt: raw.personaPrompt,
+      icon: `data:image/png;base64,${toBase64(bytes)}`,
+      note: typeof raw.note === "string" ? raw.note : "",
+      embeddedModule: raw.embeddedModule ?? null,
+      source: { source: "persona", path: "tEXt:persona", note: fileName },
+      version: 1
+    };
+  }
+  function exportRisuPersonaPng(persona, iconPng) {
+    const icon = iconPng || dataUrlBytes(persona.icon);
+    if (!icon) throw new Error("Persona PNG icon bytes are required");
+    const chunks = readChunks(icon).filter((chunk) => !(chunk.type === "tEXt" && textKeyword(chunk.data) === "persona"));
+    const payload = toBase64(encoder.encode(JSON.stringify({
+      name: persona.name,
+      personaPrompt: persona.prompt,
+      note: persona.note || ""
+    })));
+    const personaChunk = makeChunk("tEXt", concat(encoder.encode("persona"), Uint8Array.of(0), encoder.encode(payload)));
+    const output = [PNG_SIGNATURE];
+    for (const chunk of chunks) {
+      if (chunk.type === "IEND") output.push(personaChunk);
+      output.push(chunk.raw);
+    }
+    return concat(...output);
+  }
+  function readChunks(bytes) {
+    if (bytes.length < 20 || !PNG_SIGNATURE.every((value, index) => bytes[index] === value)) throw new Error("Not a PNG file");
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const chunks = [];
+    let offset = 8;
+    while (offset + 12 <= bytes.length) {
+      const start = offset;
+      const length = view.getUint32(offset);
+      offset += 4;
+      if (offset + 8 + length > bytes.length) throw new Error("Truncated PNG chunk");
+      const type = decoder.decode(bytes.subarray(offset, offset + 4));
+      offset += 4;
+      const data = bytes.subarray(offset, offset + length);
+      offset += length + 4;
+      chunks.push({ type, data, raw: bytes.slice(start, offset) });
+      if (type === "IEND") break;
+    }
+    if (!chunks.some((chunk) => chunk.type === "IEND")) throw new Error("PNG IEND chunk missing");
+    return chunks;
+  }
+  function makeChunk(type, data) {
+    const typeBytes = encoder.encode(type);
+    const out = new Uint8Array(12 + data.length);
+    new DataView(out.buffer).setUint32(0, data.length);
+    out.set(typeBytes, 4);
+    out.set(data, 8);
+    new DataView(out.buffer).setUint32(8 + data.length, crc32(concat(typeBytes, data)));
+    return out;
+  }
+  function crc32(bytes) {
+    let crc = 4294967295;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = crc >>> 1 ^ (crc & 1 ? 3988292384 : 0);
+    }
+    return (crc ^ 4294967295) >>> 0;
+  }
+  function textKeyword(data) {
+    const zero = data.indexOf(0);
+    return decoder.decode(data.subarray(0, zero < 0 ? data.length : zero));
+  }
+  function concat(...parts) {
+    const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+    let at = 0;
+    for (const part of parts) {
+      out.set(part, at);
+      at += part.length;
+    }
+    return out;
+  }
+  function stableId(value) {
+    let hash = 2166136261;
+    for (const byte of encoder.encode(value)) {
+      hash ^= byte;
+      hash = Math.imul(hash, 16777619);
+    }
+    return `persona-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  }
+  function dataUrlBytes(value) {
+    const match = /^data:image\/png;base64,(.+)$/i.exec(String(value || ""));
+    return match ? fromBase64(match[1]) : null;
+  }
+  function toBase64(bytes) {
+    const nodeBuffer = globalThis.Buffer;
+    if (nodeBuffer) return nodeBuffer.from(bytes).toString("base64");
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  }
+  function fromBase64(value) {
+    const nodeBuffer = globalThis.Buffer;
+    if (nodeBuffer) return Uint8Array.from(nodeBuffer.from(value, "base64"));
+    const binary = atob(value);
+    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  }
+
   // src/playView.js
   var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement, roomStatus: roomStatus2, staffMax: staffMax2 } = require_selectors();
   var { estimateTokens: estimateTokens2, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
@@ -13483,6 +13619,7 @@ ${Array.from(extras).join(" ")}` : text;
   var lastPersistQuickSignature = "";
   var persistenceListenersInstalled = false;
   var persistenceLoadKey = "";
+  var activePersona = null;
   function primaryCharacter(parsed, lore, groups = buildNpcClusters(parsed, lore).groups) {
     const name = String(parsed && parsed.name || "\uC2DC\uBBAC\uBD07");
     const exact = groups.find((group2) => group2.charId.toLowerCase() === name.toLowerCase());
@@ -13534,9 +13671,16 @@ ${Array.from(extras).join(" ")}` : text;
     lodgingSelection = /* @__PURE__ */ new Set();
     lodgingSelectionDay = null;
     sessionCardKey = cardKeyOf(ctx);
+    activePersona = payload.personaBinding && payload.personaBinding.snapshot ? JSON.parse(JSON.stringify(payload.personaBinding.snapshot)) : null;
+  }
+  function currentPersonaBinding() {
+    return activePersona ? { boundPersonaId: activePersona.id, snapshot: JSON.parse(JSON.stringify(activePersona)) } : null;
+  }
+  function buildCurrentSessionExport() {
+    return exportPlaySession({ messages, personaBinding: currentPersonaBinding(), savedAt: Date.now(), title: sceneLine() });
   }
   function persistentPayloadHash(payload) {
-    return hashPromptPayload({ journal: payload.journal, messages: payload.messages, promptRuns: payload.promptRuns, memory: payload.memory });
+    return hashPromptPayload({ journal: payload.journal, messages: payload.messages, promptRuns: payload.promptRuns, memory: payload.memory, personaBinding: payload.personaBinding, promptPresetBinding: payload.promptPresetBinding });
   }
   function persistentQuickSignature() {
     const lastMessage = messages[messages.length - 1] || null;
@@ -13548,7 +13692,8 @@ ${Array.from(extras).join(" ")}` : text;
       messageCount: messages.length,
       lastMessage: lastMessage && { id: lastMessage.id, role: lastMessage.role, content: lastMessage.content, chips: lastMessage.chips },
       memoryStatus,
-      patchStatus
+      patchStatus,
+      persona: activePersona && `${activePersona.id}:${activePersona.version}:${activePersona.name}:${activePersona.prompt}`
     });
   }
   async function ensureAutoPersistence(ctx, render2) {
@@ -13612,7 +13757,7 @@ ${Array.from(extras).join(" ")}` : text;
     try {
       const quickSignature = persistentQuickSignature();
       if (quickSignature === lastPersistQuickSignature) return;
-      const payload = exportPlaySession({ messages, savedAt: Date.now(), title: sceneLine() });
+      const payload = buildCurrentSessionExport();
       const contentHash = persistentPayloadHash(payload);
       if (contentHash === lastPersistHash) {
         lastPersistQuickSignature = quickSignature;
@@ -14808,7 +14953,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const exportSession = button2("\uC138\uC158 \uB0B4\uBCF4\uB0B4\uAE30", "secondary-btn");
     exportSession.disabled = busy;
     exportSession.addEventListener("click", () => {
-      const payload = exportPlaySession({ messages, savedAt: Date.now(), title: sceneLine() });
+      const payload = buildCurrentSessionExport();
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -14839,6 +14984,45 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
       render2();
     });
+    const personaFile = el2("input");
+    personaFile.type = "file";
+    personaFile.accept = ".png,image/png";
+    personaFile.hidden = true;
+    const importPersona = button2("Risu \uD398\uB974\uC18C\uB098 \uAC00\uC838\uC624\uAE30", "secondary-btn");
+    importPersona.disabled = busy;
+    importPersona.addEventListener("click", () => personaFile.click());
+    personaFile.addEventListener("change", async () => {
+      const file = personaFile.files && personaFile.files[0];
+      personaFile.value = "";
+      if (!file || busy) return;
+      try {
+        activePersona = importRisuPersonaPng(new Uint8Array(await file.arrayBuffer()), file.name);
+        messages.push({ role: "ledger", chips: [{ ok: true, kind: "system", text: `\uD398\uB974\uC18C\uB098 \uC5F0\uACB0 \xB7 ${activePersona.name} (\uC774 \uC138\uC158\uC5D0\uB294 \uD604\uC7AC \uBC84\uC804\uC774 \uACE0\uC815\uB429\uB2C8\uB2E4)` }] });
+        lastPersistQuickSignature = "";
+        scheduleAutoSave(0);
+      } catch (error) {
+        messages.push({ role: "ledger", chips: [{ ok: false, kind: "system", text: `\uD398\uB974\uC18C\uB098 \uAC00\uC838\uC624\uAE30 \uC2E4\uD328 \xB7 ${safeError(error)}` }] });
+      }
+      render2();
+    });
+    const exportPersona = button2("\uD398\uB974\uC18C\uB098 \uB0B4\uBCF4\uB0B4\uAE30", "secondary-btn");
+    exportPersona.disabled = busy || !activePersona;
+    exportPersona.addEventListener("click", () => {
+      const bytes = exportRisuPersonaPng(activePersona);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+      link.download = `${String(activePersona.name || "persona").replace(/[<>:"/\\|?*]/g, "")}.png`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1e3);
+    });
+    const clearPersona = button2("\uD398\uB974\uC18C\uB098 \uD574\uC81C", "secondary-btn");
+    clearPersona.disabled = busy || !activePersona;
+    clearPersona.addEventListener("click", () => {
+      activePersona = null;
+      lastPersistQuickSignature = "";
+      scheduleAutoSave(0);
+      render2();
+    });
     details.append(
       field2("\uC81C\uACF5\uC790", provider),
       settings.provider === "custom" ? field2("Base URL", base) : hiddenBase(base),
@@ -14851,6 +15035,9 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       row(save, del),
       row(exportSession, importSession),
       importFile,
+      notice(activePersona ? `\uC5F0\uACB0\uB41C \uD398\uB974\uC18C\uB098: ${activePersona.name} \xB7 \uC138\uC158 \uC2A4\uB0C5\uC0F7 \uC0AC\uC6A9` : "\uC5F0\uACB0\uB41C \uD398\uB974\uC18C\uB098 \uC5C6\uC74C"),
+      row(importPersona, exportPersona, clearPersona),
+      personaFile,
       notice(persistenceStatus),
       settings.provider === "vertex" ? notice("\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON\uC740 GCP \uC804\uCCB4 \uAD8C\uD55C\uC744 \uAC00\uC9C8 \uC218 \uC788\uB294 \uAC15\uB825\uD55C \uC790\uACA9\uC99D\uBA85\uC785\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C \uC800\uC7A5\uD558\uC9C0 \uB9D0\uACE0 \uC0AC\uC6A9 \uD6C4 \uC0AD\uC81C\uD558\uC138\uC694.") : notice("\uD0A4\uB294 \uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 localStorage\uC5D0\uB9CC \uC800\uC7A5\uB429\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C\uB294 \uC0AC\uC6A9 \uD6C4 \uBC18\uB4DC\uC2DC \uC0AD\uC81C\uD558\uC138\uC694."),
       notice("\uD50C\uB808\uC774 \uC2DC \uB300\uD654 \uB0B4\uC6A9\xB7\uBC1C\uB3D9\uD55C \uB85C\uC5B4\uBD81\xB7\uC0C1\uD0DC \uC694\uC57D\uC774 \uC120\uD0DD\uD55C LLM \uC81C\uACF5\uC790\uC5D0\uAC8C \uC804\uC1A1\uB429\uB2C8\uB2E4.")
@@ -15117,7 +15304,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     try {
       const instruction = "\uC774\uBC88 \uC7A5\uBA74\uC5D0 \uC5B4\uC6B8\uB9AC\uB294 \uC801 \uBA85\uBD80\uB85C start_encounter \uC0AC\uAC74 \uD558\uB098\uB9CC JSON\uC73C\uB85C \uB0B4\uB77C. \uC11C\uC0AC\uB294 1~2\uBB38\uC7A5\uB9CC \uD5C8\uC6A9\uD55C\uB2E4.";
       const grounded = await groundedFor(instruction, turn);
-      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
+      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, persona: activePersona, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
@@ -15171,7 +15358,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     try {
       const schema2 = getSchema();
       const grounded = await groundedFor(instruction, turn);
-      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, persona: activePersona, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
@@ -15225,7 +15412,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const schema2 = getSchema();
       const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === "assistant");
       const grounded = await groundedFor(text, turn);
-      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text, currentMessageId: userRow.id });
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, persona: activePersona, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text, currentMessageId: userRow.id });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);

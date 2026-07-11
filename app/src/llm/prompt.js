@@ -169,7 +169,7 @@ function availableActionText(schema, state) {
   }).filter(Boolean).join('\n');
 }
 
-function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions, speakerCatalog, recentChanges, groundedMemory, currentMessageId }) {
+function buildPrompt({ schema, state, lore, persona, recentMessages, userInput, lastVerdicts, emotions, speakerCatalog, recentChanges, groundedMemory, currentMessageId }) {
   const combatCapable = isCombatCapable(schema);
   const stateText = summarize(schema, state);
   const npcIds = relatedNpcIds(schema, state, recentMessages, userInput);
@@ -199,6 +199,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     changesText,
     changesText ? '' : '',
     currentMessageId ? `[현재 사용자 메시지 근거 ID]\n${currentMessageId}` : '',
+    persona && String(persona.prompt || '').trim() ? `[플레이어 페르소나 — 플레이어의 정체성 정보이며 NPC가 자동으로 아는 정보가 아니다]\n이름: ${String(persona.name || 'User')}\n${String(persona.prompt)}` : '',
     groundedMemory ? `[근거가 확인된 관련 기억 — 대괄호 안 source를 근거로만 사용. 목록에 없는 과거 사건을 만들어내지 마라. scope:user는 플레이어/내레이터만 아는 정보라 NPC 대사로 누설하지 마라. NPC는 scope:public 또는 자신의 scope:entity:<npcId>만 말할 수 있다]\n${groundedMemory}` : '',
     npcText ? '[NPC 상태]\n' + npcText + '\n' : '',
     repCats ? '[평판 카테고리]\n' + repCats + '\n' : '',
@@ -244,7 +245,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
 
   return {
-    system: buildSystemPrompt(schema, state),
+    system: buildSystemPrompt(schema, state).replaceAll('{{user}}', String(persona && persona.name || 'User')),
     messages,
     injectedTokens,
     injectedParts,

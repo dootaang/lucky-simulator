@@ -7,7 +7,7 @@
 
 const PLAY_SESSION_CONTRACT = 'play-session/0.1';
 
-function buildPlaySessionExport({ journal, messages, promptRuns, memory, savedAt, title }) {
+function buildPlaySessionExport({ journal, messages, promptRuns, memory, personaBinding, promptPresetBinding, savedAt, title }) {
   if (!journal || journal.contract !== 'session-journal/0.1') throw new TypeError('play_session_journal_required');
   return {
     contract: PLAY_SESSION_CONTRACT,
@@ -17,7 +17,21 @@ function buildPlaySessionExport({ journal, messages, promptRuns, memory, savedAt
     messages: sanitizeMessages(messages),
     promptRuns: sanitizePromptRuns(promptRuns),
     ...(sanitizeMemory(memory) ? { memory: sanitizeMemory(memory) } : {}),
+    ...(sanitizePersonaBinding(personaBinding) ? { personaBinding: sanitizePersonaBinding(personaBinding) } : {}),
+    ...(sanitizePromptPresetBinding(promptPresetBinding) ? { promptPresetBinding: sanitizePromptPresetBinding(promptPresetBinding) } : {}),
   };
+}
+
+function sanitizePersonaBinding(value) {
+  if (!value || typeof value !== 'object' || typeof value.boundPersonaId !== 'string' || !value.snapshot) return null;
+  const snapshot = value.snapshot;
+  if (!snapshot || snapshot.contract !== 'persona/0.1' || typeof snapshot.id !== 'string' || typeof snapshot.name !== 'string' || typeof snapshot.prompt !== 'string') return null;
+  return JSON.parse(JSON.stringify({ boundPersonaId: value.boundPersonaId, snapshot }));
+}
+
+function sanitizePromptPresetBinding(value) {
+  if (!value || typeof value !== 'object' || typeof value.id !== 'string' || typeof value.hash !== 'string' || !value.snapshot) return null;
+  return JSON.parse(JSON.stringify({ id: value.id, version: Number.isInteger(value.version) ? value.version : 1, hash: value.hash, snapshot: value.snapshot }));
 }
 
 function sanitizeMemory(memory) {
@@ -115,6 +129,8 @@ function parsePlaySessionImport(text) {
     messages: sanitizeMessages(parsed.messages),
     promptRuns: sanitizePromptRuns(parsed.promptRuns),
     ...(sanitizeMemory(parsed.memory) ? { memory: sanitizeMemory(parsed.memory) } : {}),
+    ...(sanitizePersonaBinding(parsed.personaBinding) ? { personaBinding: sanitizePersonaBinding(parsed.personaBinding) } : {}),
+    ...(sanitizePromptPresetBinding(parsed.promptPresetBinding) ? { promptPresetBinding: sanitizePromptPresetBinding(parsed.promptPresetBinding) } : {}),
   };
 }
 

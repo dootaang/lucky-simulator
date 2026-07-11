@@ -146,8 +146,8 @@ export function hashPromptPayload(value) {
   return stateHash(value);
 }
 
-export function exportPlaySession({ messages, savedAt, title } = {}) {
-  return buildPlaySessionExport({ journal: journal.toJSON(), messages, promptRuns, memory: continuityMemory.toJSON(), savedAt, title });
+export function exportPlaySession({ messages, personaBinding, promptPresetBinding, savedAt, title } = {}) {
+  return buildPlaySessionExport({ journal: journal.toJSON(), messages, promptRuns, memory: continuityMemory.toJSON(), personaBinding, promptPresetBinding, savedAt, title });
 }
 
 // 가져오기 — 스키마 지문·손상 검증은 restoreSessionJournal이 수행(불일치 시 throw).

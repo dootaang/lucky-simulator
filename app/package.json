@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
-    "fflate": "^0.8.3"
+    "fflate": "^0.8.3",
+    "msgpackr": "^1.11.5"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",

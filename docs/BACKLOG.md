@@ -58,7 +58,7 @@
 - [x] `RisuCompatibilityEnvelope` 도입: `sourceFormat`, `sourceVersion`, `raw`, `normalized`, `unsupported`, `provenance`
 - [ ] CCv2/CCv3 JSON, PNG 카드, CharX/CharX-JPEG 가져오기·내보내기 왕복
 - [ ] CharX의 `card.json`, `module.risum`, `assets/`, `x_meta/` 및 알 수 없는 파일 보존
-- [ ] `.risum` 모듈과 `.risup`/`.risupreset` 프리셋 가져오기·내보내기
+- [x] `.risum` 모듈 읽기와 `.risup`/`.risupreset` 프리셋 가져오기·내보내기 (모듈 편집 내보내기는 후속)
 - [ ] 알 수 없는 Risu 확장 필드를 삭제하지 않고 raw extension bag에 보존
 - [ ] 원본 → import → export 결과의 구조·에셋 해시를 검증하는 golden round-trip corpus
 - [x] 호환성 보고서에 `완전 지원`, `보존만`, `안전 변환`, `저하`, `실행 금지`를 필드별 표시
@@ -66,10 +66,10 @@
 ### B. 페르소나를 1급 데이터로
 
 - [x] `Persona` 계약: id, 이름, 설명 프롬프트, 아이콘, 메모, 내장 모듈, 출처
-- [ ] 여러 페르소나 보관·선택·복제·Risu PNG 페르소나 import/export
-- [ ] 채팅별 `boundPersonaId`와 시작 시점 persona snapshot 저장
-- [ ] 플레이 도중 페르소나를 수정해도 과거 세션의 사실이 소급 변경되지 않도록 버전·snapshot 분리
-- [ ] `{{user}}`, 사용자 이름, 페르소나 설명, 아이콘을 프롬프트·화면·내보내기에 동일하게 연결
+- [ ] 여러 페르소나 보관·선택·복제 (Risu PNG 페르소나 import/export는 완료)
+- [x] 채팅별 `boundPersonaId`와 시작 시점 persona snapshot 저장
+- [x] 플레이 도중 페르소나를 수정해도 과거 세션의 사실이 소급 변경되지 않도록 버전·snapshot 분리
+- [x] `{{user}}`, 사용자 이름, 페르소나 설명, 아이콘을 프롬프트·세션·내보내기에 동일하게 연결 (화면 편집기는 P5)
 - [ ] 페르소나 내장 모듈을 일반 모듈과 같은 권한·출처 검사에 통과시킴
 
 ### C. Risu 호환 프롬프트 컴파일러

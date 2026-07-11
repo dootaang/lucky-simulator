@@ -27,6 +27,10 @@
 | 2026-07-12 | `src/ts/process/memory/hypav3.ts` — `childToParentRRF` | `app/core/memory/ranking.js` — `childToParentRRF` | 의미 재현 | 동일 알고리즘, 부모 키를 문자열로 |
 | 2026-07-12 | `src/ts/process/memory/hypav3.ts` — `normalizeScores` | `app/core/memory/ranking.js` — `normalizeScores` | 의미 재현 | min==max 분기 동일 |
 | 2026-07-12 | `hypav3.ts` 예산 선택(L500~820) — recent/similar/random 비율, 20% 기억 예산 | `app/core/memory/contextPlanner.js` — `planHypaV3` | 의미 재현 | 무작위 선택을 `Math.random` 대신 seed 기반으로 격리(결정론 재현 요구), frozen summary 사용 |
+| 2026-07-12 | `src/ts/persona.ts` — `exportUserPersona`, `importUserPersona` | `app/core/compat/personaPng.ts` | 파일 규격 상호운용 재구현 | PNG `tEXt:persona`의 base64 JSON을 읽고 쓰며, UI/DB 결합은 가져오지 않음 |
+| 2026-07-12 | `src/ts/storage/database.svelte.ts` — `downloadPreset`, `importPreset` | `app/core/compat/risuPreset.ts` | 파일 규격 상호운용 재구현 | RPack·deflate·MessagePack·AES-GCM 봉투와 PromptItem 매핑, 알 수 없는 preset 필드 보존 |
+
+`msgpackr` 1.11.5(MIT)는 Risu preset의 MessagePack 상호운용에 사용한다.
 
 ### 명시적으로 가져오지 않은 것
 

@@ -10,6 +10,7 @@ const { parsePlaySessionImport } = require('../core/session/playSession.js');
 import { buildNpcClusters, preferredEmotion, selectAsset } from './npcGallery.js';
 import { verifyNarrative } from '../core/memory/narrativeVerifier.ts';
 import { createBrowserPlaySessionPersistence } from '../core/session/browserPersistence.ts';
+import { exportRisuPersonaPng, importRisuPersonaPng } from '../core/compat/personaPng.ts';
 
 let messages = [];
 let busy = false;
@@ -44,6 +45,7 @@ let lastPersistHash = '';
 let lastPersistQuickSignature = '';
 let persistenceListenersInstalled = false;
 let persistenceLoadKey = '';
+let activePersona = null;
 
 export function primaryCharacter(parsed, lore, groups = buildNpcClusters(parsed, lore).groups) {
   const name = String((parsed && parsed.name) || '시뮬봇');
@@ -74,10 +76,21 @@ function applySessionPayload(payload, ctx) {
   stage = []; lastPrompt = null; fastCombatLog = []; ledgerDeltas = []; purchaseDraft = {};
   lodgingSelection = new Set(); lodgingSelectionDay = null;
   sessionCardKey = cardKeyOf(ctx);
+  activePersona = payload.personaBinding && payload.personaBinding.snapshot
+    ? JSON.parse(JSON.stringify(payload.personaBinding.snapshot))
+    : null;
+}
+
+function currentPersonaBinding() {
+  return activePersona ? { boundPersonaId: activePersona.id, snapshot: JSON.parse(JSON.stringify(activePersona)) } : null;
+}
+
+function buildCurrentSessionExport() {
+  return exportPlaySession({ messages, personaBinding: currentPersonaBinding(), savedAt: Date.now(), title: sceneLine() });
 }
 
 function persistentPayloadHash(payload) {
-  return hashPromptPayload({ journal: payload.journal, messages: payload.messages, promptRuns: payload.promptRuns, memory: payload.memory });
+  return hashPromptPayload({ journal: payload.journal, messages: payload.messages, promptRuns: payload.promptRuns, memory: payload.memory, personaBinding: payload.personaBinding, promptPresetBinding: payload.promptPresetBinding });
 }
 
 // Avoid cloning and hashing a multi-million-token session on UI-only renders.
@@ -94,6 +107,7 @@ function persistentQuickSignature() {
     lastMessage: lastMessage && { id: lastMessage.id, role: lastMessage.role, content: lastMessage.content, chips: lastMessage.chips },
     memoryStatus,
     patchStatus,
+    persona: activePersona && `${activePersona.id}:${activePersona.version}:${activePersona.name}:${activePersona.prompt}`,
   });
 }
 
@@ -148,7 +162,7 @@ async function savePersistentSessionNow() {
   try {
     const quickSignature = persistentQuickSignature();
     if (quickSignature === lastPersistQuickSignature) return;
-    const payload = exportPlaySession({ messages, savedAt: Date.now(), title: sceneLine() });
+    const payload = buildCurrentSessionExport();
     const contentHash = persistentPayloadHash(payload);
     if (contentHash === lastPersistHash) {
       lastPersistQuickSignature = quickSignature;
@@ -1204,7 +1218,7 @@ function renderSettings(ctx, render) {
   const exportSession = button('세션 내보내기', 'secondary-btn');
   exportSession.disabled = busy;
   exportSession.addEventListener('click', () => {
-    const payload = exportPlaySession({ messages, savedAt: Date.now(), title: sceneLine() });
+    const payload = buildCurrentSessionExport();
     const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1234,6 +1248,35 @@ function renderSettings(ctx, render) {
     render();
   });
 
+  const personaFile = el('input');
+  personaFile.type = 'file'; personaFile.accept = '.png,image/png'; personaFile.hidden = true;
+  const importPersona = button('Risu 페르소나 가져오기', 'secondary-btn');
+  importPersona.disabled = busy;
+  importPersona.addEventListener('click', () => personaFile.click());
+  personaFile.addEventListener('change', async () => {
+    const file = personaFile.files && personaFile.files[0]; personaFile.value = '';
+    if (!file || busy) return;
+    try {
+      activePersona = importRisuPersonaPng(new Uint8Array(await file.arrayBuffer()), file.name);
+      messages.push({ role: 'ledger', chips: [{ ok: true, kind: 'system', text: `페르소나 연결 · ${activePersona.name} (이 세션에는 현재 버전이 고정됩니다)` }] });
+      lastPersistQuickSignature = ''; scheduleAutoSave(0);
+    } catch (error) {
+      messages.push({ role: 'ledger', chips: [{ ok: false, kind: 'system', text: `페르소나 가져오기 실패 · ${safeError(error)}` }] });
+    }
+    render();
+  });
+  const exportPersona = button('페르소나 내보내기', 'secondary-btn');
+  exportPersona.disabled = busy || !activePersona;
+  exportPersona.addEventListener('click', () => {
+    const bytes = exportRisuPersonaPng(activePersona);
+    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+    link.download = `${String(activePersona.name || 'persona').replace(/[<>:"/\\|?*]/g, '')}.png`; link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+  const clearPersona = button('페르소나 해제', 'secondary-btn');
+  clearPersona.disabled = busy || !activePersona;
+  clearPersona.addEventListener('click', () => { activePersona = null; lastPersistQuickSignature = ''; scheduleAutoSave(0); render(); });
+
   details.append(
     field('제공자', provider),
     settings.provider === 'custom' ? field('Base URL', base) : hiddenBase(base),
@@ -1246,6 +1289,9 @@ function renderSettings(ctx, render) {
     row(save, del),
     row(exportSession, importSession),
     importFile,
+    notice(activePersona ? `연결된 페르소나: ${activePersona.name} · 세션 스냅샷 사용` : '연결된 페르소나 없음'),
+    row(importPersona, exportPersona, clearPersona),
+    personaFile,
     notice(persistenceStatus),
     settings.provider === 'vertex'
       ? notice('서비스 계정 JSON은 GCP 전체 권한을 가질 수 있는 강력한 자격증명입니다. 공용 PC에서 저장하지 말고 사용 후 삭제하세요.')
@@ -1497,7 +1543,7 @@ async function startCombat(ctx, render) {
   try {
     const instruction = '이번 장면에 어울리는 적 명부로 start_encounter 사건 하나만 JSON으로 내라. 서사는 1~2문장만 허용한다.';
     const grounded = await groundedFor(instruction, turn);
-    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
+    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, persona: activePersona, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
@@ -1552,7 +1598,7 @@ async function openCannedScene(instruction, ctx, render) {
   try {
     const schema = getSchema();
     const grounded = await groundedFor(instruction, turn);
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, persona: activePersona, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
@@ -1608,7 +1654,7 @@ async function submitTurn(text, ctx, render) {
     const schema = getSchema();
     const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === 'assistant');
     const grounded = await groundedFor(text, turn);
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text, currentMessageId: userRow.id });
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, persona: activePersona, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text, currentMessageId: userRow.id });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
