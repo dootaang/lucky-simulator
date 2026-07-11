@@ -10,6 +10,9 @@ import { renderEngineView } from './engineView.js';
 import { renderPlayView, primaryCharacter } from './playView.js';
 import { applyCardTheme } from './theme/cardTheme.js';
 import { renderImportView } from './importView.js';
+import { getSchema, setActiveSchema } from './engineSession.js';
+import { createSimPack, packSimPack, unpackSimPack } from '../core/simpack/simpack.js';
+import { selectSimPackRuntime } from '../core/simpack/runtimeProject.js';
 // 주의: engineSession.getSchema()는 기본 내장 스키마를 항상 반환하므로(절대 null 아님)
 // "플레이할 것이 있는가" 판정에 쓰면 안 된다. 사용자가 명시적으로 스키마를 활성화해
 // 플레이로 직행한 경우만 아래 플래그로 추적한다.
@@ -46,6 +49,7 @@ const state = {
   viewUrls: new Map(),
   cleanup: null,
   cardTheme: null,
+  simpackProject: null,
 };
 
 const app = document.getElementById('app');
@@ -121,7 +125,7 @@ function renderShell() {
   dropTitle.textContent = '카드를 여기에 드롭';
   const dropSub = document.createElement('div');
   dropSub.className = 'drop-sub';
-  dropSub.textContent = '.charx, .png, .jpg, .jpeg, .json, .risum';
+  dropSub.textContent = '.simpack, .charx, .png, .jpg, .jpeg, .json, .risum';
   const pickButton = document.createElement('button');
   pickButton.className = 'primary-btn';
   pickButton.id = 'pickButton';
@@ -241,6 +245,12 @@ async function loadFile(file) {
   revokeViewUrls();
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
+    if (/\.simpack$/i.test(file.name)) {
+      await loadSimPack(bytes, file);
+      setMessage(`SimPack 로드 완료: ${state.simpackProject.manifest.title}`);
+      renderShell();
+      return;
+    }
     const parsed = parseCard(bytes, file.name, { lazy: true });
     const lore = extractLorebook(parsed.card);
     const compatibility = createRisuCompatibilityEnvelope(parsed, lore);
@@ -248,6 +258,7 @@ async function loadFile(file) {
     state.lore = lore;
     state.compatibility = compatibility;
     state.file = { name: file.name, size: file.size, type: file.type || '' };
+    state.simpackProject = null;
     state.activeTab = 'play';
     state.shellMode = 'player';
     const primary = primaryCharacter(parsed, lore);
@@ -266,10 +277,35 @@ async function loadFile(file) {
     state.lore = null;
     state.compatibility = null;
     state.file = null;
+    state.simpackProject = null;
     state.error = err && err.message ? err.message : String(err);
     setMessage(`파싱 실패: ${state.error}`);
   }
   renderShell();
+}
+
+async function loadSimPack(bytes, file) {
+  const project = unpackSimPack(bytes);
+  const manifest = project.manifest;
+  const runtime = selectSimPackRuntime(manifest);
+  const sourceRef = manifest.source && manifest.source.card && manifest.source.card.blob;
+  const sourceBytes = sourceRef && project.files[sourceRef.path];
+  let parsed = null;
+  if (sourceBytes) parsed = parseCard(sourceBytes, manifest.source.card.fileName || file.name, { lazy: true });
+  if (!parsed) {
+    const character = manifest.content.characters && manifest.content.characters[0] || {};
+    parsed = { format: 'simpack', source: file.name, spec: 'simpack/0.2', specVersion: '0.2', name: character.name || manifest.title, assets: [], card: { spec: 'chara_card_v3', spec_version: '3.0', data: { name: character.name || manifest.title, description: character.description || '' } }, containerEntries: [] };
+  }
+  const envelope = manifest.risu && manifest.risu.envelope ? JSON.parse(JSON.stringify(manifest.risu.envelope)) : createRisuCompatibilityEnvelope(parsed, null);
+  if (envelope.raw) envelope.raw.sourceBytes = sourceBytes || null;
+  const lore = manifest.content.lorebooks && manifest.content.lorebooks[0] || extractLorebook(parsed.card);
+  setActiveSchema(runtime.schema);
+  schemaActivated = true;
+  state.parsed = parsed; state.lore = lore; state.compatibility = envelope;
+  state.file = { name: file.name, size: file.size, type: file.type || 'application/zip' };
+  state.simpackProject = project; state.activeTab = 'play'; state.shellMode = 'player';
+  const primary = primaryCharacter(parsed, lore);
+  state.cardTheme = await applyCardTheme(primary.asset, objectUrlFor);
 }
 
 function render() {
@@ -328,6 +364,7 @@ function createContext() {
     parsed: state.parsed,
     lore: state.lore,
     compatibility: state.compatibility,
+    simpack: state.simpackProject && state.simpackProject.manifest,
     file: state.file,
     objectUrlFor,
     revokeViewUrls,
@@ -393,7 +430,29 @@ function renderOverview(ctx) {
   pre.textContent = JSON.stringify(parsed.card, null, 2).slice(0, 24000);
   details.append(summary, pre);
 
-  wrap.append(lengths, details);
+  const packageSection = document.createElement('section');
+  packageSection.className = 'wide-section';
+  const packageTitle = sectionTitle('SimPack 프로젝트');
+  const packageCopy = document.createElement('p');
+  packageCopy.textContent = '카드 원본·호환 정보·현재 승인 규칙을 하나의 교체 가능한 프로젝트 파일로 저장합니다.';
+  const packageButton = document.createElement('button');
+  packageButton.type = 'button'; packageButton.className = 'primary-btn'; packageButton.textContent = 'SimPack v0.2 내보내기';
+  packageButton.addEventListener('click', () => {
+    const project = state.simpackProject || createSimPack({
+      id: String(parsed.name || 'project'), title: String(parsed.name || file.name), fileName: file.name,
+      risuEnvelope: state.compatibility, sourceBytes: parsed._sourceBytes, schema: getSchema(), lorebooks: lore ? [lore] : [],
+      screens: [{ id: 'play', title: '플레이', layout: 'stage-chat-hud', regions: [] }],
+      navigation: [{ id: 'play', screenId: 'play', label: '플레이' }],
+      provenance: state.compatibility && state.compatibility.provenance || [],
+    });
+    const bytes = packSimPack(project);
+    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+    link.download = `${String(parsed.name || 'project').replace(/[<>:"/\\|?*]/g, '')}.simpack`; link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+  packageSection.append(packageTitle, packageCopy, packageButton);
+
+  wrap.append(lengths, details, packageSection);
   return wrap;
 }
 

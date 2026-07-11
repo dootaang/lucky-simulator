@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simpack.local/schema/simpack.v0.2.json",
+  "title": "SimPack v0.2",
+  "type": "object",
+  "required": ["contract", "id", "title", "revision", "source", "risu", "personas", "prompts", "modules", "content", "runtime", "assets", "evidence", "compatibility", "migrations"],
+  "properties": {
+    "contract": { "const": "simpack/0.2" },
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "source": { "type": "object" },
+    "risu": { "type": ["object", "null"] },
+    "personas": { "type": "object" },
+    "prompts": { "type": "object" },
+    "modules": { "type": "object" },
+    "content": { "type": "object" },
+    "runtime": { "type": "object" },
+    "assets": { "type": "array" },
+    "evidence": { "type": "array" },
+    "compatibility": { "type": "object" },
+    "migrations": { "type": "object", "properties": { "current": { "const": 2 }, "history": { "type": "array" } }, "required": ["current", "history"] }
+  },
+  "additionalProperties": false
+}

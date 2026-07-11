@@ -11934,6 +11934,242 @@ ${entry.content || ""}`
     }
   });
 
+  // core/simpack/simpack.js
+  var require_simpack = __commonJS({
+    "core/simpack/simpack.js"(exports, module) {
+      "use strict";
+      var { zipSync, unzipSync, strToU8, strFromU8 } = require_browser();
+      var CONTRACT = "simpack/0.2";
+      var MAX_PACK_BYTES = 256 * 1024 * 1024;
+      var MAX_FILES = 2e4;
+      function createSimPack2(input2 = {}) {
+        const envelope = input2.risuEnvelope || null;
+        const sourceBytes = input2.sourceBytes instanceof Uint8Array ? input2.sourceBytes : envelope && envelope.raw && envelope.raw.sourceBytes;
+        const sourcePath = sourceBytes ? `blobs/source/${safeName(input2.fileName || envelope && envelope.source.fileName || "card.bin")}` : null;
+        const sourceBlob = sourceBytes ? blobRef(sourcePath, sourceBytes, input2.sourceMime || "application/octet-stream") : null;
+        const risu = envelope ? {
+          envelope: {
+            ...clone3({ ...envelope, raw: { ...envelope.raw, sourceBytes: null } }),
+            raw: {
+              card: clone3(envelope.raw.card),
+              sourceBlob,
+              containerEntries: clone3(envelope.raw.containerEntries || []),
+              extensions: clone3(envelope.raw.extensions || {})
+            }
+          }
+        } : null;
+        if (risu && risu.envelope.raw) delete risu.envelope.raw.sourceBytes;
+        const manifest = {
+          contract: CONTRACT,
+          id: String(input2.id || slug(input2.title || envelope && envelope.source.displayName || "simpack")),
+          title: String(input2.title || envelope && envelope.source.displayName || "SimPack project"),
+          revision: positiveInt(input2.revision, 1),
+          source: {
+            card: { fileName: String(input2.fileName || envelope && envelope.source.fileName || ""), format: String(input2.sourceFormat || envelope && envelope.source.format || ""), version: String(input2.sourceVersion || envelope && envelope.source.version || ""), blob: sourceBlob },
+            provenance: clone3(input2.provenance || envelope && envelope.provenance || [])
+          },
+          risu,
+          personas: { library: clone3(input2.personas || []), defaultPersonaId: input2.defaultPersonaId || null, sessionBinding: clone3(input2.personaBinding || null) },
+          prompts: { presets: clone3(input2.promptPresets || []), defaultPresetId: input2.defaultPresetId || null, sessionBinding: clone3(input2.promptPresetBinding || null) },
+          modules: { bindings: clone3(input2.moduleBindings || envelope && envelope.normalized.modules || []), installed: clone3(input2.installedModules || []) },
+          content: { characters: clone3(input2.characters || envelope && envelope.normalized.character ? [input2.characters || envelope.normalized.character].flat().filter(Boolean) : []), lorebooks: clone3(input2.lorebooks || envelope && envelope.normalized.lorebooks || []), locations: clone3(input2.locations || []), items: clone3(input2.items || []) },
+          runtime: { schema: clone3(input2.schema || null), initialState: clone3(input2.initialState || input2.schema && input2.schema.initialState || null), screens: clone3(input2.screens || []), navigation: clone3(input2.navigation || []), options: clone3(input2.options || {}), featureToggles: clone3(input2.featureToggles || {}) },
+          assets: clone3(input2.assets || envelope && envelope.normalized.assets || []).map(normalizeAsset),
+          evidence: clone3(input2.evidence || []),
+          compatibility: { conflicts: clone3(input2.conflicts || []), unsupported: clone3(input2.unsupported || envelope && envelope.compatibility.features.filter((item) => ["degraded", "blocked", "preserved"].includes(item.status)) || []) },
+          migrations: { current: 2, history: clone3(input2.migrationHistory || []) }
+        };
+        const files = {};
+        if (sourceBytes && sourcePath) files[sourcePath] = Uint8Array.from(sourceBytes);
+        for (const file of input2.files || []) addFile(files, file.path, file.bytes);
+        assertSimPack(manifest, files);
+        return { manifest, files };
+      }
+      function packSimPack2(project) {
+        const manifest = migrateSimPack(project && project.manifest || project);
+        const files = project && project.files || {};
+        assertSimPack(manifest, files);
+        const archive = { "manifest.json": strToU8(JSON.stringify(manifest)) };
+        for (const [path, bytes] of Object.entries(files)) {
+          assertPath(path);
+          archive[path] = Uint8Array.from(bytes);
+        }
+        return zipSync(archive, { level: 6 });
+      }
+      function unpackSimPack2(bytes) {
+        if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > MAX_PACK_BYTES) throw new Error("simpack_size_limit");
+        const archive = unzipSync(bytes);
+        const names = Object.keys(archive);
+        if (names.length > MAX_FILES) throw new Error("simpack_file_limit");
+        names.forEach(assertPath);
+        if (!archive["manifest.json"]) throw new Error("simpack_manifest_missing");
+        const manifest = migrateSimPack(JSON.parse(strFromU8(archive["manifest.json"])));
+        const files = Object.fromEntries(names.filter((name) => name !== "manifest.json").map((name) => [name, archive[name]]));
+        assertSimPack(manifest, files);
+        verifyBlobRefs(manifest, files);
+        return { manifest, files };
+      }
+      function migrateSimPack(raw) {
+        if (!raw || typeof raw !== "object") throw new Error("simpack_manifest_invalid");
+        if (raw.contract === CONTRACT) return clone3(raw);
+        if (raw.contract === "simpack/0.1") {
+          const migrated = createSimPack2({
+            id: raw.id,
+            title: raw.title,
+            revision: raw.revision,
+            sourceBytes: null,
+            schema: raw.schema || raw.runtime && raw.runtime.schema,
+            initialState: raw.initialState,
+            screens: raw.screens,
+            navigation: raw.navigation,
+            characters: raw.characters,
+            lorebooks: raw.lorebooks,
+            items: raw.items,
+            assets: raw.assets,
+            featureToggles: raw.featureToggles,
+            migrationHistory: [{ from: 1, to: 2, note: "Normalized legacy flat project sections." }]
+          }).manifest;
+          return migrated;
+        }
+        throw new Error("simpack_contract_unsupported");
+      }
+      function assertSimPack(manifest, files = {}) {
+        if (!manifest || manifest.contract !== CONTRACT) throw new Error("simpack_contract_unsupported");
+        for (const key of ["source", "personas", "prompts", "modules", "content", "runtime", "compatibility", "migrations"]) if (!manifest[key] || typeof manifest[key] !== "object") throw new Error(`simpack_section_missing:${key}`);
+        for (const key of ["library"]) if (!Array.isArray(manifest.personas[key])) throw new Error("simpack_personas_invalid");
+        if (!Array.isArray(manifest.prompts.presets) || !Array.isArray(manifest.modules.bindings) || !Array.isArray(manifest.runtime.screens) || !Array.isArray(manifest.assets)) throw new Error("simpack_array_invalid");
+        if (manifest.migrations.current !== 2) throw new Error("simpack_migration_invalid");
+        if (Object.keys(files).length > MAX_FILES) throw new Error("simpack_file_limit");
+        return true;
+      }
+      function verifyBlobRefs(manifest, files) {
+        const refs = [manifest.source.card.blob, manifest.risu && manifest.risu.envelope.raw.sourceBlob].concat(manifest.assets.map((asset) => asset.blob)).filter(Boolean);
+        for (const ref of refs) {
+          assertPath(ref.path);
+          const bytes = files[ref.path];
+          if (!(bytes instanceof Uint8Array) || bytes.length !== ref.size || sha256Hex(bytes) !== ref.sha256) throw new Error(`simpack_blob_mismatch:${ref.path}`);
+        }
+      }
+      function normalizeAsset(asset, index) {
+        if (asset && asset.id && Object.hasOwn(asset, "canonical")) return asset;
+        return { id: String(asset && (asset.id || asset.name) || `asset-${index}`), name: String(asset && asset.name || ""), kind: String(asset && (asset.kind || asset.type) || "asset"), blob: asset && asset.blob || null, canonical: clone3(asset && asset.canonical || {}), source: asset && asset.source || null };
+      }
+      function blobRef(path, bytes, mime) {
+        return { path, sha256: sha256Hex(bytes), size: bytes.length, mime };
+      }
+      function addFile(files, path, bytes) {
+        assertPath(path);
+        if (!(bytes instanceof Uint8Array)) throw new Error(`simpack_file_invalid:${path}`);
+        files[path] = Uint8Array.from(bytes);
+      }
+      function assertPath(path) {
+        const value = String(path || "");
+        if (!value || value.startsWith("/") || value.includes("\\") || value.split("/").includes("..")) throw new Error(`simpack_unsafe_path:${value}`);
+      }
+      function safeName(value) {
+        return String(value).replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^\.+/, "") || "source.bin";
+      }
+      function slug(value) {
+        return String(value).toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "") || "simpack";
+      }
+      function positiveInt(value, fallback) {
+        const number = Number(value);
+        return Number.isInteger(number) && number > 0 ? number : fallback;
+      }
+      function clone3(value) {
+        if (value == null) return value;
+        return JSON.parse(JSON.stringify(value));
+      }
+      function fnvHex(bytes) {
+        let hash = 2166136261;
+        for (const byte of bytes) {
+          hash ^= byte;
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, "0");
+      }
+      function sha256Hex(input2) {
+        const bytes = Uint8Array.from(input2);
+        const bitLength = bytes.length * 8;
+        const paddedLength = bytes.length + 9 + 63 >> 6 << 6;
+        const data = new Uint8Array(paddedLength);
+        data.set(bytes);
+        data[bytes.length] = 128;
+        const view = new DataView(data.buffer);
+        view.setUint32(paddedLength - 4, bitLength >>> 0);
+        view.setUint32(paddedLength - 8, Math.floor(bitLength / 4294967296));
+        const h = Uint32Array.from([1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]);
+        const k = Uint32Array.from([1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580, 3835390401, 4022224774, 264347078, 604807628, 770255983, 1249150122, 1555081692, 1996064986, 2554220882, 2821834349, 2952996808, 3210313671, 3336571891, 3584528711, 113926993, 338241895, 666307205, 773529912, 1294757372, 1396182291, 1695183700, 1986661051, 2177026350, 2456956037, 2730485921, 2820302411, 3259730800, 3345764771, 3516065817, 3600352804, 4094571909, 275423344, 430227734, 506948616, 659060556, 883997877, 958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, 2227730452, 2361852424, 2428436474, 2756734187, 3204031479, 3329325298]);
+        const w = new Uint32Array(64);
+        const rotr = (x2, n) => x2 >>> n | x2 << 32 - n;
+        for (let offset = 0; offset < data.length; offset += 64) {
+          for (let i2 = 0; i2 < 16; i2 += 1) w[i2] = view.getUint32(offset + i2 * 4);
+          for (let i2 = 16; i2 < 64; i2 += 1) {
+            const s0 = rotr(w[i2 - 15], 7) ^ rotr(w[i2 - 15], 18) ^ w[i2 - 15] >>> 3;
+            const s1 = rotr(w[i2 - 2], 17) ^ rotr(w[i2 - 2], 19) ^ w[i2 - 2] >>> 10;
+            w[i2] = w[i2 - 16] + s0 + w[i2 - 7] + s1 >>> 0;
+          }
+          let [a, b, c, d, e, f, g, hh] = h;
+          for (let i2 = 0; i2 < 64; i2 += 1) {
+            const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+            const ch = e & f ^ ~e & g;
+            const t1 = hh + s1 + ch + k[i2] + w[i2] >>> 0;
+            const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+            const maj = a & b ^ a & c ^ b & c;
+            const t2 = s0 + maj >>> 0;
+            hh = g;
+            g = f;
+            f = e;
+            e = d + t1 >>> 0;
+            d = c;
+            c = b;
+            b = a;
+            a = t1 + t2 >>> 0;
+          }
+          h[0] = h[0] + a >>> 0;
+          h[1] = h[1] + b >>> 0;
+          h[2] = h[2] + c >>> 0;
+          h[3] = h[3] + d >>> 0;
+          h[4] = h[4] + e >>> 0;
+          h[5] = h[5] + f >>> 0;
+          h[6] = h[6] + g >>> 0;
+          h[7] = h[7] + hh >>> 0;
+        }
+        return Array.from(h, (value) => value.toString(16).padStart(8, "0")).join("");
+      }
+      module.exports = { CONTRACT, createSimPack: createSimPack2, packSimPack: packSimPack2, unpackSimPack: unpackSimPack2, migrateSimPack, assertSimPack, verifyBlobRefs, fnvHex, sha256Hex };
+    }
+  });
+
+  // core/simpack/runtimeProject.js
+  var require_runtimeProject = __commonJS({
+    "core/simpack/runtimeProject.js"(exports, module) {
+      "use strict";
+      function selectSimPackRuntime2(manifest) {
+        if (!manifest || manifest.contract !== "simpack/0.2") throw new Error("simpack_runtime_contract");
+        if (!manifest.runtime || !manifest.runtime.schema) throw new Error("simpack_runtime_schema_missing");
+        const persona = manifest.personas.sessionBinding && manifest.personas.sessionBinding.snapshot || manifest.personas.library.find((item) => item.id === manifest.personas.defaultPersonaId) || null;
+        const promptPreset = manifest.prompts.sessionBinding && manifest.prompts.sessionBinding.snapshot || manifest.prompts.presets.find((item) => item.id === manifest.prompts.defaultPresetId) || null;
+        return {
+          projectId: manifest.id,
+          title: manifest.title,
+          schema: manifest.runtime.schema,
+          initialState: manifest.runtime.initialState,
+          screens: manifest.runtime.screens,
+          navigation: manifest.runtime.navigation,
+          options: manifest.runtime.options,
+          featureToggles: manifest.runtime.featureToggles,
+          persona,
+          promptPreset,
+          moduleBindings: manifest.modules.bindings,
+          content: manifest.content,
+          assets: manifest.assets
+        };
+      }
+      module.exports = { selectSimPackRuntime: selectSimPackRuntime2 };
+    }
+  });
+
   // src/main.js
   var import_parseCard = __toESM(require_parseCard());
   var import_risuCompatibility = __toESM(require_risuCompatibility());
@@ -17077,6 +17313,14 @@ ${Array.from(extras).join(" ")}` : text;
       detachSheetKeyHandler();
       npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
       character = primaryCharacter(ctx.parsed, ctx.lore, npcGroups);
+      if (ctx.simpack) {
+        const personas = ctx.simpack.personas && ctx.simpack.personas.library || [];
+        const presets = ctx.simpack.prompts && ctx.simpack.prompts.presets || [];
+        const boundPersona = ctx.simpack.personas && ctx.simpack.personas.sessionBinding && ctx.simpack.personas.sessionBinding.snapshot;
+        const boundPreset = ctx.simpack.prompts && ctx.simpack.prompts.sessionBinding && ctx.simpack.prompts.sessionBinding.snapshot;
+        activePersona = JSON.parse(JSON.stringify(boundPersona || personas.find((item) => item.id === ctx.simpack.personas.defaultPersonaId) || null));
+        activePromptPreset = JSON.parse(JSON.stringify(boundPreset || presets.find((item) => item.id === ctx.simpack.prompts.defaultPresetId) || null));
+      }
       character.baseAsset = character.asset;
     }
     const root = el2("div", "play-view");
@@ -19657,6 +19901,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
   }
 
   // src/main.js
+  var import_simpack = __toESM(require_simpack());
+  var import_runtimeProject = __toESM(require_runtimeProject());
   var schemaActivated = false;
   var tabs = [
     { id: "overview", label: "\uAC1C\uC694" },
@@ -19686,7 +19932,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     avifSupported: null,
     viewUrls: /* @__PURE__ */ new Map(),
     cleanup: null,
-    cardTheme: null
+    cardTheme: null,
+    simpackProject: null
   };
   var app = document.getElementById("app");
   disableNetworkApis();
@@ -19756,7 +20003,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     dropTitle.textContent = "\uCE74\uB4DC\uB97C \uC5EC\uAE30\uC5D0 \uB4DC\uB86D";
     const dropSub = document.createElement("div");
     dropSub.className = "drop-sub";
-    dropSub.textContent = ".charx, .png, .jpg, .jpeg, .json, .risum";
+    dropSub.textContent = ".simpack, .charx, .png, .jpg, .jpeg, .json, .risum";
     const pickButton = document.createElement("button");
     pickButton.className = "primary-btn";
     pickButton.id = "pickButton";
@@ -19881,6 +20128,12 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     revokeViewUrls();
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
+      if (/\.simpack$/i.test(file.name)) {
+        await loadSimPack(bytes, file);
+        setMessage(`SimPack \uB85C\uB4DC \uC644\uB8CC: ${state.simpackProject.manifest.title}`);
+        renderShell();
+        return;
+      }
       const parsed = (0, import_parseCard.parseCard)(bytes, file.name, { lazy: true });
       const lore = (0, import_normalize2.extractLorebook)(parsed.card);
       const compatibility = (0, import_risuCompatibility.createRisuCompatibilityEnvelope)(parsed, lore);
@@ -19888,6 +20141,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       state.lore = lore;
       state.compatibility = compatibility;
       state.file = { name: file.name, size: file.size, type: file.type || "" };
+      state.simpackProject = null;
       state.activeTab = "play";
       state.shellMode = "player";
       const primary = primaryCharacter(parsed, lore);
@@ -19906,10 +20160,38 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       state.lore = null;
       state.compatibility = null;
       state.file = null;
+      state.simpackProject = null;
       state.error = err2 && err2.message ? err2.message : String(err2);
       setMessage(`\uD30C\uC2F1 \uC2E4\uD328: ${state.error}`);
     }
     renderShell();
+  }
+  async function loadSimPack(bytes, file) {
+    const project = (0, import_simpack.unpackSimPack)(bytes);
+    const manifest = project.manifest;
+    const runtime = (0, import_runtimeProject.selectSimPackRuntime)(manifest);
+    const sourceRef = manifest.source && manifest.source.card && manifest.source.card.blob;
+    const sourceBytes = sourceRef && project.files[sourceRef.path];
+    let parsed = null;
+    if (sourceBytes) parsed = (0, import_parseCard.parseCard)(sourceBytes, manifest.source.card.fileName || file.name, { lazy: true });
+    if (!parsed) {
+      const character2 = manifest.content.characters && manifest.content.characters[0] || {};
+      parsed = { format: "simpack", source: file.name, spec: "simpack/0.2", specVersion: "0.2", name: character2.name || manifest.title, assets: [], card: { spec: "chara_card_v3", spec_version: "3.0", data: { name: character2.name || manifest.title, description: character2.description || "" } }, containerEntries: [] };
+    }
+    const envelope = manifest.risu && manifest.risu.envelope ? JSON.parse(JSON.stringify(manifest.risu.envelope)) : (0, import_risuCompatibility.createRisuCompatibilityEnvelope)(parsed, null);
+    if (envelope.raw) envelope.raw.sourceBytes = sourceBytes || null;
+    const lore = manifest.content.lorebooks && manifest.content.lorebooks[0] || (0, import_normalize2.extractLorebook)(parsed.card);
+    setActiveSchema(runtime.schema);
+    schemaActivated = true;
+    state.parsed = parsed;
+    state.lore = lore;
+    state.compatibility = envelope;
+    state.file = { name: file.name, size: file.size, type: file.type || "application/zip" };
+    state.simpackProject = project;
+    state.activeTab = "play";
+    state.shellMode = "player";
+    const primary = primaryCharacter(parsed, lore);
+    state.cardTheme = await applyCardTheme(primary.asset, objectUrlFor);
   }
   function render() {
     const status = document.getElementById("loadStatus");
@@ -19963,6 +20245,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       parsed: state.parsed,
       lore: state.lore,
       compatibility: state.compatibility,
+      simpack: state.simpackProject && state.simpackProject.manifest,
       file: state.file,
       objectUrlFor,
       revokeViewUrls,
@@ -20024,7 +20307,37 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     const pre = document.createElement("pre");
     pre.textContent = JSON.stringify(parsed.card, null, 2).slice(0, 24e3);
     details.append(summary, pre);
-    wrap.append(lengths, details);
+    const packageSection = document.createElement("section");
+    packageSection.className = "wide-section";
+    const packageTitle = sectionTitle("SimPack \uD504\uB85C\uC81D\uD2B8");
+    const packageCopy = document.createElement("p");
+    packageCopy.textContent = "\uCE74\uB4DC \uC6D0\uBCF8\xB7\uD638\uD658 \uC815\uBCF4\xB7\uD604\uC7AC \uC2B9\uC778 \uADDC\uCE59\uC744 \uD558\uB098\uC758 \uAD50\uCCB4 \uAC00\uB2A5\uD55C \uD504\uB85C\uC81D\uD2B8 \uD30C\uC77C\uB85C \uC800\uC7A5\uD569\uB2C8\uB2E4.";
+    const packageButton = document.createElement("button");
+    packageButton.type = "button";
+    packageButton.className = "primary-btn";
+    packageButton.textContent = "SimPack v0.2 \uB0B4\uBCF4\uB0B4\uAE30";
+    packageButton.addEventListener("click", () => {
+      const project = state.simpackProject || (0, import_simpack.createSimPack)({
+        id: String(parsed.name || "project"),
+        title: String(parsed.name || file.name),
+        fileName: file.name,
+        risuEnvelope: state.compatibility,
+        sourceBytes: parsed._sourceBytes,
+        schema: getSchema(),
+        lorebooks: lore ? [lore] : [],
+        screens: [{ id: "play", title: "\uD50C\uB808\uC774", layout: "stage-chat-hud", regions: [] }],
+        navigation: [{ id: "play", screenId: "play", label: "\uD50C\uB808\uC774" }],
+        provenance: state.compatibility && state.compatibility.provenance || []
+      });
+      const bytes = (0, import_simpack.packSimPack)(project);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+      link.download = `${String(parsed.name || "project").replace(/[<>:"/\\|?*]/g, "")}.simpack`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1e3);
+    });
+    packageSection.append(packageTitle, packageCopy, packageButton);
+    wrap.append(lengths, details, packageSection);
     return wrap;
   }
   function statCard(label, value) {

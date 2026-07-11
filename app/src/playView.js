@@ -287,6 +287,14 @@ export function renderPlayView(container, ctx) {
     detachSheetKeyHandler();
     npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
     character = primaryCharacter(ctx.parsed, ctx.lore, npcGroups);
+    if (ctx.simpack) {
+      const personas = ctx.simpack.personas && ctx.simpack.personas.library || [];
+      const presets = ctx.simpack.prompts && ctx.simpack.prompts.presets || [];
+      const boundPersona = ctx.simpack.personas && ctx.simpack.personas.sessionBinding && ctx.simpack.personas.sessionBinding.snapshot;
+      const boundPreset = ctx.simpack.prompts && ctx.simpack.prompts.sessionBinding && ctx.simpack.prompts.sessionBinding.snapshot;
+      activePersona = JSON.parse(JSON.stringify(boundPersona || personas.find((item) => item.id === ctx.simpack.personas.defaultPersonaId) || null));
+      activePromptPreset = JSON.parse(JSON.stringify(boundPreset || presets.find((item) => item.id === ctx.simpack.prompts.defaultPresetId) || null));
+    }
     // 말풍선 아바타는 기본 표정으로 고정한다 — 감정 스왑은 히어로 헤더에만 반영.
     character.baseAsset = character.asset;
   }
