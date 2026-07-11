@@ -9934,7 +9934,7 @@ ${Array.from(extras).join(" ")}` : text;
     for (const section of descriptor.sections) {
       const group = el2("div", "mgmt-section");
       const label = el2("span", "combat-command-label");
-      label.textContent = { sell: "\uD310\uB9E4", buy: "\uAD6C\uB9E4", purchase: "\uC7AC\uB8CC \uAD6C\uB9E4", upgrade: "\uC99D\uCD95", gather: "\uCC44\uC9D1", day_end: "\uD558\uB8E8" }[section.type] || section.type;
+      label.textContent = { sell: "\uD310\uB9E4", buy: "\uAD6C\uB9E4", purchase: "\uC7AC\uB8CC \uAD6C\uB9E4", upgrade: "\uC99D\uCD95", gather: "\uCC44\uC9D1 (\uBB34\uB8CC \xB7 \uD68D\uB4DD\uB7C9\uC740 \uC8FC\uC0AC\uC704)", day_end: "\uD558\uB8E8" }[section.type] || section.type;
       group.append(label);
       if (section.type === "sell" || section.type === "buy") for (const item of section.items) {
         const owned = section.type === "buy" && item.owned ? ` \xB7 \uBCF4\uC720 ${item.owned}` : "";
@@ -9957,7 +9957,7 @@ ${Array.from(extras).join(" ")}` : text;
       }
       if (section.type === "gather") for (const resource of section.resources) for (const scale of section.scales) {
         const scaleLabel = { small: "\uC18C\uB7C9", large: "\uB300\uB7C9", bulk: "\uB300\uADDC\uBAA8" }[scale.id];
-        const control = button2(`${resource} [${scaleLabel} ${scale.range.join("~")}]`, "secondary-btn");
+        const control = button2(`${resource} ${scaleLabel} \xB7 \uD68D\uB4DD +${scale.range.join("~")}\uAC1C`, "secondary-btn");
         control.disabled = busy;
         control.addEventListener("click", () => runManagementTurn({ id: "gain_resource", params: { resource, scale: scale.id } }, input2, ctx, render2));
         group.append(control);

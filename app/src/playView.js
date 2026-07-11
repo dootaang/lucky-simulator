@@ -237,7 +237,7 @@ function renderManagementConsole(input, ctx, render) {
   for (const section of descriptor.sections) {
     const group = el('div', 'mgmt-section');
     const label = el('span', 'combat-command-label');
-    label.textContent = ({ sell: '판매', buy: '구매', purchase: '재료 구매', upgrade: '증축', gather: '채집', day_end: '하루' })[section.type] || section.type;
+    label.textContent = ({ sell: '판매', buy: '구매', purchase: '재료 구매', upgrade: '증축', gather: '채집 (무료 · 획득량은 주사위)', day_end: '하루' })[section.type] || section.type;
     group.append(label);
     if (section.type === 'sell' || section.type === 'buy') for (const item of section.items) {
       const owned = section.type === 'buy' && item.owned ? ` · 보유 ${item.owned}` : '';
@@ -260,7 +260,8 @@ function renderManagementConsole(input, ctx, render) {
     }
     if (section.type === 'gather') for (const resource of section.resources) for (const scale of section.scales) {
       const scaleLabel = { small: '소량', large: '대량', bulk: '대규모' }[scale.id];
-      const control = button(`${resource} [${scaleLabel} ${scale.range.join('~')}]`, 'secondary-btn');
+      // "A_res [소량 100~200]"이 가격(원)처럼 오독됨(사용자 피드백) — 획득량임을 명시.
+      const control = button(`${resource} ${scaleLabel} · 획득 +${scale.range.join('~')}개`, 'secondary-btn');
       control.disabled = busy;
       control.addEventListener('click', () => runManagementTurn({ id: 'gain_resource', params: { resource, scale: scale.id } }, input, ctx, render));
       group.append(control);
