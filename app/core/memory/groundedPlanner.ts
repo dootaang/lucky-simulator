@@ -28,7 +28,9 @@ export interface GroundedConfig {
 }
 
 const AUTHORITATIVE_KINDS = new Set(['engine-fact', 'relation', 'event']);
-const DEFAULT_VIEWER_SCOPES = ['public', 'user'];
+// 기본은 공개만(deny-by-default) — 비밀(user)·NPC 전용(entity:*)은 호출부가 명시적으로 열어야
+// 노출된다(감사 Major: 기본값에 user가 있으면 public 화자 맥락에 비밀 유출 위험). ADR "안전한 기본값 우선".
+const DEFAULT_VIEWER_SCOPES = ['public'];
 
 function estimateTokens(text: string): number {
   return Math.ceil((text || '').length / 4);
@@ -52,12 +54,31 @@ function hitOf(record: MemoryRecord, extra: Partial<RetrievalHit>): RetrievalHit
   };
 }
 
-// 질의가 참조하는 엔티티 id 추출(별칭 substring). NPC disambiguation의 기반.
+// 별칭이 질의에 등장하는지. 라틴 별칭은 단어 경계를 요구해 오분류를 막는다
+//  (예: "Sera"⊂"several"). 한글은 조사 교착("강한결이","실비아야")으로 뒤 글자가 늘 한글이라
+//  스크립트 경계를 쓰면 정상 매칭까지 깨진다 → 한글 고유명은 substring을 유지한다(감사 Major 보완).
+function aliasMatches(query: string, alias: string): boolean {
+  const q = query.toLowerCase();
+  const a = String(alias).toLowerCase();
+  if (!a) return false;
+  const isLatin = /^[a-z0-9]+$/.test(a);
+  if (!isLatin) return q.includes(a); // 한글/혼합 고유명 — substring
+  let from = 0;
+  for (;;) {
+    const idx = q.indexOf(a, from);
+    if (idx < 0) return false;
+    const before = idx > 0 ? q[idx - 1] : '';
+    const after = idx + a.length < q.length ? q[idx + a.length] : '';
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true; // 라틴 단어 경계
+    from = idx + 1;
+  }
+}
+
+// 질의가 참조하는 엔티티 id 추출. NPC disambiguation의 기반.
 function referencedEntities(query: string, aliases: Record<string, string[]>): Set<string> {
   const found = new Set<string>();
-  const q = query.toLowerCase();
   for (const [id, names] of Object.entries(aliases)) {
-    for (const name of names) if (name && q.includes(String(name).toLowerCase())) { found.add(id); break; }
+    for (const name of names) if (aliasMatches(query, name)) { found.add(id); break; }
   }
   return found;
 }
@@ -138,13 +159,16 @@ export async function planGroundedHybrid(
     .sort((a, b) => (b[1] - a[1]) || (a[0] < b[0] ? -1 : 1))
     .map(([id, s]) => hitOf(byId.get(id)!, { score: s, selectedBecause: because.get(id) || [] }));
 
-  // 5) token budget + per-kind quota.
+  // 5) token budget + per-kind quota. authoritative 현재사실에 이미 든 record는 회상 hit에서
+  //    제외해 프롬프트 중복 적재를 막는다(감사 Nit).
+  const factIds = new Set(currentFacts.map((h) => h.recordId));
   const perKindQuota = config.perKindQuota ?? {};
   const kindUsed: Record<string, number> = {};
   const hits: RetrievalHit[] = [];
   let tokens = 0;
   for (const hit of ranked) {
     if (hits.length >= topK) break;
+    if (factIds.has(hit.recordId)) continue;
     const rec = byId.get(hit.recordId)!;
     const quota = perKindQuota[rec.kind];
     if (quota != null && (kindUsed[rec.kind] || 0) >= quota) continue;

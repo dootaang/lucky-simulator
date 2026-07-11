@@ -126,6 +126,8 @@ export function createVoyageProvider(deps: VoyageDeps): VoyageProvider {
         attempt += 1;
         stats.retries += 1;
         await sleep(backoff);
+        // 백오프 대기 후 중단 신호를 확인 — 최대 30초 무의미 대기 후 진행 방지(감사 Minor).
+        if (deps.signal && deps.signal.aborted) throw new VoyageError('voyage_aborted', 0);
         continue;
       }
       if (!res.ok) {
@@ -138,14 +140,19 @@ export function createVoyageProvider(deps: VoyageDeps): VoyageProvider {
     }
   }
 
-  // 캐시 조회 후 미스만 실제 호출. contextId는 그룹 순서로 고정(같은 그룹 조각의 문맥 공유).
+  // contextId는 그룹 조각 내용으로만 정한다(배치 순서 무관 — 캐시 안정성). 은 조각 구분자.
+  function contextIdOf(inputType: string, group: string[]): string {
+    return `${inputType}:${group.join('|')}`;
+  }
+
+  // 캐시 조회 후 미스만 실제 호출.
   async function embedGroups(groups: string[][], inputType: 'query' | 'document'): Promise<number[][][]> {
     const results: number[][][] = groups.map(() => []);
     const missGroups: string[][] = [];
     const missMap: number[] = [];
     groups.forEach((group, gi) => {
       if (!cache) { missGroups.push(group); missMap.push(gi); return; }
-      const contextId = `${inputType}:${gi}:${group.join('')}`;
+      const contextId = contextIdOf(inputType, group);
       const cachedChunks: number[][] = [];
       let allHit = true;
       for (const chunk of group) {
@@ -164,7 +171,7 @@ export function createVoyageProvider(deps: VoyageDeps): VoyageProvider {
         results[gi] = groupVecs;
         if (cache) {
           const group = missGroups[mi];
-          const contextId = `${inputType}:${gi}:${group.join('')}`;
+          const contextId = contextIdOf(inputType, group);
           group.forEach((chunk, ci) => {
             if (groupVecs[ci]) cache.set(cache.key(model, dimension, inputType, contextId, chunk), groupVecs[ci]);
           });

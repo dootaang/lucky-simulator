@@ -4,7 +4,7 @@
 // 개념 참고: LIBRA World Manager 5.3.1의 embedding cache/queue 아이디어(코드 미복사, 재구현).
 //   출처·해시는 docs/THIRD_PARTY_PROVENANCE.md.
 
-// FNV-1a 32bit — 캐시 키용(충돌 무시 가능한 저비용 해시, 보안용 아님).
+// FNV-1a 32bit — 캐시 키 부품(보안용 아님).
 export function fnv1a(text: string): string {
   let hash = 2166136261;
   for (let i = 0; i < text.length; i += 1) {
@@ -12,6 +12,19 @@ export function fnv1a(text: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+// 캐시 키용 강화 해시 — 서로 다른 시드의 FNV 두 개 + 길이로 ~64bit 유효폭.
+// 32bit 단독은 대규모 코퍼스/장기 세션에서 충돌 시 엉뚱한 임베딩을 반환할 수 있다(감사 Minor).
+function strongHash(text: string): string {
+  let a = 2166136261;
+  let b = 0x811c9dc5 ^ 0x9e3779b9;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text.charCodeAt(i);
+    a ^= c; a = Math.imul(a, 16777619);
+    b = Math.imul(b ^ c, 2654435761);
+  }
+  return `${(a >>> 0).toString(16).padStart(8, '0')}${(b >>> 0).toString(16).padStart(8, '0')}${text.length.toString(16)}`;
 }
 
 export interface CacheStats {
@@ -35,7 +48,7 @@ export function createEmbeddingCache(): EmbeddingCache {
     // contextId: 같은 문서 그룹(요약/에피소드)의 조각들이 공유하는 문맥 식별자 —
     // 같은 텍스트라도 다른 문맥에서 임베딩이 달라질 수 있으므로 키에 포함(contextual embedding).
     key(model, dimension, inputType, contextId, text) {
-      return `${model}|${dimension}|${inputType}|${fnv1a(contextId)}|${fnv1a(text)}`;
+      return `${model}|${dimension}|${inputType}|${strongHash(contextId)}|${strongHash(text)}`;
     },
     get(k) {
       const v = store.get(k);
