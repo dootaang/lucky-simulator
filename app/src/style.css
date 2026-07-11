@@ -781,6 +781,10 @@ select:focus { border-color: var(--amber-line); }
 .play-speaker-avatar { width: 24px; height: 24px; font-size: 11px; }
 .play-hero-avatar img, .play-speaker-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .play-speaker { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: var(--card-accent, var(--amber)); font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.npc-avatar-row { display: flex; align-items: center; gap: 4px; margin-left: 2px; }
+.npc-avatar { width: 22px; height: 22px; flex: 0 0 auto; overflow: hidden; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink); display: grid; place-items: center; font-size: 10px; font-weight: 800; }
+.npc-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.npc-avatar-more { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; background: var(--surface-2); color: var(--ink-mid); display: grid; place-items: center; font-size: 10px; }
 .play-speaker.user-label { justify-content: flex-end; color: var(--ink-mid); }
 
 .play-message-list {
@@ -844,6 +848,7 @@ select:focus { border-color: var(--amber-line); }
 .state-group h4 { margin: 2px 0 7px; color: var(--ink-mid); font-family: var(--font-mono); font-size: 12px; }
 .state-detail-list { display: grid; gap: 6px; }
 .state-detail-row { padding: 8px 10px; border-left: 2px solid var(--line-strong); background: var(--surface-2); color: var(--ink-mid); font-size: 12px; overflow-wrap: anywhere; }
+.npc-state-row { display: flex; align-items: center; gap: 7px; }
 .staff-card-grid { display: grid; gap: 8px; }
 .staff-card { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); padding: 8px; }
 .staff-avatar { width: 36px; height: 36px; overflow: hidden; border-radius: 50%; border: 1px solid var(--amber-line); background: var(--amber); color: var(--on-amber); display: grid; place-items: center; font-weight: 800; }

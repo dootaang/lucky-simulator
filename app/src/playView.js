@@ -19,14 +19,14 @@ let sheetWasOpen = false;
 let activeRender = null;
 let sessionCardKey = null;
 let character = null;
+let npcGroups = [];
 let mgmtConsoleOpen = false;
 let lodgingSelection = new Set();
 let lodgingSelectionDay = null;
 let ledgerDeltas = [];
 
-export function primaryCharacter(parsed, lore) {
+export function primaryCharacter(parsed, lore, groups = buildNpcClusters(parsed, lore).groups) {
   const name = String((parsed && parsed.name) || '시뮬봇');
-  const groups = buildNpcClusters(parsed, lore).groups;
   const exact = groups.find((group) => group.charId.toLowerCase() === name.toLowerCase());
   const group = exact || groups.slice().sort((a, b) => assetCount(b) - assetCount(a))[0] || null;
   const pick = group && selectAsset(group, preferredEmotion(group));
@@ -66,7 +66,8 @@ export function renderPlayView(container, ctx) {
     lodgingSelectionDay = null;
     ledgerDeltas = [];
     detachSheetKeyHandler();
-    character = primaryCharacter(ctx.parsed, ctx.lore);
+    npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
+    character = primaryCharacter(ctx.parsed, ctx.lore, npcGroups);
     // 말풍선 아바타는 기본 표정으로 고정한다 — 감정 스왑은 히어로 헤더에만 반영.
     character.baseAsset = character.asset;
   }
@@ -294,10 +295,14 @@ function renderMessage(message, ctx, showIdentity) {
   const wrap = el('article', `play-message ${message.role}`);
   const text = el('div', 'play-message-text');
   text.textContent = message.content;
-  if (message.role === 'assistant' && showIdentity) {
+  if (message.role === 'assistant' && (showIdentity || (message.npcIds && message.npcIds.length))) {
     const label = el('div', 'play-speaker');
-    label.append(characterAvatar(ctx, character && (character.baseAsset || character.asset), 'play-speaker-avatar'));
-    const name = el('span'); name.textContent = (character && character.name) || '시뮬봇'; label.append(name); wrap.append(label);
+    if (showIdentity) {
+      label.append(characterAvatar(ctx, character && (character.baseAsset || character.asset), 'play-speaker-avatar'));
+      const name = el('span'); name.textContent = (character && character.name) || '시뮬봇'; label.append(name);
+    }
+    if (message.npcIds && message.npcIds.length) label.append(renderNpcAvatars(message.npcIds, ctx));
+    wrap.append(label);
   } else if (message.role === 'user' && showIdentity) { const label = el('div', 'play-speaker user-label'); label.textContent = '나'; wrap.append(label); }
   wrap.append(text);
   if (message.chips && message.chips.length) {
@@ -348,6 +353,33 @@ function characterAvatar(ctx, asset, className, initialName) {
     wrap.append(img);
   } else showInitial();
   return wrap;
+}
+function npcPresentation(schema, npcId) {
+  const npc = entityInstances(schema, 'npc').find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
+  const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
+  const group = npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+  const pick = group && selectAsset(group, preferredEmotion(group));
+  return { name: (npc && (npc.nameKo || npc.name || npc.nameEn)) || String(npcId), asset: pick && pick.asset };
+}
+function renderNpcAvatars(npcIds, ctx) {
+  const row = el('div', 'npc-avatar-row');
+  const ids = Array.from(new Set(npcIds)).filter(Boolean);
+  for (const id of ids.slice(0, 3)) {
+    const npc = npcPresentation(getSchema(), id);
+    const avatar = characterAvatar(ctx, npc.asset, 'npc-avatar', npc.name);
+    avatar.title = npc.name;
+    avatar.setAttribute('aria-label', npc.name);
+    row.append(avatar);
+  }
+  if (ids.length > 3) { const more = el('span', 'npc-avatar-more'); more.textContent = `+${ids.length - 3}`; row.append(more); }
+  return row;
+}
+function promptNpcIds(prompt) { return prompt && Array.isArray(prompt.relatedNpcIds) && prompt.relatedNpcIds.length ? [...prompt.relatedNpcIds] : undefined; }
+function assistantMessage(content, chips, prompt = lastPrompt) {
+  const message = { role: 'assistant', content, chips };
+  const npcIds = promptNpcIds(prompt);
+  if (npcIds) message.npcIds = npcIds;
+  return message;
 }
 function sceneLine() { const schema = getSchema(), state = getEngineState(); if (!schema || !state) return '새로운 장면'; return summarize(schema, state).split('\n')[0] || '새로운 장면'; }
 function emotions() { return character && character.group ? Array.from(character.group.emotions.keys()) : []; }
@@ -863,10 +895,8 @@ function renderStateBox(ctx, render) {
   const other = el('div', 'state-detail-list');
   const claimed = new Set(state.claimedRewards || []);
   for (const quest of schema.quests || []) { const row = el('div', 'state-detail-row'); row.textContent = `📜 ${quest.name || quest.id}${claimed.has(quest.id) ? ' · 완료' : ''}`; other.append(row); }
-  const npcText = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : [])
-    .map((id) => npcSummary(schema, state, id))
-    .filter(Boolean);
-  for (const text of npcText) { const row = el('div', 'state-detail-row'); row.textContent = `👤 ${text}`; other.append(row); }
+  const npcRows = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : []).map((id) => ({ id, text: npcSummary(schema, state, id) })).filter((item) => item.text);
+  for (const item of npcRows) { const npc = npcPresentation(schema, item.id); const row = el('div', 'state-detail-row npc-state-row'); row.append(characterAvatar(ctx, npc.asset, 'npc-avatar', npc.name), document.createTextNode(`👤 ${item.text}`)); other.append(row); }
   if (other.childNodes.length) section.append(other);
   return section;
 }
@@ -877,14 +907,12 @@ function appendStaffGrid(section, ctx, render, schema, state, npcs) {
   const group = el('div', 'state-group staff-group');
   const heading = el('h4'); heading.textContent = '직원';
   const grid = el('div', 'staff-card-grid');
-  const clusters = buildNpcClusters(ctx.parsed, ctx.lore).groups;
   for (const item of state.staff || []) {
     const npc = npcs.find((entry) => entry.id === item.npcId);
     const name = (npc && npc.nameKo) || item.npcId;
-    const cluster = clusters.find((entry) => entry.charId.toLowerCase() === String(item.npcId).toLowerCase());
-    const pick = cluster && selectAsset(cluster, preferredEmotion(cluster));
+    const presentation = npcPresentation(schema, item.npcId);
     const card = el('div', 'staff-card');
-    card.append(characterAvatar(ctx, pick && pick.asset, 'staff-avatar', name));
+    card.append(characterAvatar(ctx, presentation.asset, 'staff-avatar', name));
     const copy = el('div', 'staff-card-copy');
     const label = el('strong'); label.textContent = name;
     const wage = el('span'); wage.textContent = `일급 ${formatMoney(item.dailyWage)}`;
@@ -1051,7 +1079,7 @@ async function startCombat(ctx, render) {
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     const event = parsed.events.find((item) => item.id === 'start_encounter');
     if (!event) {
-      messages.push({ role: 'assistant', content: parsed.narrative || '', chips: [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }] });
+      messages.push(assistantMessage(parsed.narrative || '', [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }]));
     } else {
       const result = runEvent(event);
       const entry = result.entries[0] || { ok: false, reason: 'empty_log' };
@@ -1060,10 +1088,10 @@ async function startCombat(ctx, render) {
       const item = summarizeEventItem('start_encounter', entry, formatMoney);
       const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
       if (ignored > 0) chips.push({ ok: false, kind: 'system', text: `다른 사건 ${ignored}개 무시됨` });
-      messages.push({ role: 'assistant', content: parsed.narrative, chips });
+      messages.push(assistantMessage(parsed.narrative, chips));
     }
   } catch (_) {
-    messages.push({ role: 'assistant', content: '', chips: [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }] });
+    messages.push(assistantMessage('', [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }]));
   } finally {
     ledgerDeltas = [];
     busy = false;
@@ -1091,9 +1119,9 @@ async function openCannedScene(instruction, ctx, render) {
       const item = summarizeEventItem(event.id, first, formatMoney);
       chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
     }
-    messages.push({ role: 'assistant', content: parsed.narrative || raw, chips });
+    messages.push(assistantMessage(parsed.narrative || raw, chips));
   } catch (err) {
-    messages.push({ role: 'assistant', content: safeError(err), chips: [{ ok: false, kind: 'system', text: 'API 오류' }] });
+    messages.push(assistantMessage(safeError(err), [{ ok: false, kind: 'system', text: 'API 오류' }]));
   } finally {
     ledgerDeltas = [];
     busy = false;
@@ -1128,9 +1156,9 @@ async function submitTurn(text, ctx, render) {
     }
     const combatNow = getEngineState().combat;
     if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
-    messages.push({ role: 'assistant', content: parsed.narrative || raw, chips });
+    messages.push(assistantMessage(parsed.narrative || raw, chips));
   } catch (err) {
-    messages.push({ role: 'assistant', content: safeError(err), chips: [{ ok: false, kind: 'system', text: 'API 오류' }] });
+    messages.push(assistantMessage(safeError(err), [{ ok: false, kind: 'system', text: 'API 오류' }]));
   } finally {
     ledgerDeltas = [];
     busy = false;

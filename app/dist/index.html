@@ -789,6 +789,10 @@ select:focus { border-color: var(--amber-line); }
 .play-speaker-avatar { width: 24px; height: 24px; font-size: 11px; }
 .play-hero-avatar img, .play-speaker-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .play-speaker { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: var(--card-accent, var(--amber)); font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.npc-avatar-row { display: flex; align-items: center; gap: 4px; margin-left: 2px; }
+.npc-avatar { width: 22px; height: 22px; flex: 0 0 auto; overflow: hidden; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink); display: grid; place-items: center; font-size: 10px; font-weight: 800; }
+.npc-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.npc-avatar-more { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; background: var(--surface-2); color: var(--ink-mid); display: grid; place-items: center; font-size: 10px; }
 .play-speaker.user-label { justify-content: flex-end; color: var(--ink-mid); }
 
 .play-message-list {
@@ -852,6 +856,7 @@ select:focus { border-color: var(--amber-line); }
 .state-group h4 { margin: 2px 0 7px; color: var(--ink-mid); font-family: var(--font-mono); font-size: 12px; }
 .state-detail-list { display: grid; gap: 6px; }
 .state-detail-row { padding: 8px 10px; border-left: 2px solid var(--line-strong); background: var(--surface-2); color: var(--ink-mid); font-size: 12px; overflow-wrap: anywhere; }
+.npc-state-row { display: flex; align-items: center; gap: 7px; }
 .staff-card-grid { display: grid; gap: 8px; }
 .staff-card { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--inset); padding: 8px; }
 .staff-avatar { width: 36px; height: 36px; overflow: hidden; border-radius: 50%; border: 1px solid var(--amber-line); background: var(--amber); color: var(--on-amber); display: grid; place-items: center; font-weight: 800; }
@@ -10790,13 +10795,13 @@ ${Array.from(extras).join(" ")}` : text;
   var activeRender = null;
   var sessionCardKey = null;
   var character = null;
+  var npcGroups = [];
   var mgmtConsoleOpen = false;
   var lodgingSelection = /* @__PURE__ */ new Set();
   var lodgingSelectionDay = null;
   var ledgerDeltas = [];
-  function primaryCharacter(parsed, lore) {
+  function primaryCharacter(parsed, lore, groups = buildNpcClusters(parsed, lore).groups) {
     const name = String(parsed && parsed.name || "\uC2DC\uBBAC\uBD07");
-    const groups = buildNpcClusters(parsed, lore).groups;
     const exact = groups.find((group2) => group2.charId.toLowerCase() === name.toLowerCase());
     const group = exact || groups.slice().sort((a, b) => assetCount(b) - assetCount(a))[0] || null;
     const pick = group && selectAsset(group, preferredEmotion(group));
@@ -10850,7 +10855,8 @@ ${Array.from(extras).join(" ")}` : text;
       lodgingSelectionDay = null;
       ledgerDeltas = [];
       detachSheetKeyHandler();
-      character = primaryCharacter(ctx.parsed, ctx.lore);
+      npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
+      character = primaryCharacter(ctx.parsed, ctx.lore, npcGroups);
       character.baseAsset = character.asset;
     }
     const root = el2("div", "play-view");
@@ -11122,12 +11128,15 @@ ${Array.from(extras).join(" ")}` : text;
     const wrap = el2("article", `play-message ${message.role}`);
     const text = el2("div", "play-message-text");
     text.textContent = message.content;
-    if (message.role === "assistant" && showIdentity) {
+    if (message.role === "assistant" && (showIdentity || message.npcIds && message.npcIds.length)) {
       const label = el2("div", "play-speaker");
-      label.append(characterAvatar(ctx, character && (character.baseAsset || character.asset), "play-speaker-avatar"));
-      const name = el2("span");
-      name.textContent = character && character.name || "\uC2DC\uBBAC\uBD07";
-      label.append(name);
+      if (showIdentity) {
+        label.append(characterAvatar(ctx, character && (character.baseAsset || character.asset), "play-speaker-avatar"));
+        const name = el2("span");
+        name.textContent = character && character.name || "\uC2DC\uBBAC\uBD07";
+        label.append(name);
+      }
+      if (message.npcIds && message.npcIds.length) label.append(renderNpcAvatars(message.npcIds, ctx));
       wrap.append(label);
     } else if (message.role === "user" && showIdentity) {
       const label = el2("div", "play-speaker user-label");
@@ -11187,6 +11196,39 @@ ${Array.from(extras).join(" ")}` : text;
       wrap.append(img);
     } else showInitial();
     return wrap;
+  }
+  function npcPresentation(schema2, npcId) {
+    const npc = entityInstances(schema2, "npc").find((item) => String(item.id).toLowerCase() === String(npcId).toLowerCase());
+    const keys = [npc && npc.nameEn, npc && npc.id, npcId].filter(Boolean).map((value) => String(value).toLowerCase());
+    const group = npcGroups.find((item) => keys.includes(String(item.charId).toLowerCase()));
+    const pick = group && selectAsset(group, preferredEmotion(group));
+    return { name: npc && (npc.nameKo || npc.name || npc.nameEn) || String(npcId), asset: pick && pick.asset };
+  }
+  function renderNpcAvatars(npcIds, ctx) {
+    const row3 = el2("div", "npc-avatar-row");
+    const ids = Array.from(new Set(npcIds)).filter(Boolean);
+    for (const id of ids.slice(0, 3)) {
+      const npc = npcPresentation(getSchema(), id);
+      const avatar = characterAvatar(ctx, npc.asset, "npc-avatar", npc.name);
+      avatar.title = npc.name;
+      avatar.setAttribute("aria-label", npc.name);
+      row3.append(avatar);
+    }
+    if (ids.length > 3) {
+      const more = el2("span", "npc-avatar-more");
+      more.textContent = `+${ids.length - 3}`;
+      row3.append(more);
+    }
+    return row3;
+  }
+  function promptNpcIds(prompt) {
+    return prompt && Array.isArray(prompt.relatedNpcIds) && prompt.relatedNpcIds.length ? [...prompt.relatedNpcIds] : void 0;
+  }
+  function assistantMessage(content, chips, prompt = lastPrompt) {
+    const message = { role: "assistant", content, chips };
+    const npcIds = promptNpcIds(prompt);
+    if (npcIds) message.npcIds = npcIds;
+    return message;
   }
   function sceneLine() {
     const schema2 = getSchema(), state2 = getEngineState();
@@ -11732,10 +11774,11 @@ ${Array.from(extras).join(" ")}` : text;
       row3.textContent = `\u{1F4DC} ${quest.name || quest.id}${claimed.has(quest.id) ? " \xB7 \uC644\uB8CC" : ""}`;
       other.append(row3);
     }
-    const npcText = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : []).map((id) => npcSummary2(schema2, state2, id)).filter(Boolean);
-    for (const text of npcText) {
-      const row3 = el2("div", "state-detail-row");
-      row3.textContent = `\u{1F464} ${text}`;
+    const npcRows = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : []).map((id) => ({ id, text: npcSummary2(schema2, state2, id) })).filter((item) => item.text);
+    for (const item of npcRows) {
+      const npc = npcPresentation(schema2, item.id);
+      const row3 = el2("div", "state-detail-row npc-state-row");
+      row3.append(characterAvatar(ctx, npc.asset, "npc-avatar", npc.name), document.createTextNode(`\u{1F464} ${item.text}`));
       other.append(row3);
     }
     if (other.childNodes.length) section.append(other);
@@ -11773,14 +11816,12 @@ ${Array.from(extras).join(" ")}` : text;
     const heading = el2("h4");
     heading.textContent = "\uC9C1\uC6D0";
     const grid = el2("div", "staff-card-grid");
-    const clusters = buildNpcClusters(ctx.parsed, ctx.lore).groups;
     for (const item of state2.staff || []) {
       const npc = npcs2.find((entry) => entry.id === item.npcId);
       const name = npc && npc.nameKo || item.npcId;
-      const cluster = clusters.find((entry) => entry.charId.toLowerCase() === String(item.npcId).toLowerCase());
-      const pick = cluster && selectAsset(cluster, preferredEmotion(cluster));
+      const presentation = npcPresentation(schema2, item.npcId);
       const card = el2("div", "staff-card");
-      card.append(characterAvatar(ctx, pick && pick.asset, "staff-avatar", name));
+      card.append(characterAvatar(ctx, presentation.asset, "staff-avatar", name));
       const copy = el2("div", "staff-card-copy");
       const label = el2("strong");
       label.textContent = name;
@@ -11936,7 +11977,7 @@ ${Array.from(extras).join(" ")}` : text;
       const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
       const event = parsed.events.find((item) => item.id === "start_encounter");
       if (!event) {
-        messages.push({ role: "assistant", content: parsed.narrative || "", chips: [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }] });
+        messages.push(assistantMessage(parsed.narrative || "", [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }]));
       } else {
         const result = runEvent(event);
         const entry = result.entries[0] || { ok: false, reason: "empty_log" };
@@ -11945,10 +11986,10 @@ ${Array.from(extras).join(" ")}` : text;
         const item = summarizeEventItem("start_encounter", entry, formatMoney2);
         const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
         if (ignored > 0) chips.push({ ok: false, kind: "system", text: `\uB2E4\uB978 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
-        messages.push({ role: "assistant", content: parsed.narrative, chips });
+        messages.push(assistantMessage(parsed.narrative, chips));
       }
     } catch (_) {
-      messages.push({ role: "assistant", content: "", chips: [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }] });
+      messages.push(assistantMessage("", [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }]));
     } finally {
       ledgerDeltas = [];
       busy = false;
@@ -11975,9 +12016,9 @@ ${Array.from(extras).join(" ")}` : text;
         const item = summarizeEventItem(event.id, first, formatMoney2);
         chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
       }
-      messages.push({ role: "assistant", content: parsed.narrative || raw, chips });
+      messages.push(assistantMessage(parsed.narrative || raw, chips));
     } catch (err) {
-      messages.push({ role: "assistant", content: safeError(err), chips: [{ ok: false, kind: "system", text: "API \uC624\uB958" }] });
+      messages.push(assistantMessage(safeError(err), [{ ok: false, kind: "system", text: "API \uC624\uB958" }]));
     } finally {
       ledgerDeltas = [];
       busy = false;
@@ -12009,9 +12050,9 @@ ${Array.from(extras).join(" ")}` : text;
       }
       const combatNow = getEngineState().combat;
       if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
-      messages.push({ role: "assistant", content: parsed.narrative || raw, chips });
+      messages.push(assistantMessage(parsed.narrative || raw, chips));
     } catch (err) {
-      messages.push({ role: "assistant", content: safeError(err), chips: [{ ok: false, kind: "system", text: "API \uC624\uB958" }] });
+      messages.push(assistantMessage(safeError(err), [{ ok: false, kind: "system", text: "API \uC624\uB958" }]));
     } finally {
       ledgerDeltas = [];
       busy = false;
