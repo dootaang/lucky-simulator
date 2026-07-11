@@ -32,7 +32,8 @@ const state = {
   parsed: null,
   lore: null,
   file: null,
-  activeTab: 'overview',
+  activeTab: 'play',
+  shellMode: 'player',
   error: '',
   avifSupported: null,
   viewUrls: new Map(),
@@ -73,23 +74,33 @@ function disableNetworkApis() {
 }
 
 function renderShell() {
+  clearTabResources();
   const header = document.createElement('header');
   header.className = 'topbar';
   const titleWrap = document.createElement('div');
   const title = document.createElement('h1');
-  title.textContent = '시뮬봇 카드 플레이그라운드';
+  title.id = 'appTitle';
+  title.textContent = state.parsed?.name || '시뮬봇 카드 플레이그라운드';
   const subtitle = document.createElement('p');
-  subtitle.textContent = 'RisuAI 계열 카드 내부를 완전 로컬에서 탐색합니다.';
+  subtitle.textContent = state.shellMode === 'creator' ? '카드의 구조와 게임 변환 도구를 탐색합니다.' : '';
   titleWrap.append(title, subtitle);
   const status = document.createElement('div');
   status.className = 'status-pill';
   status.id = 'loadStatus';
   status.textContent = '카드 없음';
-  header.append(titleWrap, status);
+  const headerActions = document.createElement('div');
+  headerActions.className = 'shell-actions';
+  headerActions.append(status);
+  if (state.shellMode === 'player' && state.parsed) {
+    headerActions.append(shellButton('제작자 도구', () => enterCreator()), shellButton('카드 교체', () => inputNode.click()));
+  } else if (state.shellMode === 'creator') {
+    headerActions.prepend(shellButton('← 플레이로 돌아가기', () => enterPlayer()));
+  }
+  header.append(titleWrap, headerActions);
 
   const main = document.createElement('main');
   const dropSection = document.createElement('section');
-  dropSection.className = 'drop-section';
+  dropSection.className = 'drop-section landing-drop';
   const dropzoneNode = document.createElement('div');
   dropzoneNode.className = 'dropzone';
   dropzoneNode.id = 'dropzone';
@@ -123,49 +134,83 @@ function renderShell() {
   const panel = document.createElement('section');
   panel.className = 'panel';
   panel.id = 'panel';
-  main.append(dropSection, nav, panel);
+  if (state.shellMode === 'player' && !state.parsed) {
+    const landing = document.createElement('section');
+    landing.className = 'landing-hero';
+    const heroTitle = document.createElement('h2');
+    heroTitle.textContent = '봇카드를 게임으로';
+    const heroCopy = document.createElement('p');
+    heroCopy.textContent = '봇카드를 드롭하면 캐릭터와 플레이할 수 있는 게임으로 변환합니다';
+    const steps = document.createElement('ol');
+    steps.className = 'landing-steps';
+    for (const text of ['카드 드롭', '(선택) 게임 변환·승인', '플레이']) { const li = document.createElement('li'); li.textContent = text; steps.append(li); }
+    const creatorLink = document.createElement('button');
+    creatorLink.type = 'button'; creatorLink.className = 'text-link'; creatorLink.textContent = '카드 없이 제작자 도구 열기';
+    creatorLink.addEventListener('click', enterCreator);
+    landing.append(heroTitle, heroCopy, dropSection, steps, creatorLink);
+    main.append(landing);
+    header.classList.add('landing-topbar');
+  } else {
+    main.append(inputNode, nav, panel);
+  }
   app.replaceChildren(header, main);
 
   const dropzone = document.getElementById('dropzone');
   const input = document.getElementById('fileInput');
-  document.getElementById('pickButton').addEventListener('click', () => input.click());
   input.addEventListener('change', () => {
     const file = input.files && input.files[0];
     if (file) loadFile(file);
     input.value = '';
   });
 
-  for (const event of ['dragenter', 'dragover']) {
-    dropzone.addEventListener(event, (e) => {
-      e.preventDefault();
-      dropzone.classList.add('dragging');
+  // 드롭존은 랜딩(카드 없음)에서만 DOM에 존재한다.
+  if (dropzone) {
+    document.getElementById('pickButton').addEventListener('click', () => input.click());
+    for (const event of ['dragenter', 'dragover']) {
+      dropzone.addEventListener(event, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragging');
+      });
+    }
+    for (const event of ['dragleave', 'drop']) {
+      dropzone.addEventListener(event, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragging');
+      });
+    }
+    dropzone.addEventListener('drop', (e) => {
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) loadFile(file);
     });
   }
-  for (const event of ['dragleave', 'drop']) {
-    dropzone.addEventListener(event, (e) => {
-      e.preventDefault();
-      dropzone.classList.remove('dragging');
-    });
-  }
-  dropzone.addEventListener('drop', (e) => {
-    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (file) loadFile(file);
-  });
 
-  renderTabs();
+  if (state.shellMode === 'creator') renderTabs();
   render();
+}
+
+function shellButton(label, handler) {
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary-btn'; button.textContent = label;
+  button.addEventListener('click', handler); return button;
+}
+
+function enterCreator() {
+  clearTabResources(); state.shellMode = 'creator'; state.activeTab = state.parsed ? 'overview' : 'import'; renderShell();
+}
+
+function enterPlayer() {
+  clearTabResources(); state.shellMode = 'player'; state.activeTab = 'play'; renderShell();
 }
 
 function renderTabs() {
   const nav = document.getElementById('tabs');
   nav.replaceChildren();
-  for (const tab of tabs) {
+  for (const tab of tabs.filter((item) => item.id !== 'play')) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'tab';
     button.textContent = tab.label;
     button.setAttribute('aria-selected', String(state.activeTab === tab.id));
-    button.disabled = !state.parsed && tab.id !== 'overview' && tab.id !== 'engine' && tab.id !== 'play' && tab.id !== 'import';
+    button.disabled = !state.parsed && tab.id !== 'overview' && tab.id !== 'engine' && tab.id !== 'import';
     button.addEventListener('click', () => {
       if (state.activeTab === tab.id) return;
       clearTabResources();
@@ -189,7 +234,8 @@ async function loadFile(file) {
     state.parsed = parsed;
     state.lore = lore;
     state.file = { name: file.name, size: file.size, type: file.type || '' };
-    state.activeTab = 'overview';
+    state.activeTab = 'play';
+    state.shellMode = 'player';
     const decoded = parsed.assets.filter((asset) => asset.bytes).length;
     console.info('[simbot] parsed card', {
       format: parsed.format,
@@ -206,8 +252,7 @@ async function loadFile(file) {
     state.error = err && err.message ? err.message : String(err);
     setMessage(`파싱 실패: ${state.error}`);
   }
-  renderTabs();
-  render();
+  renderShell();
 }
 
 function render() {
@@ -216,6 +261,7 @@ function render() {
   status.textContent = state.parsed ? `${state.parsed.format} · ${state.parsed.assets.length} assets` : '카드 없음';
 
   const panel = document.getElementById('panel');
+  if (!panel) { setMessage(state.error ? `파싱 실패: ${state.error}` : ''); return; }
   panel.replaceChildren();
 
   const ctx = createContext();

@@ -12,26 +12,130 @@ let settings = loadSettings();
 let lastPrompt = null;
 let selectedTarget = null;
 let fastCombatLog = [];
+let mobileSheetOpen = false;
+let sheetKeyHandler = null;
+let sheetWasOpen = false;
+let activeRender = null;
+let sessionCardKey = null;
+
+function detachSheetKeyHandler() {
+  if (sheetKeyHandler) { document.removeEventListener('keydown', sheetKeyHandler); sheetKeyHandler = null; }
+}
+
+// localStorage는 저장 차단 환경(프라이빗 모드 등)에서 SecurityError를 던질 수 있다 — 항상 가드 경유.
+function lsGet(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+function lsSet(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
+function lsRemove(key) { try { localStorage.removeItem(key); } catch (_) {} }
+
+// 비동기 콜백(LLM 응답 등)이 언마운트된 뷰의 DOM을 만지지 않도록, 항상 현재 마운트의 render만 실행한다.
+function refresh() {
+  if (activeRender) activeRender();
+}
 
 export function renderPlayView(container, ctx) {
   registerCustomOrigin(settings);
+  // 카드가 바뀌면 이전 카드의 대화·전투 버퍼·busy 상태를 물려받지 않는다.
+  const cardKey = ctx.file ? `${ctx.file.name}:${ctx.file.size}` : 'no-card';
+  if (sessionCardKey !== cardKey) {
+    sessionCardKey = cardKey;
+    messages = [];
+    busy = false;
+    lastPrompt = null;
+    selectedTarget = null;
+    fastCombatLog = [];
+    mobileSheetOpen = false;
+    detachSheetKeyHandler();
+  }
   const root = el('div', 'play-view');
   container.append(root);
   const render = () => {
     root.replaceChildren();
-    root.append(renderLayout(ctx, render));
+    root.append(renderLayout(ctx, refresh));
     // 전체 재구축 시 스크롤이 top으로 튀는 것 방지: 채팅을 항상 최신(하단)으로.
     const list = root.querySelector('.play-message-list');
     if (list) list.scrollTop = list.scrollHeight;
   };
+  activeRender = render;
   render();
-  return () => {};
+  return () => {
+    if (activeRender === render) activeRender = null;
+    detachSheetKeyHandler();
+    document.body.classList.remove('sheet-open');
+  };
 }
 
 function renderLayout(ctx, render) {
   const layout = el('div', 'play-layout');
-  layout.append(renderChat(ctx, render), renderSide(ctx, render));
+  layout.append(renderMobileHud(ctx, render), renderChat(ctx, render), renderSide(ctx, render), renderBottomSheet(ctx, render));
   return layout;
+}
+
+function renderMobileHud(ctx, render) {
+  const hud = el('div', 'mobile-hud');
+  const state = getEngineState();
+  const schema = getSchema();
+  if (!schema || !state) {
+    const name = el('strong'); name.textContent = (ctx.parsed && ctx.parsed.name) || '시뮬봇'; hud.append(name);
+  } else {
+    const facts = el('div', 'mobile-hud-facts');
+    if (Number.isFinite(Number(state.gold))) facts.append(hudFact(`골드 ${formatMoney(state.gold)}`));
+    if (Number.isFinite(Number(state.day))) facts.append(hudFact(`${Number(state.day)}일차`));
+    const hp = state.player && state.player.pools && state.player.pools.hp;
+    if (hp) facts.append(compactGauge('HP', hp));
+    const combat = state.combat;
+    if (combat && combat.active) for (const enemy of combat.enemies || []) facts.append(compactGauge(enemy.name || '적', enemy.hp));
+    if (!facts.childNodes.length) facts.append(hudFact((ctx.parsed && ctx.parsed.name) || '플레이'));
+    hud.append(facts);
+  }
+  const open = button('상태', 'secondary-btn mobile-state-button');
+  open.setAttribute('aria-expanded', String(mobileSheetOpen));
+  open.setAttribute('aria-controls', 'playStateSheet');
+  open.addEventListener('click', () => { mobileSheetOpen = true; render(); });
+  hud.append(open);
+  return hud;
+}
+
+function hudFact(text) { const node = el('span', 'mobile-hud-fact'); node.textContent = text; return node; }
+function compactGauge(label, pool) { const node = el('span', 'mobile-mini-gauge'); node.append(hudFact(`${label} ${pool.cur}/${pool.max}`), combatGauge(label, pool, '')); return node; }
+
+function renderBottomSheet(ctx, render) {
+  const overlay = el('div', `play-sheet-overlay${mobileSheetOpen ? ' open' : ''}`);
+  overlay.id = 'playStateSheet';
+  overlay.setAttribute('aria-hidden', String(!mobileSheetOpen));
+  const closeSheet = () => {
+    detachSheetKeyHandler();
+    mobileSheetOpen = false;
+    document.body.classList.remove('sheet-open');
+    render();
+    // 모달 닫힘 후 포커스를 열었던 '상태' 버튼으로 복원.
+    requestAnimationFrame(() => { const btn = document.querySelector('.mobile-state-button'); if (btn) btn.focus(); });
+  };
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) closeSheet(); });
+  const sheet = el('aside', 'play-bottom-sheet'); sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', '플레이 상태와 설정');
+  const head = el('div', 'sheet-head'); const handle = button('상태 패널 닫기', 'sheet-handle'); const close = button('닫기', 'secondary-btn');
+  handle.addEventListener('click', closeSheet); close.addEventListener('click', closeSheet); head.append(handle, close);
+  sheet.append(head, renderSettings(render), renderStateBox(), renderTokenBox(ctx)); overlay.append(sheet);
+  detachSheetKeyHandler(); // 재렌더 시 이전 렌더의 리스너가 남지 않도록 항상 정리
+  if (mobileSheetOpen) {
+    document.body.classList.add('sheet-open');
+    // 열리는 순간에만 초점 이동 — 시트 내 폼 조작으로 인한 재렌더에서 포커스를 빼앗지 않는다.
+    if (!sheetWasOpen) requestAnimationFrame(() => close.focus());
+    sheetKeyHandler = (event) => {
+      if (event.key === 'Escape') { closeSheet(); return; }
+      if (event.key !== 'Tab') return;
+      // 포커스 트랩: 시트가 열려 있는 동안 Tab 초점을 시트 안에 가둔다.
+      const focusables = Array.from(sheet.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((node) => !node.disabled);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      else if (!sheet.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', sheetKeyHandler);
+  } else document.body.classList.remove('sheet-open');
+  sheetWasOpen = mobileSheetOpen;
+  return overlay;
 }
 
 function renderChat(ctx, render) {
@@ -373,21 +477,21 @@ function renderSettings(render) {
   save.disabled = settings.provider === 'mock';
   save.addEventListener('click', () => {
     const value = key.value.trim();
-    if (value) localStorage.setItem(keyName(settings.provider), value);
+    if (value) lsSet(keyName(settings.provider), value);
     key.value = '';
     render();
   });
   const del = button('삭제', 'secondary-btn');
   del.disabled = settings.provider === 'mock';
   del.addEventListener('click', () => {
-    localStorage.removeItem(keyName(settings.provider));
+    lsRemove(keyName(settings.provider));
     render();
   });
 
   const fastCombat = namedInput('fastCombat', '1', 'checkbox');
-  fastCombat.checked = localStorage.getItem('simbot.play.fastCombat') === '1';
+  fastCombat.checked = lsGet('simbot.play.fastCombat') === '1';
   fastCombat.addEventListener('change', () => {
-    localStorage.setItem('simbot.play.fastCombat', fastCombat.checked ? '1' : '0');
+    lsSet('simbot.play.fastCombat', fastCombat.checked ? '1' : '0');
     if (!fastCombat.checked) fastCombatLog = [];
     render();
   });
@@ -492,7 +596,7 @@ async function runCombatTurn(event, input, ctx, render) {
   }
   const afterHp = poolSnapshot(getEngineState(), 'hp');
   if (beforeHp && afterHp && beforeHp.cur !== afterHp.cur) resultTexts.push(`플레이어 HP ${beforeHp.cur}→${afterHp.cur}`);
-  const fastCombat = localStorage.getItem('simbot.play.fastCombat') === '1';
+  const fastCombat = lsGet('simbot.play.fastCombat') === '1';
   const combatAfter = getEngineState().combat;
   const fastCombatEnded = event.id === 'end_encounter' || (event.id === 'combat_action' && combatAfter && combatAfter.fled);
   // 연출 문장을 messages에 넣기 전에 잘라둔다 — 연출(user) 뒤에 서사화 프롬프트의 user 컨텍스트가

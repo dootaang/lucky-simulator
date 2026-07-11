@@ -165,6 +165,10 @@ button { cursor: pointer; }
   font-size: 12px;
   background: var(--inset);
 }
+.shell-actions { display: flex; align-items: center; gap: 10px; }
+.shell-actions .secondary-btn { margin-top: 0; }
+.landing-topbar { justify-content: center; text-align: center; }
+.landing-topbar .shell-actions { display: none; }
 
 main {
   width: min(1460px, 100%);
@@ -174,6 +178,13 @@ main {
 
 /* ── 인테이크(드롭존) ───────────────────────────────────── */
 .drop-section { display: grid; gap: 10px; }
+.landing-hero { min-height: calc(100dvh - 130px); display: grid; place-content: center; gap: 18px; text-align: center; }
+.landing-hero h2 { margin: 0; font-family: var(--font-mono); font-size: clamp(28px, 5vw, 52px); }
+.landing-hero > p { margin: 0; color: var(--ink-mid); }
+.landing-drop { width: min(720px, calc(100vw - 32px)); }
+.landing-drop .dropzone { min-height: 260px; }
+.landing-steps { display: flex; justify-content: center; gap: 28px; margin: 0; padding: 0; list-style-position: inside; color: var(--ink-dim); font-size: 13px; }
+.text-link { border: 0; background: transparent; color: var(--ink-dim); text-decoration: underline; }
 
 .dropzone {
   display: grid;
@@ -745,6 +756,7 @@ select:focus { border-color: var(--amber-line); }
 .play-view,
 .import-view { display: grid; gap: 14px; }
 .play-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; }
+.mobile-hud, .play-sheet-overlay { display: none; }
 .import-layout { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 14px; }
 
 .play-chat-panel,
@@ -936,21 +948,56 @@ select:focus { border-color: var(--amber-line); }
   .topbar, .view-header, .with-controls { align-items: stretch; flex-direction: column; }
   .overview-grid, .result-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .activate-layout, .engine-layout, .play-layout, .import-layout { grid-template-columns: 1fr; }
-  .play-side-panel, .import-run-panel { position: static; }
+  .play-side-panel { display: none; }
+  .import-run-panel { position: static; }
   .engine-header-controls { justify-content: flex-start; }
   .search-input { max-width: none; }
+  body.sheet-open { overflow: hidden; }
+  .play-view, .play-layout { min-height: calc(100dvh - 120px); }
+  .play-layout { display: flex; flex-direction: column; gap: 0; }
+  .mobile-hud { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 6px 8px; border: 1px solid var(--line); background: var(--surface); }
+  .mobile-hud-facts { min-width: 0; display: flex; align-items: center; gap: 10px; overflow-x: auto; }
+  .mobile-hud-fact { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-mid); }
+  .mobile-mini-gauge { flex: 0 0 auto; min-width: 92px; }
+  .mobile-mini-gauge > .mobile-hud-fact { display: block; }
+  .mobile-mini-gauge .combat-gauge { margin: 2px 0 0; }
+  .mobile-mini-gauge .combat-gauge-head { display: none; }
+  .mobile-mini-gauge .combat-gauge-track { height: 5px; }
+  .mobile-state-button { flex: 0 0 auto; margin: 0; padding: 7px 9px; }
+  .play-chat-panel { flex: 1; min-height: 0; padding: 10px; border-top: 0; }
+  .play-message-list { flex: 1; min-height: 45dvh; max-height: none; }
+  .play-input-row { position: sticky; bottom: 0; z-index: 18; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; padding: 8px 0 env(safe-area-inset-bottom); background: var(--surface); }
+  .play-input { min-height: 46px; max-height: 96px; }
+  .play-input-row .primary-btn { margin-top: 0; }
+  .combat-console { display: flex; overflow-x: auto; padding: 8px; }
+  .combat-command-row { flex-wrap: nowrap; flex: 0 0 auto; }
+  .combat-command-row button, .combat-console > button { white-space: nowrap; }
+  .mgmt-console { flex: 0 0 auto; }
+  .mgmt-console[open] { max-height: 180px; overflow-x: auto; overflow-y: auto; }
+  .mgmt-section { flex-wrap: nowrap; width: max-content; }
+  .mgmt-section button { white-space: nowrap; }
+  .play-sheet-overlay { position: fixed; inset: 0; z-index: 100; align-items: end; background: var(--amber-halo); }
+  .play-sheet-overlay.open { display: flex; }
+  .play-bottom-sheet { width: 100%; max-height: 80dvh; overflow-y: auto; padding: 12px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r) var(--r) 0 0; box-shadow: var(--shadow); animation: sheet-in 180ms ease-out; }
+  .sheet-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; background: var(--surface); }
+  .sheet-head .secondary-btn { margin: 0; }
+  .sheet-handle { width: 84px; height: 22px; overflow: hidden; text-indent: -9999px; border: 0; background: transparent; position: relative; }
+  .sheet-handle::after { content: ''; position: absolute; left: 12px; top: 8px; width: 60px; height: 4px; border-radius: 999px; background: var(--line-strong); }
+  @keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
 }
 
 @media (max-width: 560px) {
   main { padding: 16px 14px 48px; }
   .overview-grid, .result-summary, .engine-stat-grid, .kv-list { grid-template-columns: 1fr; }
-  .lore-entry summary, .activation-head, .play-input-row { align-items: start; flex-direction: column; }
-  .play-input-row { display: grid; grid-template-columns: 1fr; }
+  .lore-entry summary, .activation-head { align-items: start; flex-direction: column; }
+  .play-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .landing-steps { flex-direction: column; gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .topbar h1::before { animation: none; }
   * { transition: none !important; }
+  .play-bottom-sheet { animation: none !important; }
 }
 
 .offscreen { position: fixed; left: -9999px; top: 0; opacity: 0; }
@@ -9830,24 +9877,170 @@ ${Array.from(extras).join(" ")}` : text;
   var lastPrompt = null;
   var selectedTarget = null;
   var fastCombatLog = [];
+  var mobileSheetOpen = false;
+  var sheetKeyHandler = null;
+  var sheetWasOpen = false;
+  var activeRender = null;
+  var sessionCardKey = null;
+  function detachSheetKeyHandler() {
+    if (sheetKeyHandler) {
+      document.removeEventListener("keydown", sheetKeyHandler);
+      sheetKeyHandler = null;
+    }
+  }
+  function lsGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+  function lsSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (_) {
+    }
+  }
+  function lsRemove(key) {
+    try {
+      localStorage.removeItem(key);
+    } catch (_) {
+    }
+  }
+  function refresh() {
+    if (activeRender) activeRender();
+  }
   function renderPlayView(container, ctx) {
     registerCustomOrigin(settings);
+    const cardKey2 = ctx.file ? `${ctx.file.name}:${ctx.file.size}` : "no-card";
+    if (sessionCardKey !== cardKey2) {
+      sessionCardKey = cardKey2;
+      messages = [];
+      busy = false;
+      lastPrompt = null;
+      selectedTarget = null;
+      fastCombatLog = [];
+      mobileSheetOpen = false;
+      detachSheetKeyHandler();
+    }
     const root = el2("div", "play-view");
     container.append(root);
     const render2 = () => {
       root.replaceChildren();
-      root.append(renderLayout(ctx, render2));
+      root.append(renderLayout(ctx, refresh));
       const list = root.querySelector(".play-message-list");
       if (list) list.scrollTop = list.scrollHeight;
     };
+    activeRender = render2;
     render2();
     return () => {
+      if (activeRender === render2) activeRender = null;
+      detachSheetKeyHandler();
+      document.body.classList.remove("sheet-open");
     };
   }
   function renderLayout(ctx, render2) {
     const layout = el2("div", "play-layout");
-    layout.append(renderChat(ctx, render2), renderSide(ctx, render2));
+    layout.append(renderMobileHud(ctx, render2), renderChat(ctx, render2), renderSide(ctx, render2), renderBottomSheet(ctx, render2));
     return layout;
+  }
+  function renderMobileHud(ctx, render2) {
+    const hud = el2("div", "mobile-hud");
+    const state2 = getEngineState();
+    const schema2 = getSchema();
+    if (!schema2 || !state2) {
+      const name = el2("strong");
+      name.textContent = ctx.parsed && ctx.parsed.name || "\uC2DC\uBBAC\uBD07";
+      hud.append(name);
+    } else {
+      const facts = el2("div", "mobile-hud-facts");
+      if (Number.isFinite(Number(state2.gold))) facts.append(hudFact(`\uACE8\uB4DC ${formatMoney2(state2.gold)}`));
+      if (Number.isFinite(Number(state2.day))) facts.append(hudFact(`${Number(state2.day)}\uC77C\uCC28`));
+      const hp = state2.player && state2.player.pools && state2.player.pools.hp;
+      if (hp) facts.append(compactGauge("HP", hp));
+      const combat = state2.combat;
+      if (combat && combat.active) for (const enemy of combat.enemies || []) facts.append(compactGauge(enemy.name || "\uC801", enemy.hp));
+      if (!facts.childNodes.length) facts.append(hudFact(ctx.parsed && ctx.parsed.name || "\uD50C\uB808\uC774"));
+      hud.append(facts);
+    }
+    const open = button2("\uC0C1\uD0DC", "secondary-btn mobile-state-button");
+    open.setAttribute("aria-expanded", String(mobileSheetOpen));
+    open.setAttribute("aria-controls", "playStateSheet");
+    open.addEventListener("click", () => {
+      mobileSheetOpen = true;
+      render2();
+    });
+    hud.append(open);
+    return hud;
+  }
+  function hudFact(text) {
+    const node = el2("span", "mobile-hud-fact");
+    node.textContent = text;
+    return node;
+  }
+  function compactGauge(label, pool) {
+    const node = el2("span", "mobile-mini-gauge");
+    node.append(hudFact(`${label} ${pool.cur}/${pool.max}`), combatGauge(label, pool, ""));
+    return node;
+  }
+  function renderBottomSheet(ctx, render2) {
+    const overlay = el2("div", `play-sheet-overlay${mobileSheetOpen ? " open" : ""}`);
+    overlay.id = "playStateSheet";
+    overlay.setAttribute("aria-hidden", String(!mobileSheetOpen));
+    const closeSheet = () => {
+      detachSheetKeyHandler();
+      mobileSheetOpen = false;
+      document.body.classList.remove("sheet-open");
+      render2();
+      requestAnimationFrame(() => {
+        const btn = document.querySelector(".mobile-state-button");
+        if (btn) btn.focus();
+      });
+    };
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeSheet();
+    });
+    const sheet = el2("aside", "play-bottom-sheet");
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-modal", "true");
+    sheet.setAttribute("aria-label", "\uD50C\uB808\uC774 \uC0C1\uD0DC\uC640 \uC124\uC815");
+    const head = el2("div", "sheet-head");
+    const handle = button2("\uC0C1\uD0DC \uD328\uB110 \uB2EB\uAE30", "sheet-handle");
+    const close = button2("\uB2EB\uAE30", "secondary-btn");
+    handle.addEventListener("click", closeSheet);
+    close.addEventListener("click", closeSheet);
+    head.append(handle, close);
+    sheet.append(head, renderSettings(render2), renderStateBox(), renderTokenBox(ctx));
+    overlay.append(sheet);
+    detachSheetKeyHandler();
+    if (mobileSheetOpen) {
+      document.body.classList.add("sheet-open");
+      if (!sheetWasOpen) requestAnimationFrame(() => close.focus());
+      sheetKeyHandler = (event) => {
+        if (event.key === "Escape") {
+          closeSheet();
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const focusables = Array.from(sheet.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((node) => !node.disabled);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        } else if (!sheet.contains(document.activeElement)) {
+          event.preventDefault();
+          first.focus();
+        }
+      };
+      document.addEventListener("keydown", sheetKeyHandler);
+    } else document.body.classList.remove("sheet-open");
+    sheetWasOpen = mobileSheetOpen;
+    return overlay;
   }
   function renderChat(ctx, render2) {
     const panel = el2("section", "play-chat-panel");
@@ -10171,20 +10364,20 @@ ${Array.from(extras).join(" ")}` : text;
     save.disabled = settings.provider === "mock";
     save.addEventListener("click", () => {
       const value = key.value.trim();
-      if (value) localStorage.setItem(keyName(settings.provider), value);
+      if (value) lsSet(keyName(settings.provider), value);
       key.value = "";
       render2();
     });
     const del = button2("\uC0AD\uC81C", "secondary-btn");
     del.disabled = settings.provider === "mock";
     del.addEventListener("click", () => {
-      localStorage.removeItem(keyName(settings.provider));
+      lsRemove(keyName(settings.provider));
       render2();
     });
     const fastCombat = namedInput2("fastCombat", "1", "checkbox");
-    fastCombat.checked = localStorage.getItem("simbot.play.fastCombat") === "1";
+    fastCombat.checked = lsGet("simbot.play.fastCombat") === "1";
     fastCombat.addEventListener("change", () => {
-      localStorage.setItem("simbot.play.fastCombat", fastCombat.checked ? "1" : "0");
+      lsSet("simbot.play.fastCombat", fastCombat.checked ? "1" : "0");
       if (!fastCombat.checked) fastCombatLog = [];
       render2();
     });
@@ -10271,7 +10464,7 @@ ${Array.from(extras).join(" ")}` : text;
     }
     const afterHp = poolSnapshot(getEngineState(), "hp");
     if (beforeHp && afterHp && beforeHp.cur !== afterHp.cur) resultTexts.push(`\uD50C\uB808\uC774\uC5B4 HP ${beforeHp.cur}\u2192${afterHp.cur}`);
-    const fastCombat = localStorage.getItem("simbot.play.fastCombat") === "1";
+    const fastCombat = lsGet("simbot.play.fastCombat") === "1";
     const combatAfter = getEngineState().combat;
     const fastCombatEnded = event.id === "end_encounter" || event.id === "combat_action" && combatAfter && combatAfter.fled;
     const recentForNarration = messages.slice(-4);
@@ -10935,7 +11128,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     parsed: null,
     lore: null,
     file: null,
-    activeTab: "overview",
+    activeTab: "play",
+    shellMode: "player",
     error: "",
     avifSupported: null,
     viewUrls: /* @__PURE__ */ new Map(),
@@ -10972,22 +11166,32 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     };
   }
   function renderShell() {
+    clearTabResources();
     const header = document.createElement("header");
     header.className = "topbar";
     const titleWrap = document.createElement("div");
     const title = document.createElement("h1");
-    title.textContent = "\uC2DC\uBBAC\uBD07 \uCE74\uB4DC \uD50C\uB808\uC774\uADF8\uB77C\uC6B4\uB4DC";
+    title.id = "appTitle";
+    title.textContent = state.parsed?.name || "\uC2DC\uBBAC\uBD07 \uCE74\uB4DC \uD50C\uB808\uC774\uADF8\uB77C\uC6B4\uB4DC";
     const subtitle = document.createElement("p");
-    subtitle.textContent = "RisuAI \uACC4\uC5F4 \uCE74\uB4DC \uB0B4\uBD80\uB97C \uC644\uC804 \uB85C\uCEEC\uC5D0\uC11C \uD0D0\uC0C9\uD569\uB2C8\uB2E4.";
+    subtitle.textContent = state.shellMode === "creator" ? "\uCE74\uB4DC\uC758 \uAD6C\uC870\uC640 \uAC8C\uC784 \uBCC0\uD658 \uB3C4\uAD6C\uB97C \uD0D0\uC0C9\uD569\uB2C8\uB2E4." : "";
     titleWrap.append(title, subtitle);
     const status = document.createElement("div");
     status.className = "status-pill";
     status.id = "loadStatus";
     status.textContent = "\uCE74\uB4DC \uC5C6\uC74C";
-    header.append(titleWrap, status);
+    const headerActions = document.createElement("div");
+    headerActions.className = "shell-actions";
+    headerActions.append(status);
+    if (state.shellMode === "player" && state.parsed) {
+      headerActions.append(shellButton("\uC81C\uC791\uC790 \uB3C4\uAD6C", () => enterCreator()), shellButton("\uCE74\uB4DC \uAD50\uCCB4", () => inputNode.click()));
+    } else if (state.shellMode === "creator") {
+      headerActions.prepend(shellButton("\u2190 \uD50C\uB808\uC774\uB85C \uB3CC\uC544\uAC00\uAE30", () => enterPlayer()));
+    }
+    header.append(titleWrap, headerActions);
     const main = document.createElement("main");
     const dropSection = document.createElement("section");
-    dropSection.className = "drop-section";
+    dropSection.className = "drop-section landing-drop";
     const dropzoneNode = document.createElement("div");
     dropzoneNode.className = "dropzone";
     dropzoneNode.id = "dropzone";
@@ -11020,45 +11224,91 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     const panel = document.createElement("section");
     panel.className = "panel";
     panel.id = "panel";
-    main.append(dropSection, nav, panel);
+    if (state.shellMode === "player" && !state.parsed) {
+      const landing = document.createElement("section");
+      landing.className = "landing-hero";
+      const heroTitle = document.createElement("h2");
+      heroTitle.textContent = "\uBD07\uCE74\uB4DC\uB97C \uAC8C\uC784\uC73C\uB85C";
+      const heroCopy = document.createElement("p");
+      heroCopy.textContent = "\uBD07\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uCE90\uB9AD\uD130\uC640 \uD50C\uB808\uC774\uD560 \uC218 \uC788\uB294 \uAC8C\uC784\uC73C\uB85C \uBCC0\uD658\uD569\uB2C8\uB2E4";
+      const steps = document.createElement("ol");
+      steps.className = "landing-steps";
+      for (const text of ["\uCE74\uB4DC \uB4DC\uB86D", "(\uC120\uD0DD) \uAC8C\uC784 \uBCC0\uD658\xB7\uC2B9\uC778", "\uD50C\uB808\uC774"]) {
+        const li = document.createElement("li");
+        li.textContent = text;
+        steps.append(li);
+      }
+      const creatorLink = document.createElement("button");
+      creatorLink.type = "button";
+      creatorLink.className = "text-link";
+      creatorLink.textContent = "\uCE74\uB4DC \uC5C6\uC774 \uC81C\uC791\uC790 \uB3C4\uAD6C \uC5F4\uAE30";
+      creatorLink.addEventListener("click", enterCreator);
+      landing.append(heroTitle, heroCopy, dropSection, steps, creatorLink);
+      main.append(landing);
+      header.classList.add("landing-topbar");
+    } else {
+      main.append(inputNode, nav, panel);
+    }
     app.replaceChildren(header, main);
     const dropzone = document.getElementById("dropzone");
     const input2 = document.getElementById("fileInput");
-    document.getElementById("pickButton").addEventListener("click", () => input2.click());
     input2.addEventListener("change", () => {
       const file = input2.files && input2.files[0];
       if (file) loadFile(file);
       input2.value = "";
     });
-    for (const event of ["dragenter", "dragover"]) {
-      dropzone.addEventListener(event, (e) => {
-        e.preventDefault();
-        dropzone.classList.add("dragging");
+    if (dropzone) {
+      document.getElementById("pickButton").addEventListener("click", () => input2.click());
+      for (const event of ["dragenter", "dragover"]) {
+        dropzone.addEventListener(event, (e) => {
+          e.preventDefault();
+          dropzone.classList.add("dragging");
+        });
+      }
+      for (const event of ["dragleave", "drop"]) {
+        dropzone.addEventListener(event, (e) => {
+          e.preventDefault();
+          dropzone.classList.remove("dragging");
+        });
+      }
+      dropzone.addEventListener("drop", (e) => {
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) loadFile(file);
       });
     }
-    for (const event of ["dragleave", "drop"]) {
-      dropzone.addEventListener(event, (e) => {
-        e.preventDefault();
-        dropzone.classList.remove("dragging");
-      });
-    }
-    dropzone.addEventListener("drop", (e) => {
-      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file) loadFile(file);
-    });
-    renderTabs();
+    if (state.shellMode === "creator") renderTabs();
     render();
+  }
+  function shellButton(label, handler) {
+    const button4 = document.createElement("button");
+    button4.type = "button";
+    button4.className = "secondary-btn";
+    button4.textContent = label;
+    button4.addEventListener("click", handler);
+    return button4;
+  }
+  function enterCreator() {
+    clearTabResources();
+    state.shellMode = "creator";
+    state.activeTab = state.parsed ? "overview" : "import";
+    renderShell();
+  }
+  function enterPlayer() {
+    clearTabResources();
+    state.shellMode = "player";
+    state.activeTab = "play";
+    renderShell();
   }
   function renderTabs() {
     const nav = document.getElementById("tabs");
     nav.replaceChildren();
-    for (const tab of tabs) {
+    for (const tab of tabs.filter((item) => item.id !== "play")) {
       const button4 = document.createElement("button");
       button4.type = "button";
       button4.className = "tab";
       button4.textContent = tab.label;
       button4.setAttribute("aria-selected", String(state.activeTab === tab.id));
-      button4.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine" && tab.id !== "play" && tab.id !== "import";
+      button4.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine" && tab.id !== "import";
       button4.addEventListener("click", () => {
         if (state.activeTab === tab.id) return;
         clearTabResources();
@@ -11081,7 +11331,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       state.parsed = parsed;
       state.lore = lore;
       state.file = { name: file.name, size: file.size, type: file.type || "" };
-      state.activeTab = "overview";
+      state.activeTab = "play";
+      state.shellMode = "player";
       const decoded = parsed.assets.filter((asset) => asset.bytes).length;
       console.info("[simbot] parsed card", {
         format: parsed.format,
@@ -11098,14 +11349,17 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       state.error = err && err.message ? err.message : String(err);
       setMessage(`\uD30C\uC2F1 \uC2E4\uD328: ${state.error}`);
     }
-    renderTabs();
-    render();
+    renderShell();
   }
   function render() {
     const status = document.getElementById("loadStatus");
     if (!status) return;
     status.textContent = state.parsed ? `${state.parsed.format} \xB7 ${state.parsed.assets.length} assets` : "\uCE74\uB4DC \uC5C6\uC74C";
     const panel = document.getElementById("panel");
+    if (!panel) {
+      setMessage(state.error ? `\uD30C\uC2F1 \uC2E4\uD328: ${state.error}` : "");
+      return;
+    }
     panel.replaceChildren();
     const ctx = createContext();
     if (state.activeTab === "engine") {
