@@ -14,6 +14,7 @@ import { exportRisuPersonaPng, importRisuPersonaPng } from '../core/compat/perso
 import { applyRegexStage, normalizeRegexScripts } from '../core/compat/regexPipeline.js';
 import { importRisuPreset } from '../core/compat/risuPreset.ts';
 import { createCompatibilityLibrary } from '../core/compat/browserLibrary.ts';
+import { renderDeclarativePlayer } from './declarativeScreenView.js';
 
 let messages = [];
 let busy = false;
@@ -329,6 +330,20 @@ export function renderPlayView(container, ctx) {
 }
 
 function renderLayout(ctx, render) {
+  const declarative = renderDeclarativePlayer(ctx, {
+    state: getEngineState,
+    schema: getSchema,
+    chat: () => renderChat(ctx, render),
+    sidebar: () => renderSide(ctx, render),
+    render,
+    context: () => ({ state: getEngineState(), schema: getSchema(), content: ctx.simpack && ctx.simpack.content || {}, selection: {} }),
+    event: (event) => runLedgerAction(event, render),
+  });
+  if (declarative) {
+    const layout = el('div', 'play-layout declarative-layout');
+    layout.append(renderMobileHud(ctx, render), declarative, renderBottomSheet(ctx, render));
+    return layout;
+  }
   const layout = el('div', 'play-layout');
   layout.append(renderMobileHud(ctx, render), renderChat(ctx, render), renderSide(ctx, render), renderBottomSheet(ctx, render));
   return layout;

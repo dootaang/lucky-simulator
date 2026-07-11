@@ -1004,6 +1004,42 @@ select:focus { border-color: var(--amber-line); }
 .compatibility-preserved { color: var(--ink-mid); }
 .compatibility-degraded { border-color: var(--warn); background: var(--warn-wash); color: var(--warn); }
 .compatibility-blocked { border-color: var(--bad); background: var(--bad-wash); color: var(--bad); }
+
+/* SimPack declarative screens: the manifest chooses regions/widgets; CSS only
+   supplies responsive layout presets, never project-specific branches. */
+.declarative-layout { display: block; }
+.declarative-player { display: grid; gap: 12px; min-width: 0; }
+.declarative-nav { display: flex; gap: 8px; overflow-x: auto; padding: 4px; }
+.declarative-nav-active { border-color: var(--cyan); color: var(--cyan); background: rgba(116,183,195,.12); }
+.declarative-screen { display: grid; gap: 12px; min-width: 0; }
+.declarative-screen > h2 { margin: 0; }
+.declarative-region { display: grid; gap: 10px; min-width: 0; }
+.layout-dashboard { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.layout-dashboard > h2 { grid-column: 1 / -1; }
+.layout-dashboard .region-main { grid-column: 1 / 9; }
+.layout-dashboard .region-sidebar, .layout-dashboard .region-hud { grid-column: 9 / -1; }
+.layout-stage-chat-hud, .layout-chat-stage-sidebar { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
+.layout-stage-chat-hud > h2, .layout-chat-stage-sidebar > h2 { grid-column: 1 / -1; }
+.region-stage, .region-main, .region-chat { grid-column: 1; }
+.region-hud, .region-sidebar, .region-actions { grid-column: 2; }
+.declarative-widget { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); min-width: 0; overflow: auto; }
+.declarative-widget h3 { margin: 0 0 8px; }
+.declarative-stat-strip, .declarative-card-grid, .declarative-actions, .declarative-slots { display: flex; flex-wrap: wrap; gap: 8px; }
+.declarative-stat, .declarative-slot { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.declarative-card { display: grid; text-align: left; gap: 3px; min-width: 130px; }
+.declarative-card small { color: var(--ink-mid); }
+.declarative-widget table { width: 100%; border-collapse: collapse; }
+.declarative-widget th, .declarative-widget td { padding: 6px; border-bottom: 1px solid var(--line); text-align: left; }
+.declarative-core-play { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 12px; }
+.declarative-modal, .declarative-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.58); }
+.declarative-modal > .declarative-screen, .declarative-overlay > .declarative-screen { width: min(900px, 100%); max-height: 90vh; overflow: auto; padding: 16px; border-radius: 14px; background: var(--panel); }
+
+@media (max-width: 820px) {
+  .layout-dashboard, .layout-stage-chat-hud, .layout-chat-stage-sidebar, .declarative-core-play { grid-template-columns: 1fr; }
+  .layout-dashboard .region-main, .layout-dashboard .region-sidebar, .layout-dashboard .region-hud,
+  .region-stage, .region-main, .region-chat, .region-hud, .region-sidebar, .region-actions { grid-column: 1; }
+  .declarative-widget { padding: 10px; }
+}
 .import-advanced {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -5868,7 +5904,7 @@ ${bodies}`;
       function menuTrade(menu) {
         return menu && menu.trade === "buy" ? "buy" : "sell";
       }
-      function availableManagement2(schema2, state2) {
+      function availableManagement3(schema2, state2) {
         if (state2 && state2.combat && state2.combat.active) return { sections: [] };
         const sections = [];
         if (schema2.traffic) {
@@ -5958,7 +5994,7 @@ ${bodies}`;
         const n = Number(value);
         return (scale.tiers || []).find((tier) => n >= tier.range[0] && n <= tier.range[1]) || null;
       }
-      function availableActions2(schema2, state2) {
+      function availableActions3(schema2, state2) {
         const combat = state2 && state2.combat;
         if (!combat || !combat.active || combat.cleared || combat.fled) return { active: false };
         const targets = (combat.enemies || []).filter((enemy) => !enemy.dead && Number(enemy.hp && enemy.hp.cur) > 0).map((enemy) => ({
@@ -6067,7 +6103,7 @@ ${bodies}`;
       function formatNumber(n) {
         return Number(n || 0).toLocaleString("ko-KR");
       }
-      module.exports = { staffMax: staffMax3, availableMenu: availableMenu2, menuTrade, availableManagement: availableManagement2, roomStatus: roomStatus3, tierOf, usableItems, availableActions: availableActions2, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
+      module.exports = { staffMax: staffMax3, availableMenu: availableMenu2, menuTrade, availableManagement: availableManagement3, roomStatus: roomStatus3, tierOf, usableItems, availableActions: availableActions3, summarize: summarize3, npcSummary: npcSummary3, rankWeight };
     }
   });
 
@@ -7511,7 +7547,7 @@ ${bodies}`;
     "../engine/core/modules/combat.js"(exports, module) {
       "use strict";
       var { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require_combat();
-      var { availableActions: availableActions2 } = require_selectors();
+      var { availableActions: availableActions3 } = require_selectors();
       var { scopedEvent } = require_eventSupport();
       function createCombatModule() {
         return {
@@ -7531,7 +7567,7 @@ ${bodies}`;
             end_encounter: scopedEvent(endEncounterEvent)
           },
           selectors: {
-            "combat/available-actions": availableActions2
+            "combat/available-actions": availableActions3
           },
           processes: {},
           migrations: {}
@@ -8155,65 +8191,65 @@ ${bodies}`;
     "src/ui/dom.js"(exports, module) {
       "use strict";
       function hiddenBase3(node) {
-        const wrap = el4("div", "play-hidden");
+        const wrap = el5("div", "play-hidden");
         wrap.append(node);
         return wrap;
       }
       function field4(label, child) {
-        const wrap = el4("label", "field");
-        const span = el4("span");
+        const wrap = el5("label", "field");
+        const span = el5("span");
         span.textContent = label;
         wrap.append(span, child);
         return wrap;
       }
       function row3(...children) {
-        const wrap = el4("div", "play-button-row");
+        const wrap = el5("div", "play-button-row");
         wrap.append(...children);
         return wrap;
       }
       function notice3(text) {
-        const p = el4("p", "muted-line play-notice");
+        const p = el5("p", "muted-line play-notice");
         p.textContent = text;
         return p;
       }
       function namedInput4(name, value, type = "text") {
-        const node = el4("input");
+        const node = el5("input");
         node.name = name;
         node.type = type;
         node.value = value;
         return node;
       }
       function namedTextarea3(name, value) {
-        const node = el4("textarea");
+        const node = el5("textarea");
         node.name = name;
         node.value = value;
         return node;
       }
       function namedSelect4(name) {
-        const node = el4("select");
+        const node = el5("select");
         node.name = name;
         return node;
       }
       function appendOption4(select, value, label, disabled) {
-        const option = el4("option");
+        const option = el5("option");
         option.value = String(value);
         option.textContent = label;
         option.disabled = !!disabled;
         select.append(option);
       }
-      function button4(text, className) {
-        const node = el4("button", className);
+      function button5(text, className) {
+        const node = el5("button", className);
         node.type = "button";
         node.textContent = text;
         return node;
       }
-      function el4(tag, className = "") {
+      function el5(tag, className = "") {
         const node = document.createElement(tag);
         if (className) node.className = className;
         return node;
       }
       function copyFallback2(text, done) {
-        const ta = el4("textarea", "offscreen");
+        const ta = el5("textarea", "offscreen");
         ta.value = text;
         ta.setAttribute("readonly", "");
         document.body.append(ta);
@@ -8226,8 +8262,8 @@ ${bodies}`;
         ta.remove();
       }
       module.exports = {
-        el: el4,
-        button: button4,
+        el: el5,
+        button: button5,
         field: field4,
         row: row3,
         notice: notice3,
@@ -8238,6 +8274,87 @@ ${bodies}`;
         appendOption: appendOption4,
         copyFallback: copyFallback2
       };
+    }
+  });
+
+  // core/screens/runtime.js
+  var require_runtime = __commonJS({
+    "core/screens/runtime.js"(exports, module) {
+      "use strict";
+      var ALLOWED_OPS = /* @__PURE__ */ new Set(["eq", "ne", "gt", "gte", "lt", "lte", "truthy", "includes"]);
+      function normalizeScreens2(screens, navigation) {
+        const issues = [];
+        const ids = /* @__PURE__ */ new Set();
+        const normalized = [];
+        for (const [index, raw] of (Array.isArray(screens) ? screens : []).entries()) {
+          if (!raw || typeof raw !== "object") {
+            issues.push({ path: `screens[${index}]`, reason: "not_object" });
+            continue;
+          }
+          const id = String(raw.id || `screen-${index}`);
+          if (ids.has(id)) {
+            issues.push({ path: `screens[${index}].id`, reason: "duplicate" });
+            continue;
+          }
+          ids.add(id);
+          const regions = Array.isArray(raw.regions) ? { main: raw.regions } : raw.regions && typeof raw.regions === "object" ? raw.regions : {};
+          normalized.push({ id, title: String(raw.title || id), layout: String(raw.layout || "dashboard"), presentation: ["page", "modal", "overlay"].includes(raw.presentation) ? raw.presentation : "page", visibleWhen: raw.visibleWhen || null, regions });
+        }
+        const nav = (Array.isArray(navigation) ? navigation : []).filter((item) => item && ids.has(item.screenId)).map((item, index) => ({ id: String(item.id || `nav-${index}`), screenId: String(item.screenId), label: String(item.label || item.screenId), visibleWhen: item.visibleWhen || null }));
+        return { screens: normalized, navigation: nav, issues };
+      }
+      function evaluateCondition2(node, context) {
+        if (node == null) return true;
+        if (typeof node === "boolean") return node;
+        if (!node || typeof node !== "object" || Array.isArray(node)) return false;
+        if (Array.isArray(node.all)) return node.all.every((part) => evaluateCondition2(part, context));
+        if (Array.isArray(node.any)) return node.any.some((part) => evaluateCondition2(part, context));
+        if (node.not != null) return !evaluateCondition2(node.not, context);
+        const op = String(node.op || "truthy");
+        if (!ALLOWED_OPS.has(op) || typeof node.path !== "string") return false;
+        const left = safePath(context, node.path);
+        const right = node.value;
+        if (op === "truthy") return !!left;
+        if (op === "eq") return left === right;
+        if (op === "ne") return left !== right;
+        if (op === "gt") return Number(left) > Number(right);
+        if (op === "gte") return Number(left) >= Number(right);
+        if (op === "lt") return Number(left) < Number(right);
+        if (op === "lte") return Number(left) <= Number(right);
+        if (op === "includes") return Array.isArray(left) ? left.includes(right) : String(left || "").includes(String(right || ""));
+        return false;
+      }
+      function selectScreenData2(source, context, selectors2 = {}) {
+        if (!source) return null;
+        if (typeof source === "object") return clone3(source);
+        const key = String(source);
+        if (typeof selectors2[key] === "function") return selectors2[key](context);
+        if (key.startsWith("state.") || key.startsWith("schema.") || key.startsWith("content.") || key.startsWith("selection.")) return clone3(safePath(context, key));
+        return null;
+      }
+      function resolveEvent2(action, context) {
+        if (!action || typeof action !== "object" || typeof action.id !== "string" || !action.id.trim()) return null;
+        return { id: action.id.trim(), params: resolveValue(action.params || {}, context) };
+      }
+      function resolveValue(value, context) {
+        if (Array.isArray(value)) return value.map((item) => resolveValue(item, context));
+        if (!value || typeof value !== "object") return value;
+        if (typeof value.$path === "string") return clone3(safePath(context, value.$path));
+        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveValue(item, context)]));
+      }
+      function safePath(root, path) {
+        const parts = String(path || "").split(".").filter(Boolean);
+        let current = root;
+        for (const part of parts) {
+          if (!/^[a-zA-Z0-9_-]+$/.test(part) || ["__proto__", "prototype", "constructor"].includes(part) || !current || typeof current !== "object" || !Object.prototype.hasOwnProperty.call(current, part)) return void 0;
+          current = current[part];
+        }
+        return current;
+      }
+      function clone3(value) {
+        return value == null ? value : JSON.parse(JSON.stringify(value));
+      }
+      module.exports = { ALLOWED_OPS, normalizeScreens: normalizeScreens2, evaluateCondition: evaluateCondition2, selectScreenData: selectScreenData2, resolveEvent: resolveEvent2, safePath };
     }
   });
 
@@ -8539,7 +8656,7 @@ ${message.content}`;
       "use strict";
       var { simulateActivation: simulateActivation2 } = require_activate();
       var { estimateTokens: estimateTokens3 } = require_tokens();
-      var { summarize: summarize3, npcSummary: npcSummary3, availableActions: availableActions2 } = require_selectors();
+      var { summarize: summarize3, npcSummary: npcSummary3, availableActions: availableActions3 } = require_selectors();
       var { compilePrompt } = require_compilePrompt();
       var { compareRisuAndSimPack } = require_comparePrompt();
       var COMMON_PROMPT = `[\uC808\uB300 \uADDC\uCE59]
@@ -8679,7 +8796,7 @@ ${message.content}`;
 ${lines.join("\n")}`;
       }
       function availableActionText(schema2, state2) {
-        const descriptor = availableActions2(schema2, state2);
+        const descriptor = availableActions3(schema2, state2);
         if (!descriptor || !descriptor.active || !Array.isArray(descriptor.actions)) return "";
         return descriptor.actions.map((action) => {
           if (action.type === "attack") return `attack \u2192 ${(action.targets || []).map((target2) => target2.id).join(", ") || "\uB300\uC0C1 \uC5C6\uC74C"}`;
@@ -12249,18 +12366,18 @@ ${entry.content || ""}`
     const chips = document.createElement("div");
     chips.className = "chip-row";
     for (const emotion of orderedEmotions(group)) {
-      const button4 = document.createElement("button");
-      button4.type = "button";
-      button4.className = "chip";
-      button4.textContent = emotion;
-      button4.addEventListener("click", () => {
+      const button5 = document.createElement("button");
+      button5.type = "button";
+      button5.className = "chip";
+      button5.textContent = emotion;
+      button5.addEventListener("click", () => {
         const pick = selectAsset(group, emotion);
         if (!pick) return;
         img.removeAttribute("src");
         img._asset = pick.asset;
         loadImage(img, ctx);
       });
-      chips.append(button4);
+      chips.append(button5);
     }
     body.append(h3, linked, chips);
     if (group.profile) {
@@ -12562,9 +12679,9 @@ ${entry.content || ""}`
       });
       renderResult(output, lore, result);
     };
-    for (const el4 of [textarea, scanDepth, tokenBudget, caseSensitive.input, wholeWord.input]) {
-      el4.addEventListener("input", run);
-      el4.addEventListener("change", run);
+    for (const el5 of [textarea, scanDepth, tokenBudget, caseSensitive.input, wholeWord.input]) {
+      el5.addEventListener("input", run);
+      el5.addEventListener("change", run);
     }
     run();
     return () => {
@@ -17014,14 +17131,252 @@ ${Array.from(extras).join(" ")}` : text;
     };
   }
 
+  // src/declarativeScreenView.js
+  var import_selectors = __toESM(require_selectors());
+  var import_runtime = __toESM(require_runtime());
+  var import_dom = __toESM(require_dom());
+  var uiByProject = /* @__PURE__ */ new Map();
+  function renderDeclarativePlayer(ctx, api) {
+    const manifest = ctx.simpack;
+    if (!manifest || !manifest.runtime || !Array.isArray(manifest.runtime.screens) || !manifest.runtime.screens.length) return null;
+    const normalized = (0, import_runtime.normalizeScreens)(manifest.runtime.screens, manifest.runtime.navigation);
+    if (!normalized.screens.length) return null;
+    const projectId = manifest.id || "project";
+    const ui = uiByProject.get(projectId) || { activeScreenId: normalized.navigation[0]?.screenId || normalized.screens[0].id, modalScreenId: null, selection: {} };
+    uiByProject.set(projectId, ui);
+    const context = { state: api.state(), schema: api.schema(), content: manifest.content || {}, selection: ui.selection, options: manifest.runtime.options || {}, featureToggles: manifest.runtime.featureToggles || {} };
+    const visibleScreens = normalized.screens.filter((screen) => (0, import_runtime.evaluateCondition)(screen.visibleWhen, context));
+    if (!visibleScreens.some((screen) => screen.id === ui.activeScreenId && screen.presentation === "page")) ui.activeScreenId = visibleScreens.find((screen) => screen.presentation === "page")?.id || visibleScreens[0]?.id;
+    const root = (0, import_dom.el)("div", "declarative-player");
+    const nav = (0, import_dom.el)("nav", "declarative-nav");
+    nav.setAttribute("aria-label", "\uD504\uB85C\uC81D\uD2B8 \uD654\uBA74");
+    for (const item of normalized.navigation.filter((entry) => (0, import_runtime.evaluateCondition)(entry.visibleWhen, context))) {
+      const target2 = visibleScreens.find((screen) => screen.id === item.screenId);
+      if (!target2) continue;
+      const control = (0, import_dom.button)(item.label, ui.activeScreenId === target2.id ? "declarative-nav-active" : "secondary-btn");
+      control.addEventListener("click", () => {
+        if (target2.presentation === "page") ui.activeScreenId = target2.id;
+        else ui.modalScreenId = target2.id;
+        api.render();
+      });
+      nav.append(control);
+    }
+    root.append(nav);
+    const active = visibleScreens.find((screen) => screen.id === ui.activeScreenId) || visibleScreens[0];
+    if (active) {
+      root.append(renderScreen(active, context, api, ui));
+      const widgets = Object.values(active.regions).flat();
+      if (!widgets.some((widget) => widget && widget.widget === "chat")) {
+        const core = (0, import_dom.el)("div", "declarative-core-play");
+        core.append(api.chat());
+        if (!widgets.some((widget) => widget && widget.widget === "sidebar")) core.append(api.sidebar());
+        root.append(core);
+      }
+    }
+    const modal = visibleScreens.find((screen) => screen.id === ui.modalScreenId && screen.presentation !== "page");
+    if (modal) {
+      const overlay = (0, import_dom.el)("div", `declarative-${modal.presentation}`);
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      const panel = renderScreen(modal, context, api, ui);
+      const close = (0, import_dom.button)("\uB2EB\uAE30", "secondary-btn");
+      close.addEventListener("click", () => {
+        ui.modalScreenId = null;
+        api.render();
+      });
+      panel.prepend(close);
+      overlay.append(panel);
+      root.append(overlay);
+    }
+    return root;
+  }
+  function renderScreen(screen, context, api, ui) {
+    const section = (0, import_dom.el)("section", `declarative-screen layout-${safeClass(screen.layout)}`);
+    section.dataset.screenId = screen.id;
+    const heading = (0, import_dom.el)("h2");
+    heading.textContent = screen.title;
+    section.append(heading);
+    for (const [regionId, widgets] of Object.entries(screen.regions)) {
+      const region = (0, import_dom.el)("div", `declarative-region region-${safeClass(regionId)}`);
+      region.dataset.region = regionId;
+      for (const widget of widgets || []) if (widget && (0, import_runtime.evaluateCondition)(widget.visibleWhen, context)) region.append(renderWidget(widget, context, api, ui));
+      section.append(region);
+    }
+    return section;
+  }
+  function renderWidget(widget, context, api, ui) {
+    if (widget.widget === "chat") return api.chat();
+    if (widget.widget === "sidebar") return api.sidebar();
+    const box = (0, import_dom.el)("section", `declarative-widget widget-${safeClass(widget.widget || "unknown")}`);
+    if (widget.title) {
+      const title = (0, import_dom.el)("h3");
+      title.textContent = String(widget.title);
+      box.append(title);
+    }
+    const data = (0, import_runtime.selectScreenData)(widget.source, context, selectors(api));
+    const type = String(widget.widget || "");
+    if (type === "stat-strip") renderStats(box, data);
+    else if (type === "gauge") renderGauge(box, data, widget.props || {});
+    else if (["entity-card", "card-list", "quest-board", "inventory-grid", "facility-grid", "map-nodes", "crafting-queue", "timeline"].includes(type)) renderCards(box, data, widget, ui, api);
+    else if (type === "table") renderTable(box, data);
+    else if (type === "slot-grid") renderSlots(box, data);
+    else if (type === "calendar") renderCalendar(box, data);
+    else if (type === "combat-hud") renderCombat(box, data);
+    else if (["action-group", "decision-card"].includes(type)) renderActions(box, Array.isArray(data) ? data : widget.actions || [], context, api);
+    else if (type === "detail-panel") renderDetail(box, data);
+    else {
+      const pre = (0, import_dom.el)("pre");
+      pre.textContent = data == null ? `\uC9C0\uC6D0\uD558\uC9C0 \uC54A\uB294 \uC704\uC82F: ${type}` : JSON.stringify(data, null, 2);
+      box.append(pre);
+    }
+    return box;
+  }
+  function selectors(api) {
+    return {
+      "core.summary": ({ state: state2 }) => Object.entries({ day: state2.day, gold: state2.gold }).filter(([, value]) => value != null).map(([label, value]) => ({ label, value })),
+      "core.resources": ({ state: state2, schema: schema2 }) => Object.entries(state2.resources || {}).map(([id, value]) => ({ id, label: (schema2.resources || []).find((item) => item.id === id)?.label || id, value })),
+      "core.inventory": ({ state: state2 }) => Object.entries(state2.inventory || state2.resources || {}).map(([id, value]) => ({ id, label: id, value })),
+      "core.facilities": ({ state: state2 }) => Object.entries(state2.facilities || {}).map(([id, value]) => ({ id, label: id, value })),
+      "core.locations": ({ content, state: state2 }) => (content.locations || []).map((location) => ({ ...location, selected: state2.location === location.id })),
+      "core.calendar": ({ state: state2 }) => ({ day: state2.day, time: state2.time || null }),
+      "core.jobs": ({ state: state2 }) => state2.jobs || [],
+      "rpg.quests": ({ schema: schema2, state: state2 }) => (schema2.quests || []).map((quest) => ({ ...quest, completed: !!(state2.completedQuests || {})[quest.id] })),
+      "combat.hud": ({ state: state2 }) => state2.combat ? { ...state2.combat, player: state2.player && state2.player.pools && state2.player.pools.hp } : null,
+      "combat.actions": ({ schema: schema2, state: state2 }) => {
+        const selected = (0, import_selectors.availableActions)(schema2, state2);
+        if (!selected.active) return [];
+        return (selected.actions || []).map((action) => {
+          if (action.type === "item") return { ...action, label: action.label, event: { id: "use_item", params: { itemId: action.itemId } } };
+          const params = { action: action.type, ...action.skill ? { skill: action.skill } : {}, ...action.targets && action.targets[0] ? { target: action.targets[0].id } : {} };
+          return { ...action, label: action.name || action.type, event: { id: "combat_action", params } };
+        });
+      },
+      "core.management": ({ schema: schema2, state: state2 }) => (0, import_selectors.availableManagement)(schema2, state2)
+    };
+  }
+  function renderStats(box, data) {
+    const row3 = (0, import_dom.el)("div", "declarative-stat-strip");
+    for (const item of asList(data)) {
+      const stat2 = (0, import_dom.el)("div", "declarative-stat");
+      const k = (0, import_dom.el)("span");
+      k.textContent = String(item.label ?? item.id ?? "");
+      const v = (0, import_dom.el)("strong");
+      v.textContent = String(item.value ?? "");
+      stat2.append(k, v);
+      row3.append(stat2);
+    }
+    box.append(row3);
+  }
+  function renderGauge(box, data, props) {
+    const value = Number((data && (data.cur ?? data.value)) ?? 0);
+    const max2 = Math.max(1, Number((data && data.max) ?? props.max ?? 100));
+    const label = (0, import_dom.el)("div");
+    label.textContent = `${props.label || ""} ${value}/${max2}`;
+    const meter = (0, import_dom.el)("progress");
+    meter.max = max2;
+    meter.value = Math.max(0, Math.min(max2, value));
+    box.append(label, meter);
+  }
+  function renderCards(box, data, widget, ui, api) {
+    const grid = (0, import_dom.el)("div", "declarative-card-grid");
+    for (const [index, item] of asList(data).entries()) {
+      const card = (0, import_dom.button)(String(item.label || item.name || item.title || item.id || index), "declarative-card");
+      const sub = (0, import_dom.el)("small");
+      sub.textContent = String(item.value ?? item.desc ?? item.description ?? "");
+      card.append(sub);
+      card.addEventListener("click", () => {
+        ui.selection[widget.selectionKey || "selectedId"] = item.id ?? index;
+        if (widget.onSelect) runAction(widget.onSelect, { ...api.context(), selection: ui.selection }, api);
+        else api.render();
+      });
+      grid.append(card);
+    }
+    box.append(grid);
+  }
+  function renderTable(box, data) {
+    const rows = asList(data);
+    const table = (0, import_dom.el)("table");
+    const keys = Array.from(new Set(rows.flatMap((row3) => Object.keys(row3 || {})))).slice(0, 8);
+    const head = (0, import_dom.el)("tr");
+    keys.forEach((key) => {
+      const th = (0, import_dom.el)("th");
+      th.textContent = key;
+      head.append(th);
+    });
+    table.append(head);
+    rows.forEach((row3) => {
+      const tr = (0, import_dom.el)("tr");
+      keys.forEach((key) => {
+        const td2 = (0, import_dom.el)("td");
+        td2.textContent = String(row3[key] ?? "");
+        tr.append(td2);
+      });
+      table.append(tr);
+    });
+    box.append(table);
+  }
+  function renderSlots(box, data) {
+    const grid = (0, import_dom.el)("div", "declarative-slots");
+    for (const item of asList(data)) {
+      const slot = (0, import_dom.el)("div", "declarative-slot");
+      slot.textContent = `${item.slot || item.id || "slot"}: ${item.name || item.itemId || "\uBE44\uC5B4 \uC788\uC74C"}`;
+      grid.append(slot);
+    }
+    box.append(grid);
+  }
+  function renderCalendar(box, data) {
+    const value = (0, import_dom.el)("div", "declarative-calendar");
+    value.textContent = `${data && data.day != null ? data.day : "-"}\uC77C${data && data.time ? ` \xB7 ${data.time}` : ""}`;
+    box.append(value);
+  }
+  function renderCombat(box, data) {
+    if (!data || !data.active) {
+      box.append(document.createTextNode("\uC804\uD22C \uC5C6\uC74C"));
+      return;
+    }
+    renderGauge(box, data.player || {}, { label: "\uD50C\uB808\uC774\uC5B4" });
+    for (const enemy of data.enemies || []) {
+      const row3 = (0, import_dom.el)("div");
+      row3.textContent = `${enemy.name || enemy.id} ${enemy.hp && enemy.hp.cur}/${enemy.hp && enemy.hp.max}`;
+      box.append(row3);
+    }
+  }
+  function renderActions(box, actions, context, api) {
+    const row3 = (0, import_dom.el)("div", "declarative-actions");
+    for (const action of actions || []) {
+      const control = (0, import_dom.button)(String(action.label || action.name || action.id || action.type || "\uD589\uB3D9"), "primary-btn");
+      control.disabled = action.enabled === false || action.affordable === false;
+      control.addEventListener("click", () => runAction(action.event || action, context, api));
+      row3.append(control);
+    }
+    box.append(row3);
+  }
+  function renderDetail(box, data) {
+    const pre = (0, import_dom.el)("pre");
+    pre.textContent = data == null ? "\uC120\uD0DD \uC5C6\uC74C" : JSON.stringify(data, null, 2);
+    box.append(pre);
+  }
+  function runAction(action, context, api) {
+    const event = (0, import_runtime.resolveEvent)(action, context);
+    if (event) api.event(event);
+  }
+  function asList(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") return Object.entries(value).map(([id, item]) => item && typeof item === "object" ? { id, ...item } : { id, label: id, value: item });
+    return [];
+  }
+  function safeClass(value) {
+    return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "-");
+  }
+
   // src/playView.js
-  var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement, roomStatus: roomStatus2, staffMax: staffMax2 } = require_selectors();
+  var { summarize: summarize2, npcSummary: npcSummary2, availableActions: availableActions2, availableManagement: availableManagement2, roomStatus: roomStatus2, staffMax: staffMax2 } = require_selectors();
   var { estimateTokens: estimateTokens2, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
   var { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require_prompt();
   var { resolveSpeaker, resolveSpeakerList } = require_speakerResolver();
   var { PROVIDERS, callProvider } = require_providers();
   var { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey: readKey2, keyName, defaultModel } = require_byokSettings();
-  var { el: el2, button: button2, field: field2, row, notice, hiddenBase, namedInput: namedInput2, namedTextarea, namedSelect: namedSelect2, appendOption: appendOption2, copyFallback: fallbackCopy } = require_dom();
+  var { el: el3, button: button3, field: field2, row, notice, hiddenBase, namedInput: namedInput2, namedTextarea, namedSelect: namedSelect2, appendOption: appendOption2, copyFallback: fallbackCopy } = require_dom();
   var { parsePlaySessionImport } = require_playSession();
   var messages = [];
   var busy = false;
@@ -17323,7 +17678,7 @@ ${Array.from(extras).join(" ")}` : text;
       }
       character.baseAsset = character.asset;
     }
-    const root = el2("div", "play-view");
+    const root = el3("div", "play-view");
     container.append(root);
     const render2 = () => {
       root.replaceChildren();
@@ -17355,20 +17710,34 @@ ${Array.from(extras).join(" ")}` : text;
     };
   }
   function renderLayout(ctx, render2) {
-    const layout = el2("div", "play-layout");
+    const declarative = renderDeclarativePlayer(ctx, {
+      state: getEngineState,
+      schema: getSchema,
+      chat: () => renderChat(ctx, render2),
+      sidebar: () => renderSide(ctx, render2),
+      render: render2,
+      context: () => ({ state: getEngineState(), schema: getSchema(), content: ctx.simpack && ctx.simpack.content || {}, selection: {} }),
+      event: (event) => runLedgerAction(event, render2)
+    });
+    if (declarative) {
+      const layout2 = el3("div", "play-layout declarative-layout");
+      layout2.append(renderMobileHud(ctx, render2), declarative, renderBottomSheet(ctx, render2));
+      return layout2;
+    }
+    const layout = el3("div", "play-layout");
     layout.append(renderMobileHud(ctx, render2), renderChat(ctx, render2), renderSide(ctx, render2), renderBottomSheet(ctx, render2));
     return layout;
   }
   function renderMobileHud(ctx, render2) {
-    const hud = el2("div", "mobile-hud");
+    const hud = el3("div", "mobile-hud");
     const state2 = getEngineState();
     const schema2 = getSchema();
     if (!schema2 || !state2) {
-      const name = el2("strong");
+      const name = el3("strong");
       name.textContent = ctx.parsed && ctx.parsed.name || "\uC2DC\uBBAC\uBD07";
       hud.append(name);
     } else {
-      const facts = el2("div", "mobile-hud-facts");
+      const facts = el3("div", "mobile-hud-facts");
       if (Number.isFinite(Number(state2.gold))) facts.append(hudFact(`\uACE8\uB4DC ${formatMoney2(state2.gold)}`));
       if (Number.isFinite(Number(state2.day))) facts.append(hudFact(`${Number(state2.day)}\uC77C\uCC28`));
       const hp = state2.player && state2.player.pools && state2.player.pools.hp;
@@ -17378,7 +17747,7 @@ ${Array.from(extras).join(" ")}` : text;
       if (!facts.childNodes.length) facts.append(hudFact(ctx.parsed && ctx.parsed.name || "\uD50C\uB808\uC774"));
       hud.append(facts);
     }
-    const open = button2("\uC0C1\uD0DC", "secondary-btn mobile-state-button");
+    const open = button3("\uC0C1\uD0DC", "secondary-btn mobile-state-button");
     open.setAttribute("aria-expanded", String(mobileSheetOpen));
     open.setAttribute("aria-controls", "playStateSheet");
     open.addEventListener("click", () => {
@@ -17389,17 +17758,17 @@ ${Array.from(extras).join(" ")}` : text;
     return hud;
   }
   function hudFact(text) {
-    const node = el2("span", "mobile-hud-fact");
+    const node = el3("span", "mobile-hud-fact");
     node.textContent = text;
     return node;
   }
   function compactGauge(label, pool) {
-    const node = el2("span", "mobile-mini-gauge");
+    const node = el3("span", "mobile-mini-gauge");
     node.append(hudFact(`${label} ${pool.cur}/${pool.max}`), combatGauge(label, pool, ""));
     return node;
   }
   function renderBottomSheet(ctx, render2) {
-    const overlay = el2("div", `play-sheet-overlay${mobileSheetOpen ? " open" : ""}`);
+    const overlay = el3("div", `play-sheet-overlay${mobileSheetOpen ? " open" : ""}`);
     overlay.id = "playStateSheet";
     overlay.setAttribute("aria-hidden", String(!mobileSheetOpen));
     const closeSheet = () => {
@@ -17415,13 +17784,13 @@ ${Array.from(extras).join(" ")}` : text;
     overlay.addEventListener("click", (event) => {
       if (event.target === overlay) closeSheet();
     });
-    const sheet = el2("aside", "play-bottom-sheet");
+    const sheet = el3("aside", "play-bottom-sheet");
     sheet.setAttribute("role", "dialog");
     sheet.setAttribute("aria-modal", "true");
     sheet.setAttribute("aria-label", "\uD50C\uB808\uC774 \uC0C1\uD0DC\uC640 \uC124\uC815");
-    const head = el2("div", "sheet-head");
-    const handle = button2("\uC0C1\uD0DC \uD328\uB110 \uB2EB\uAE30", "sheet-handle");
-    const close = button2("\uB2EB\uAE30", "secondary-btn");
+    const head = el3("div", "sheet-head");
+    const handle = button3("\uC0C1\uD0DC \uD328\uB110 \uB2EB\uAE30", "sheet-handle");
+    const close = button3("\uB2EB\uAE30", "secondary-btn");
     handle.addEventListener("click", closeSheet);
     close.addEventListener("click", closeSheet);
     head.append(handle, close);
@@ -17458,18 +17827,18 @@ ${Array.from(extras).join(" ")}` : text;
     return overlay;
   }
   function renderChat(ctx, render2) {
-    const panel = el2("section", "play-chat-panel");
-    const header = el2("div", "view-header play-chat-header");
-    const title = el2("div", "play-hero");
+    const panel = el3("section", "play-chat-panel");
+    const header = el3("div", "view-header play-chat-header");
+    const title = el3("div", "play-hero");
     title.append(characterAvatar(ctx, character && character.asset, "play-hero-avatar"));
-    const identity = el2("div", "play-hero-copy");
-    const h2 = el2("h2");
+    const identity = el3("div", "play-hero-copy");
+    const h2 = el3("h2");
     h2.textContent = character && character.name || "\uC2DC\uBBAC\uBD07";
-    const p = el2("p");
+    const p = el3("p");
     p.textContent = sceneLine();
     identity.append(h2, p);
     title.append(identity);
-    const copy = button2("\uB300\uD654 \uBCF5\uC0AC", "secondary-btn");
+    const copy = button3("\uB300\uD654 \uBCF5\uC0AC", "secondary-btn");
     copy.disabled = !messages.length;
     copy.addEventListener("click", () => {
       const text = transcriptText();
@@ -17482,7 +17851,7 @@ ${Array.from(extras).join(" ")}` : text;
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
       else fallbackCopy(text, done);
     });
-    const clear = button2("\uB300\uD654 \uCD08\uAE30\uD654", "secondary-btn");
+    const clear = button3("\uB300\uD654 \uCD08\uAE30\uD654", "secondary-btn");
     clear.disabled = busy;
     clear.addEventListener("click", () => {
       if (busy) return;
@@ -17493,30 +17862,30 @@ ${Array.from(extras).join(" ")}` : text;
       stage = [];
       render2();
     });
-    const actions = el2("div", "engine-header-controls");
+    const actions = el3("div", "engine-header-controls");
     actions.append(copy, clear);
     header.append(title, actions);
-    const list = el2("div", "play-message-list");
+    const list = el3("div", "play-message-list");
     if (!messages.length) {
-      const empty = el2("div", "play-empty");
+      const empty = el3("div", "play-empty");
       empty.textContent = "mock \uC81C\uACF5\uC790\uB85C \uD0A4 \uC5C6\uC774 \uBC14\uB85C \uD14C\uC2A4\uD2B8\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
       list.append(empty);
     } else {
       for (let index = 0; index < messages.length; index += 1) list.append(renderMessage(messages[index], ctx, index === 0 || messages[index - 1].role !== messages[index].role));
     }
     if (busy) {
-      const thinking = el2("div", "play-message assistant");
+      const thinking = el3("div", "play-message assistant");
       thinking.textContent = "\uC0DD\uAC01 \uC911...";
       list.append(thinking);
     }
-    const form = el2("form", "play-input-row");
-    const input2 = el2("textarea", "play-input");
+    const form = el3("form", "play-input-row");
+    const input2 = el3("textarea", "play-input");
     const decisionCard = renderDecisionCard(input2, ctx, render2);
     if (decisionCard) list.append(decisionCard);
     input2.name = "message";
     input2.placeholder = "\uC608: \uACE0\uAE30 \uC2A4\uD29C \uD558\uB098 \uD314\uC790";
     input2.disabled = busy;
-    const send = button2("\uC804\uC1A1", "primary-btn");
+    const send = button3("\uC804\uC1A1", "primary-btn");
     send.type = "submit";
     send.disabled = busy;
     form.append(input2, send);
@@ -17540,19 +17909,19 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderDecisionCard(input2, ctx, render2) {
     const state2 = getEngineState();
-    const descriptor = availableManagement(getSchema(), state2);
+    const descriptor = availableManagement2(getSchema(), state2);
     const traffic = descriptor.sections.find((section) => section.type === "traffic");
     if (!traffic) return null;
     if (traffic.pendingIncident) {
       const incident = traffic.pendingIncident;
-      const card2 = el2("section", "play-decision-card incident");
-      const title2 = el2("strong", "play-decision-title");
+      const card2 = el3("section", "play-decision-card incident");
+      const title2 = el3("strong", "play-decision-title");
       title2.textContent = `\u26A0 ${incident.label}`;
-      const body = el2("p");
+      const body = el3("p");
       body.textContent = incident.desc;
-      const actions2 = el2("div", "play-decision-actions");
+      const actions2 = el3("div", "play-decision-actions");
       for (const choice of incident.choices) {
-        const control = button2(choice.label, "secondary-btn");
+        const control = button3(choice.label, "secondary-btn");
         control.disabled = busy;
         control.addEventListener("click", () => runManagementTurn({ id: "incident_choice", params: { choice: choice.id } }, input2, ctx, render2));
         actions2.append(control);
@@ -17569,13 +17938,13 @@ ${Array.from(extras).join(" ")}` : text;
     }
     const validIds = new Set(pending.map((request) => request.id));
     lodgingSelection = new Set(Array.from(lodgingSelection).filter((id) => validIds.has(id)));
-    const card = el2("section", "play-decision-card lodging");
-    const title = el2("strong", "play-decision-title");
+    const card = el3("section", "play-decision-card lodging");
+    const title = el3("strong", "play-decision-title");
     title.textContent = `\u{1F6CE} \uC219\uBC15 \uBB38\uC758 ${pending.length}\uAC74`;
-    const requests = el2("div", "play-decision-requests");
+    const requests = el3("div", "play-decision-requests");
     for (const request of pending) {
-      const rowNode = el2("label", "play-decision-request");
-      const check = el2("input");
+      const rowNode = el3("label", "play-decision-request");
+      const check = el3("input");
       check.type = "checkbox";
       check.checked = lodgingSelection.has(request.id);
       check.disabled = busy;
@@ -17584,19 +17953,19 @@ ${Array.from(extras).join(" ")}` : text;
         else lodgingSelection.delete(request.id);
         render2();
       });
-      const text = el2("span");
+      const text = el3("span");
       text.textContent = `${request.name} \xB7 ${request.party}\uBA85 \xB7 ${request.stayDays}\uBC15`;
       rowNode.append(check, text);
       requests.append(rowNode);
     }
-    const actions = el2("div", "play-decision-actions");
-    const accept = button2("\uC120\uD0DD\uD55C \uBB38\uC758 \uBC1B\uAE30", "primary-btn");
+    const actions = el3("div", "play-decision-actions");
+    const accept = button3("\uC120\uD0DD\uD55C \uBB38\uC758 \uBC1B\uAE30", "primary-btn");
     accept.disabled = busy || !pending.some((request) => lodgingSelection.has(request.id));
     accept.addEventListener("click", () => runManagementBatch(pending.map((request) => ({
       event: { id: lodgingSelection.has(request.id) ? "lodging_accept" : "lodging_reject", params: { requestId: request.id } },
       requestName: request.name
     })), input2, ctx, render2));
-    const reject = button2("\uC804\uCCB4 \uAC70\uC808", "secondary-btn");
+    const reject = button3("\uC804\uCCB4 \uAC70\uC808", "secondary-btn");
     reject.disabled = busy;
     reject.addEventListener("click", () => runManagementBatch(pending.map((request) => ({ event: { id: "lodging_reject", params: { requestId: request.id } }, requestName: request.name })), input2, ctx, render2));
     actions.append(accept, reject);
@@ -17605,44 +17974,44 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderMessage(message, ctx, showIdentity) {
     if (message.role === "ledger") {
-      const row3 = el2("article", "play-ledger-message");
-      const chips = el2("div", "play-chip-row");
+      const row3 = el3("article", "play-ledger-message");
+      const chips = el3("div", "play-chip-row");
       for (const chip of message.chips || []) chips.append(renderChip(chip));
       row3.append(chips);
       return row3;
     }
-    const wrap = el2("article", `play-message ${message.role}`);
-    const text = el2("div", "play-message-text");
+    const wrap = el3("article", `play-message ${message.role}`);
+    const text = el3("div", "play-message-text");
     text.textContent = message.content;
     if (message.role === "assistant" && (showIdentity || message.npcIds && message.npcIds.length)) {
-      const label = el2("div", "play-speaker");
+      const label = el3("div", "play-speaker");
       if (showIdentity) {
         label.append(characterAvatar(ctx, character && (character.baseAsset || character.asset), "play-speaker-avatar"));
-        const name = el2("span");
+        const name = el3("span");
         name.textContent = character && character.name || "\uC2DC\uBBAC\uBD07";
         label.append(name);
       }
       if (message.npcIds && message.npcIds.length) label.append(renderNpcAvatars(message.npcIds, ctx));
       wrap.append(label);
     } else if (message.role === "user" && showIdentity) {
-      const label = el2("div", "play-speaker user-label");
+      const label = el3("div", "play-speaker user-label");
       label.textContent = "\uB098";
       wrap.append(label);
     }
     wrap.append(text);
     if (message.chips && message.chips.length) {
-      const chips = el2("div", "play-chip-row");
+      const chips = el3("div", "play-chip-row");
       const visible = message.chips.length >= 4 ? message.chips.slice(0, 2) : message.chips;
       for (const chip of visible) chips.append(renderChip(chip));
       if (message.chips.length >= 4) {
-        const more = el2("details", "play-chip-more");
+        const more = el3("details", "play-chip-more");
         more.open = !!message.chipsOpen;
         more.addEventListener("toggle", () => {
           message.chipsOpen = more.open;
         });
-        const summary = el2("summary");
+        const summary = el3("summary");
         summary.textContent = `\uACB0\uACFC ${message.chips.length - 2}\uAC1C \uB354 \uBCF4\uAE30`;
-        const hidden = el2("div", "play-chip-hidden");
+        const hidden = el3("div", "play-chip-hidden");
         for (const chip of message.chips.slice(2)) hidden.append(renderChip(chip));
         more.append(summary, hidden);
         chips.append(more);
@@ -17653,13 +18022,13 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function renderChip(chip) {
     const kind = ["combat", "resource", "pool", "quest", "settlement", "system", "info"].includes(chip.kind) ? chip.kind : "info";
-    const item = el2("span", `badge event-chip chip-${kind} ${chip.ok ? "engine-ok" : "engine-fail"}`);
+    const item = el3("span", `badge event-chip chip-${kind} ${chip.ok ? "engine-ok" : "engine-fail"}`);
     const icon = { combat: "\u2694", resource: "\u{1F4B0}", pool: "\u2764", quest: "\u{1F4DC}", settlement: "\u{1F319}", system: "\u2699", info: "\u2139" }[kind];
     item.append(document.createTextNode(`${icon} `));
     const parts = String(chip.text).split(/([+-]\d[\d,]*(?:\.\d+)?|[^\s]+→[^\s]+)/g);
     for (const part of parts) {
       if (/^(?:[+-]\d[\d,]*(?:\.\d+)?|[^\s]+→[^\s]+)$/.test(part)) {
-        const strong = el2("strong");
+        const strong = el3("strong");
         strong.textContent = part;
         item.append(strong);
       } else item.append(document.createTextNode(part));
@@ -17667,7 +18036,7 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function characterAvatar(ctx, asset, className, initialName) {
-    const wrap = el2("div", className);
+    const wrap = el3("div", className);
     const showInitial = () => {
       wrap.replaceChildren();
       wrap.classList.add("initial");
@@ -17721,16 +18090,16 @@ ${Array.from(extras).join(" ")}` : text;
         entries = [others[0], focused, others[1]];
       }
     } else if (entries.length === 2) entries.sort((a, b) => Number(b.focus) - Number(a.focus));
-    const section = el2("section", "play-stage");
+    const section = el3("section", "play-stage");
     for (const entry of entries) {
       const url = ctx.objectUrlFor(entry.asset);
       if (!url) continue;
-      const slot = el2("figure", `play-stage-slot${entry.focus ? " focus" : ""}`);
+      const slot = el3("figure", `play-stage-slot${entry.focus ? " focus" : ""}`);
       const img = document.createElement("img");
       img.alt = entry.name;
       img.addEventListener("error", () => slot.remove());
       img.src = url;
-      const caption = el2("figcaption");
+      const caption = el3("figcaption");
       caption.textContent = entry.name;
       slot.append(img, caption);
       section.append(slot);
@@ -17738,7 +18107,7 @@ ${Array.from(extras).join(" ")}` : text;
     return section.childNodes.length ? section : null;
   }
   function renderNpcAvatars(npcIds, ctx) {
-    const row3 = el2("div", "npc-avatar-row");
+    const row3 = el3("div", "npc-avatar-row");
     const ids = Array.from(new Set(npcIds)).filter(Boolean);
     for (const id of ids.slice(0, 3)) {
       const npc = npcPresentation(getSchema(), id);
@@ -17748,7 +18117,7 @@ ${Array.from(extras).join(" ")}` : text;
       row3.append(avatar);
     }
     if (ids.length > 3) {
-      const more = el2("span", "npc-avatar-more");
+      const more = el3("span", "npc-avatar-more");
       more.textContent = `+${ids.length - 3}`;
       row3.append(more);
     }
@@ -17855,7 +18224,7 @@ ${Array.from(extras).join(" ")}` : text;
     }
   }
   function renderSide(ctx, render2) {
-    const side = el2("aside", "play-side-panel");
+    const side = el3("aside", "play-side-panel");
     const hud = renderCombatHud();
     if (hud) side.append(hud);
     side.append(renderLedgerSection(render2), renderMemorySection(render2), renderSettings(ctx, render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
@@ -17867,30 +18236,30 @@ ${Array.from(extras).join(" ")}` : text;
     const pending = all.filter((record) => record.status === "candidate");
     const approved = all.filter((record) => record.status === "approved");
     const pendingPatches = getContinuityPatches("pending");
-    const summary = el2("p", "memory-summary");
+    const summary = el3("p", "memory-summary");
     summary.textContent = `\uD655\uC815 ${approved.length} \xB7 \uAE30\uC5B5 \uD6C4\uBCF4 ${pending.length} \xB7 \uC0C1\uD0DC \uBCC0\uACBD ${pendingPatches.length}`;
     section.append(summary);
     if (!pending.length && !pendingPatches.length) {
-      const empty = el2("p", "muted");
+      const empty = el3("p", "muted");
       empty.textContent = "\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uD6C4\uBCF4\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
       section.append(empty);
       return section;
     }
     if (pending.length) {
-      const list = el2("div", "memory-review-list");
+      const list = el3("div", "memory-review-list");
       for (const record of pending.slice(0, 8)) {
-        const card = el2("article", "memory-review-card");
-        const text = el2("p");
+        const card = el3("article", "memory-review-card");
+        const text = el3("p");
         text.textContent = record.text;
-        const meta = el2("small");
+        const meta = el3("small");
         meta.textContent = `${record.kind} \xB7 ${record.knowledgeScope} \xB7 ${record.sceneId || "\uC7A5\uBA74 \uBBF8\uC9C0\uC815"}`;
-        const actions = el2("div", "memory-review-actions");
-        const accept = button2("\uAE30\uC5B5 \uC2B9\uC778", "secondary");
+        const actions = el3("div", "memory-review-actions");
+        const accept = button3("\uAE30\uC5B5 \uC2B9\uC778", "secondary");
         accept.addEventListener("click", () => {
           approveMemory(record.id, conversationTurn);
           render2();
         });
-        const reject = button2("\uBC84\uB9AC\uAE30", "ghost");
+        const reject = button3("\uBC84\uB9AC\uAE30", "ghost");
         reject.addEventListener("click", () => {
           rejectMemory(record.id);
           render2();
@@ -17902,18 +18271,18 @@ ${Array.from(extras).join(" ")}` : text;
       section.append(list);
     }
     for (const patch of pendingPatches.slice(0, 5)) {
-      const card = el2("article", "memory-review-card");
-      const text = el2("p");
+      const card = el3("article", "memory-review-card");
+      const text = el3("p");
       text.textContent = `\uD655\uC815 \uC81C\uC548 ${patch.confirmMemoryIds.join(", ") || "\uC5C6\uC74C"} \xB7 \uD574\uACB0 \uC81C\uC548 ${patch.resolveMemoryIds.join(", ") || "\uC5C6\uC74C"}`;
-      const meta = el2("small");
+      const meta = el3("small");
       meta.textContent = patch.reason || "\uC774\uC720 \uBBF8\uC81C\uC2DC";
-      const actions = el2("div", "memory-review-actions");
-      const accept = button2("\uC0C1\uD0DC \uBCC0\uACBD \uC2B9\uC778", "secondary");
+      const actions = el3("div", "memory-review-actions");
+      const accept = button3("\uC0C1\uD0DC \uBCC0\uACBD \uC2B9\uC778", "secondary");
       accept.addEventListener("click", () => {
         applyContinuityPatch(patch.id, conversationTurn);
         render2();
       });
-      const reject = button2("\uAC70\uC808", "ghost");
+      const reject = button3("\uAC70\uC808", "ghost");
       reject.addEventListener("click", () => {
         rejectContinuityPatch(patch.id);
         render2();
@@ -17938,11 +18307,11 @@ ${Array.from(extras).join(" ")}` : text;
     return section;
   }
   function combatGauge(label, pool, status) {
-    const wrap = el2("div", "combat-gauge");
-    const head = el2("div", "combat-gauge-head");
+    const wrap = el3("div", "combat-gauge");
+    const head = el3("div", "combat-gauge-head");
     head.textContent = `${label} \xB7 ${pool.cur}/${pool.max}${status ? ` \xB7 ${status}` : ""}`;
-    const track = el2("div", "combat-gauge-track");
-    const fill = el2("div", "combat-gauge-fill");
+    const track = el3("div", "combat-gauge-track");
+    const fill = el3("div", "combat-gauge-fill");
     const pct = Number(pool.max) > 0 ? Math.max(0, Math.min(100, Math.round(Number(pool.cur) / Number(pool.max) * 100))) : 0;
     fill.style.setProperty("--pct", `${pct}%`);
     track.append(fill);
@@ -17952,17 +18321,17 @@ ${Array.from(extras).join(" ")}` : text;
   function renderCombatConsole(input2, ctx, render2) {
     const schema2 = getSchema();
     const state2 = getEngineState();
-    const descriptor = availableActions(schema2, state2);
-    const consoleBox = el2("div", "combat-console");
+    const descriptor = availableActions2(schema2, state2);
+    const consoleBox = el3("div", "combat-console");
     if (state2.combat && state2.combat.active && state2.player.dead) {
-      const end = button2("\uC804\uD22C \uC885\uB8CC (\uD328\uBC30)", "primary-btn");
+      const end = button3("\uC804\uD22C \uC885\uB8CC (\uD328\uBC30)", "primary-btn");
       end.disabled = busy;
       end.addEventListener("click", () => runCombatTurn({ id: "end_encounter", params: {} }, input2, ctx, render2));
       consoleBox.append(end);
       return consoleBox;
     }
     if (state2.combat && (state2.combat.cleared || state2.combat.fled)) {
-      const end = button2("\uC804\uD22C \uC885\uB8CC", "primary-btn");
+      const end = button3("\uC804\uD22C \uC885\uB8CC", "primary-btn");
       end.disabled = busy;
       end.addEventListener("click", () => runCombatTurn({ id: "end_encounter", params: {} }, input2, ctx, render2));
       consoleBox.append(end);
@@ -17970,7 +18339,7 @@ ${Array.from(extras).join(" ")}` : text;
     }
     if (!descriptor.active) {
       if ((schema2.combat || schema2.pools) && lsGet("simbot.play.manualCombat") === "1") {
-        const start = button2("\u2694 \uC804\uD22C \uAC1C\uC2DC", "secondary-btn");
+        const start = button3("\u2694 \uC804\uD22C \uAC1C\uC2DC", "secondary-btn");
         start.disabled = busy;
         start.addEventListener("click", () => startCombat(ctx, render2));
         consoleBox.append(start);
@@ -17980,12 +18349,12 @@ ${Array.from(extras).join(" ")}` : text;
     const attack = descriptor.actions.find((action) => action.type === "attack");
     const targets = attack ? attack.targets : [];
     if (!targets.some((target2) => target2.id === selectedTarget)) selectedTarget = targets.length ? targets[0].id : null;
-    const targetRow = el2("div", "combat-command-row");
-    const targetLabel = el2("span", "combat-command-label");
+    const targetRow = el3("div", "combat-command-row");
+    const targetLabel = el3("span", "combat-command-label");
     targetLabel.textContent = "\uB300\uC0C1";
     targetRow.append(targetLabel);
     for (const target2 of targets) {
-      const choose = button2(`${target2.name} ${target2.hp.cur}/${target2.hp.max}`, selectedTarget === target2.id ? "primary-btn" : "secondary-btn");
+      const choose = button3(`${target2.name} ${target2.hp.cur}/${target2.hp.max}`, selectedTarget === target2.id ? "primary-btn" : "secondary-btn");
       choose.type = "button";
       choose.disabled = busy;
       choose.addEventListener("click", () => {
@@ -17994,28 +18363,28 @@ ${Array.from(extras).join(" ")}` : text;
       });
       targetRow.append(choose);
     }
-    const commands = el2("div", "combat-command-row");
-    const attackButton = button2("\u2694 \uACF5\uACA9", "secondary-btn");
+    const commands = el3("div", "combat-command-row");
+    const attackButton = button3("\u2694 \uACF5\uACA9", "secondary-btn");
     attackButton.disabled = busy || !selectedTarget;
     attackButton.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "attack", target: selectedTarget } }, input2, ctx, render2));
     commands.append(attackButton);
     for (const action of descriptor.actions.filter((item) => item.type === "skill")) {
-      const skill = button2(`${action.name} (${action.pool.toUpperCase()} ${action.cost})`, "secondary-btn");
+      const skill = button3(`${action.name} (${action.pool.toUpperCase()} ${action.cost})`, "secondary-btn");
       skill.disabled = busy || !action.affordable || !selectedTarget;
       skill.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "skill", target: selectedTarget, skill: action.skill } }, input2, ctx, render2));
       commands.append(skill);
     }
     for (const action of descriptor.actions.filter((item) => item.type === "item")) {
-      const item = button2(`\u{1F9EA} ${action.label} \xD7${action.count} (+${action.amount} ${action.pool.toUpperCase()})`, "secondary-btn");
+      const item = button3(`\u{1F9EA} ${action.label} \xD7${action.count} (+${action.amount} ${action.pool.toUpperCase()})`, "secondary-btn");
       item.disabled = busy;
       item.addEventListener("click", () => runCombatTurn({ id: "use_item", params: { itemId: action.itemId } }, input2, ctx, render2));
       commands.append(item);
     }
-    const defend = button2("\u{1F6E1} \uBC29\uC5B4", "secondary-btn");
+    const defend = button3("\u{1F6E1} \uBC29\uC5B4", "secondary-btn");
     defend.disabled = busy;
     defend.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "defend" } }, input2, ctx, render2));
     const flee = descriptor.actions.find((action) => action.type === "flee");
-    const fleeButton = button2(`\u{1F3C3} \uB3C4\uC8FC ${flee.rate}%`, "secondary-btn");
+    const fleeButton = button3(`\u{1F3C3} \uB3C4\uC8FC ${flee.rate}%`, "secondary-btn");
     fleeButton.disabled = busy;
     fleeButton.addEventListener("click", () => runCombatTurn({ id: "combat_action", params: { action: "flee" } }, input2, ctx, render2));
     commands.append(defend, fleeButton);
@@ -18025,21 +18394,21 @@ ${Array.from(extras).join(" ")}` : text;
   function renderManagementConsole(input2, ctx, render2) {
     const schema2 = getSchema();
     const state2 = getEngineState();
-    const descriptor = availableManagement(schema2, state2);
-    const details = el2("details", "mgmt-console");
+    const descriptor = availableManagement2(schema2, state2);
+    const details = el3("details", "mgmt-console");
     const hasStaff = !!(state2 && Array.isArray(state2.staff));
     if (!descriptor.sections.length && !hasStaff) return details;
     details.open = mgmtConsoleOpen;
     details.addEventListener("toggle", () => {
       mgmtConsoleOpen = details.open;
     });
-    const summary = el2("summary");
+    const summary = el3("summary");
     summary.textContent = "\u2694 \uD604\uC7A5 \uD589\uB3D9";
     details.append(summary);
     if (hasStaff) {
-      const group = el2("div", "mgmt-section staff-recruit-action");
+      const group = el3("div", "mgmt-section staff-recruit-action");
       const max2 = staffMax2(schema2, state2);
-      const recruit = button2(state2.staff.length < max2 ? "\u{1F465} \uC9C1\uC6D0 \uBAA8\uC9D1" : "\uC9C1\uC6D0 \uC219\uC18C \uC99D\uCD95 \uD544\uC694", "secondary-btn");
+      const recruit = button3(state2.staff.length < max2 ? "\u{1F465} \uC9C1\uC6D0 \uBAA8\uC9D1" : "\uC9C1\uC6D0 \uC219\uC18C \uC99D\uCD95 \uD544\uC694", "secondary-btn");
       recruit.disabled = busy || state2.staff.length >= max2;
       recruit.addEventListener("click", () => openCannedScene("\uC5EC\uAD00\uC5D0 \uC788\uB294 \uC778\uBB3C \uC911 \uACE0\uC6A9 \uD6C4\uBCF4\uC640\uC758 \uC790\uC5F0\uC2A4\uB7EC\uC6B4 \uD611\uC0C1 \uC7A5\uBA74\uC744 \uC5F4\uC5B4\uB77C. \uC784\uAE08 \uD569\uC758\uAC00 \uB300\uD654\uB85C \uC644\uB8CC\uB418\uAE30 \uC804\uC5D0\uB294 hire \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C.", ctx, render2));
       group.append(recruit);
@@ -18047,8 +18416,8 @@ ${Array.from(extras).join(" ")}` : text;
     }
     for (const section of descriptor.sections) {
       if (["sell", "buy", "purchase", "upgrade"].includes(section.type)) continue;
-      const group = el2("div", "mgmt-section");
-      const label = el2("span", "combat-command-label");
+      const group = el3("div", "mgmt-section");
+      const label = el3("span", "combat-command-label");
       const trafficDay = Number(getEngineState().day);
       label.textContent = section.type === "traffic" ? Number.isFinite(trafficDay) ? `\u{1F3EA} ${trafficDay}\uC77C\uCC28 \uC601\uC5C5` : "\u{1F3EA} \uC601\uC5C5" : { sell: "\uD310\uB9E4", buy: "\uAD6C\uB9E4", purchase: "\uC7AC\uB8CC \uAD6C\uB9E4", upgrade: "\uC99D\uCD95", gather: "\uCC44\uC9D1 (\uBB34\uB8CC \xB7 \uD68D\uB4DD\uB7C9\uC740 \uC8FC\uC0AC\uC704)", day_end: "\uD558\uB8E8" }[section.type] || section.type;
       group.append(label);
@@ -18058,12 +18427,12 @@ ${Array.from(extras).join(" ")}` : text;
         const firstPending = section.waves.find((wave) => !wave.resolved);
         for (const wave of section.waves) {
           const skipped = resolved[wave.id] === "skipped";
-          const control = button2(skipped ? `\u2015 ${wave.label} \uAC74\uB108\uB700` : wave.resolved ? `\u2713 ${wave.label} \uC644\uB8CC` : `${wave.label} \uC9C4\uD589`, "secondary-btn");
+          const control = button3(skipped ? `\u2015 ${wave.label} \uAC74\uB108\uB700` : wave.resolved ? `\u2713 ${wave.label} \uC644\uB8CC` : `${wave.label} \uC9C4\uD589`, "secondary-btn");
           control.disabled = busy || wave.resolved || firstPending !== wave || !!section.pendingIncident;
           control.addEventListener("click", () => runManagementTurn({ id: "traffic_wave", params: { wave: wave.id } }, input2, ctx, render2));
           group.append(control);
           if (!wave.resolved) {
-            const skip = button2("\uAC74\uB108\uB6F0\uAE30", "secondary-btn");
+            const skip = button3("\uAC74\uB108\uB6F0\uAE30", "secondary-btn");
             skip.disabled = busy || firstPending !== wave || !!section.pendingIncident;
             skip.addEventListener("click", () => runManagementTurn({ id: "traffic_wave", params: { wave: wave.id, skip: true } }, input2, ctx, render2));
             group.append(skip);
@@ -18072,21 +18441,21 @@ ${Array.from(extras).join(" ")}` : text;
       }
       if (section.type === "traffic" && section.lodging) {
         if (!section.lodging.reviewed) {
-          const review = button2("\uC219\uBC15 \uBB38\uC758 \uD655\uC778", "secondary-btn");
+          const review = button3("\uC219\uBC15 \uBB38\uC758 \uD655\uC778", "secondary-btn");
           review.disabled = busy;
           review.addEventListener("click", () => runManagementTurn({ id: "lodging_review", params: {} }, input2, ctx, render2));
           group.append(review);
         }
       }
       if (section.type === "traffic" && section.mail) {
-        const check = button2(section.mail.checkedToday ? "\u2713 \uC6B0\uD3B8\uD568 \uD655\uC778\uD568" : "\u{1F4EC} \uC6B0\uD3B8\uD568 \uD655\uC778", "secondary-btn");
+        const check = button3(section.mail.checkedToday ? "\u2713 \uC6B0\uD3B8\uD568 \uD655\uC778\uD568" : "\u{1F4EC} \uC6B0\uD3B8\uD568 \uD655\uC778", "secondary-btn");
         check.disabled = busy || section.mail.checkedToday;
         check.addEventListener("click", () => runManagementTurn({ id: "mail_check", params: {} }, input2, ctx, render2));
         group.append(check);
         for (const letter of section.mail.letters) {
           if (letter.type === "reward") continue;
           const kind = letter.type === "reward" ? "\uAC10\uC0AC \uC120\uBB3C" : "\uC758\uB8B0 \uD3B8\uC9C0";
-          const open = button2(`\u{1F4E8} ${letter.axis} ${kind} \uAC1C\uBD09`, "secondary-btn");
+          const open = button3(`\u{1F4E8} ${letter.axis} ${kind} \uAC1C\uBD09`, "secondary-btn");
           open.disabled = busy;
           open.addEventListener("click", () => runManagementTurn({ id: "mail_open", params: { mailId: letter.id } }, input2, ctx, render2));
           group.append(open);
@@ -18094,23 +18463,23 @@ ${Array.from(extras).join(" ")}` : text;
       }
       if (false) for (const item of section.items) {
         const owned = section.type === "buy" && item.owned ? ` \xB7 \uBCF4\uC720 ${item.owned}` : "";
-        const control = button2(`${item.name} (${formatMoney2(item.price)})${owned}`, "secondary-btn");
+        const control = button3(`${item.name} (${formatMoney2(item.price)})${owned}`, "secondary-btn");
         control.disabled = busy || section.type === "buy" && !item.affordable;
         control.addEventListener("click", () => runManagementTurn({ id: section.type === "buy" ? "buy_item" : "sale", params: { menuName: item.name, qty: 1 } }, input2, ctx, render2));
         group.append(control);
       }
       if (false) for (const item of section.items) {
-        const line = el2("div", "mgmt-row purchase-stepper");
-        const name = el2("span");
+        const line = el3("div", "mgmt-row purchase-stepper");
+        const name = el3("span");
         name.textContent = item.label || item.id;
-        const minus = button2("\u2212", "secondary-btn");
-        const qty = el2("input", "purchase-qty");
+        const minus = button3("\u2212", "secondary-btn");
+        const qty = el3("input", "purchase-qty");
         qty.type = "number";
         qty.min = "1";
         qty.max = "999";
         qty.value = "1";
-        const plus = button2("+", "secondary-btn");
-        const control = button2("", "secondary-btn");
+        const plus = button3("+", "secondary-btn");
+        const control = button3("", "secondary-btn");
         const readQty = () => Math.max(1, Math.min(999, Math.round(Number(qty.value) || 1)));
         const updateLabel = () => {
           const value = readQty();
@@ -18142,27 +18511,27 @@ ${Array.from(extras).join(" ")}` : text;
         group.append(line);
       }
       if (false) for (const item of section.items) {
-        const control = button2(item.maxed ? `${item.label} Lv.${item.level} (\uCD5C\uB300)` : `${item.label} Lv.${item.level}\u2192${item.level + 1} (${formatMoney2(item.nextCost)})`, "secondary-btn");
+        const control = button3(item.maxed ? `${item.label} Lv.${item.level} (\uCD5C\uB300)` : `${item.label} Lv.${item.level}\u2192${item.level + 1} (${formatMoney2(item.nextCost)})`, "secondary-btn");
         control.disabled = busy || item.maxed || !item.affordable;
         control.addEventListener("click", () => runManagementTurn({ id: "upgrade", params: { facility: item.id } }, input2, ctx, render2));
         group.append(control);
       }
       if (section.type === "gather") for (const resource of section.resources) for (const scale of section.scales) {
         const scaleLabel = { small: "\uC18C\uB7C9", large: "\uB300\uB7C9", bulk: "\uB300\uADDC\uBAA8" }[scale.id];
-        const control = button2(`${resource} ${scaleLabel} \xB7 \uD68D\uB4DD +${scale.range.join("~")}\uAC1C`, "secondary-btn");
+        const control = button3(`${resource} ${scaleLabel} \xB7 \uD68D\uB4DD +${scale.range.join("~")}\uAC1C`, "secondary-btn");
         control.disabled = busy;
         control.addEventListener("click", () => runManagementTurn({ id: "gain_resource", params: { resource, scale: scale.id } }, input2, ctx, render2));
         group.append(control);
       }
       if (section.type === "day_end") {
-        const control = button2("\uD558\uB8E8 \uB9C8\uAC10", "primary-btn");
+        const control = button3("\uD558\uB8E8 \uB9C8\uAC10", "primary-btn");
         control.disabled = busy;
         control.addEventListener("click", () => runManagementTurn({ id: "day_end", params: {} }, input2, ctx, render2));
         group.append(control);
       }
       if (section.type === "quests") for (const item of section.items) {
         const label2 = item.pending ? `\u2696 ${item.name} \uACC4\uC18D` : item.done ? `\u2713 ${item.name} (\uC644\uB8CC)` : item.attemptedToday ? `\u2713 ${item.name} (\uC624\uB298 \uCC98\uB9AC\uB428)` : `\u2696 ${item.name} \xB7 \uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.join("~") : "\uC5C6\uC74C"}`;
-        const control = button2(label2, "secondary-btn");
+        const control = button3(label2, "secondary-btn");
         control.disabled = busy || item.done || item.attemptedToday && !item.pending;
         control.addEventListener("click", () => runManagementTurn({ id: "attempt_quest", params: { questId: item.id } }, input2, ctx, render2));
         group.append(control);
@@ -18175,9 +18544,9 @@ ${Array.from(extras).join(" ")}` : text;
     const sectionNode = titled("\u{1F9FE} \uACBD\uC601");
     sectionNode.classList.add("ledger-section");
     if (busy) sectionNode.classList.add("is-busy");
-    const descriptor = availableManagement(getSchema(), getEngineState());
+    const descriptor = availableManagement2(getSchema(), getEngineState());
     const addButton = (label, event, disabled = false) => {
-      const control = button2(label, "secondary-btn");
+      const control = button3(label, "secondary-btn");
       control.disabled = busy || disabled;
       control.addEventListener("click", () => runLedgerAction(event, render2));
       sectionNode.append(control);
@@ -18191,17 +18560,17 @@ ${Array.from(extras).join(" ")}` : text;
         addButton(`\uAD6C\uB9E4 \xB7 ${item.name} (${formatMoney2(item.price)})${owned}`, { id: "buy_item", params: { menuName: item.name, qty: 1 } }, !item.affordable);
       }
       if (section.type === "purchase") for (const item of section.items) {
-        const line = el2("div", "purchase-stepper");
-        const name = el2("span");
+        const line = el3("div", "purchase-stepper");
+        const name = el3("span");
         name.textContent = item.label || item.id;
-        const minus = button2("\u2212", "secondary-btn");
-        const qty = el2("input", "purchase-qty");
+        const minus = button3("\u2212", "secondary-btn");
+        const qty = el3("input", "purchase-qty");
         qty.type = "number";
         qty.min = "0";
         qty.max = "999";
         qty.value = "1";
-        const plus = button2("+", "secondary-btn");
-        const subtotal = el2("span", "purchase-subtotal");
+        const plus = button3("+", "secondary-btn");
+        const subtotal = el3("span", "purchase-subtotal");
         const readQty = () => Math.max(0, Math.min(999, Math.round(Number(qty.value) || 0)));
         qty.value = String(purchaseDraft[item.id] ?? 1);
         const update = () => {
@@ -18366,10 +18735,10 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return "";
   }
   function renderSettings(ctx, render2) {
-    const details = el2("details", "play-settings");
+    const details = el3("details", "play-settings");
     const hasKey = settings.provider === "mock" || !!readKey2(settings.provider);
     details.open = !hasKey;
-    const summary = el2("summary");
+    const summary = el3("summary");
     summary.textContent = "\uC124\uC815";
     details.append(summary);
     const provider = namedSelect2("provider");
@@ -18407,7 +18776,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const key = settings.provider === "vertex" ? namedTextarea("apiKey", "") : namedInput2("apiKey", "", "password");
     key.placeholder = readKey2(settings.provider) ? maskedKey(settings.provider) : settings.provider === "vertex" ? "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uBD99\uC5EC\uB123\uAE30" : "API \uD0A4";
     key.disabled = settings.provider === "mock";
-    const save = button2("\uC800\uC7A5", "secondary-btn");
+    const save = button3("\uC800\uC7A5", "secondary-btn");
     save.disabled = settings.provider === "mock";
     save.addEventListener("click", () => {
       const value = key.value.trim();
@@ -18415,7 +18784,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       key.value = "";
       render2();
     });
-    const del = button2("\uC0AD\uC81C", "secondary-btn");
+    const del = button3("\uC0AD\uC81C", "secondary-btn");
     del.disabled = settings.provider === "mock";
     del.addEventListener("click", () => {
       lsRemove(keyName(settings.provider));
@@ -18434,8 +18803,8 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       lsSet("simbot.play.manualCombat", manualCombat.checked ? "1" : "0");
       render2();
     });
-    const mults = el2("div", "scale-mults");
-    const multHeading = el2("h4");
+    const mults = el3("div", "scale-mults");
+    const multHeading = el3("h4");
     multHeading.textContent = "\uBC30\uC728";
     mults.append(multHeading);
     const schema2 = getSchema();
@@ -18448,13 +18817,13 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       input2.max = "3";
       input2.step = "0.1";
       input2.disabled = busy;
-      const label = el2("span");
+      const label = el3("span");
       label.textContent = `${scale.label || scale.id} \xD7${Number(current).toFixed(1)}`;
       input2.addEventListener("change", () => runLedgerAction({ id: "set_scale_mult", params: { scale: scale.id, mult: Number(input2.value) } }, render2));
       mults.append(field2(label.textContent, input2));
     }
     if (mults.childNodes.length <= 1) mults.replaceChildren();
-    const exportSession = button2("\uC138\uC158 \uB0B4\uBCF4\uB0B4\uAE30", "secondary-btn");
+    const exportSession = button3("\uC138\uC158 \uB0B4\uBCF4\uB0B4\uAE30", "secondary-btn");
     exportSession.disabled = busy;
     exportSession.addEventListener("click", () => {
       const payload = buildCurrentSessionExport();
@@ -18465,11 +18834,11 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1e3);
     });
-    const importFile = el2("input");
+    const importFile = el3("input");
     importFile.type = "file";
     importFile.accept = ".json,application/json";
     importFile.hidden = true;
-    const importSession = button2("\uC138\uC158 \uAC00\uC838\uC624\uAE30", "secondary-btn");
+    const importSession = button3("\uC138\uC158 \uAC00\uC838\uC624\uAE30", "secondary-btn");
     importSession.disabled = busy;
     importSession.addEventListener("click", () => importFile.click());
     importFile.addEventListener("change", async () => {
@@ -18488,11 +18857,11 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
       render2();
     });
-    const personaFile = el2("input");
+    const personaFile = el3("input");
     personaFile.type = "file";
     personaFile.accept = ".png,image/png";
     personaFile.hidden = true;
-    const importPersona = button2("Risu \uD398\uB974\uC18C\uB098 \uAC00\uC838\uC624\uAE30", "secondary-btn");
+    const importPersona = button3("Risu \uD398\uB974\uC18C\uB098 \uAC00\uC838\uC624\uAE30", "secondary-btn");
     importPersona.disabled = busy;
     importPersona.addEventListener("click", () => personaFile.click());
     personaFile.addEventListener("change", async () => {
@@ -18513,7 +18882,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
       render2();
     });
-    const exportPersona = button2("\uD398\uB974\uC18C\uB098 \uB0B4\uBCF4\uB0B4\uAE30", "secondary-btn");
+    const exportPersona = button3("\uD398\uB974\uC18C\uB098 \uB0B4\uBCF4\uB0B4\uAE30", "secondary-btn");
     exportPersona.disabled = busy || !activePersona;
     exportPersona.addEventListener("click", () => {
       const bytes = exportRisuPersonaPng(activePersona);
@@ -18523,7 +18892,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1e3);
     });
-    const clearPersona = button2("\uD398\uB974\uC18C\uB098 \uD574\uC81C", "secondary-btn");
+    const clearPersona = button3("\uD398\uB974\uC18C\uB098 \uD574\uC81C", "secondary-btn");
     clearPersona.disabled = busy || !activePersona;
     clearPersona.addEventListener("click", () => {
       activePersona = null;
@@ -18542,7 +18911,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       scheduleAutoSave(0);
       render2();
     });
-    const clonePersona = button2("\uD398\uB974\uC18C\uB098 \uBCF5\uC81C", "secondary-btn");
+    const clonePersona = button3("\uD398\uB974\uC18C\uB098 \uBCF5\uC81C", "secondary-btn");
     clonePersona.disabled = busy || !activePersona || !compatibilityLibrary;
     clonePersona.addEventListener("click", async () => {
       const copy = JSON.parse(JSON.stringify(activePersona));
@@ -18556,11 +18925,11 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       scheduleAutoSave(0);
       render2();
     });
-    const presetFile = el2("input");
+    const presetFile = el3("input");
     presetFile.type = "file";
     presetFile.accept = ".risup,.risupreset";
     presetFile.hidden = true;
-    const importPreset = button2("Risu \uD504\uB86C\uD504\uD2B8 \uAC00\uC838\uC624\uAE30", "secondary-btn");
+    const importPreset = button3("Risu \uD504\uB86C\uD504\uD2B8 \uAC00\uC838\uC624\uAE30", "secondary-btn");
     importPreset.disabled = busy;
     importPreset.addEventListener("click", () => presetFile.click());
     presetFile.addEventListener("change", async () => {
@@ -18582,7 +18951,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
       render2();
     });
-    const clearPreset = button2("\uD504\uB86C\uD504\uD2B8 \uD574\uC81C", "secondary-btn");
+    const clearPreset = button3("\uD504\uB86C\uD504\uD2B8 \uD574\uC81C", "secondary-btn");
     clearPreset.disabled = busy || !activePromptPreset;
     clearPreset.addEventListener("click", () => {
       activePromptPreset = null;
@@ -18641,7 +19010,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const state2 = getEngineState();
     const schema2 = getSchema();
     if (!schema2 || !state2) return section;
-    const metrics = el2("div", "state-metrics");
+    const metrics = el3("div", "state-metrics");
     if (Number.isFinite(Number(state2.gold))) metrics.append(stateMetric("\u{1F4B0} \uACE8\uB4DC", formatMoney2(state2.gold)));
     if (Number.isFinite(Number(state2.day))) metrics.append(stateMetric("\u{1F4C5} \uC77C\uCC28", Number(state2.day).toLocaleString("ko-KR")));
     const pools = state2.player && state2.player.pools || {};
@@ -18666,17 +19035,17 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
       appendStateGrid(section, "\uAC1D\uC2E4", occupied);
     }
-    const other = el2("div", "state-detail-list");
+    const other = el3("div", "state-detail-list");
     const claimed = new Set(state2.claimedRewards || []);
     for (const quest of schema2.quests || []) {
-      const row3 = el2("div", "state-detail-row");
+      const row3 = el3("div", "state-detail-row");
       row3.textContent = `\u{1F4DC} ${quest.name || quest.id}${claimed.has(quest.id) ? " \xB7 \uC644\uB8CC" : ""}`;
       other.append(row3);
     }
     const npcRows = (lastPrompt && lastPrompt.relatedNpcIds ? lastPrompt.relatedNpcIds : []).map((id) => ({ id, text: npcSummary2(schema2, state2, id) })).filter((item) => item.text);
     for (const item of npcRows) {
       const npc = npcPresentation(schema2, item.id);
-      const row3 = el2("div", "state-detail-row npc-state-row");
+      const row3 = el3("div", "state-detail-row npc-state-row");
       row3.append(characterAvatar(ctx, npc.asset, "npc-avatar", npc.name), document.createTextNode(`\u{1F464} ${item.text}`));
       other.append(row3);
     }
@@ -18684,25 +19053,25 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return section;
   }
   function stateMetric(label, value) {
-    const node = el2("div", "state-metric");
-    const name = el2("span");
+    const node = el3("div", "state-metric");
+    const name = el3("span");
     name.textContent = label;
-    const strong = el2("strong");
+    const strong = el3("strong");
     strong.textContent = value;
     node.append(name, strong);
     return node;
   }
   function appendStateGrid(section, title, items) {
     if (!items.length) return;
-    const group = el2("div", "state-group");
-    const heading = el2("h4");
+    const group = el3("div", "state-group");
+    const heading = el3("h4");
     heading.textContent = title;
-    const grid = el2("div", "state-card-grid");
+    const grid = el3("div", "state-card-grid");
     for (const [name, value] of items) {
-      const card = el2("div", "state-card");
-      const label = el2("span");
+      const card = el3("div", "state-card");
+      const label = el3("span");
       label.textContent = name;
-      const strong = el2("strong");
+      const strong = el3("strong");
       strong.textContent = value;
       card.append(label, strong);
       grid.append(card);
@@ -18711,20 +19080,20 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     section.append(group);
   }
   function appendStaffGrid(section, ctx, render2, schema2, state2, npcs2) {
-    const group = el2("div", "state-group staff-group");
-    const heading = el2("h4");
+    const group = el3("div", "state-group staff-group");
+    const heading = el3("h4");
     heading.textContent = "\uC9C1\uC6D0";
-    const grid = el2("div", "staff-card-grid");
+    const grid = el3("div", "staff-card-grid");
     for (const item of state2.staff || []) {
       const npc = npcs2.find((entry) => entry.id === item.npcId);
       const name = npc && npc.nameKo || item.npcId;
       const presentation = npcPresentation(schema2, item.npcId);
-      const card = el2("div", "staff-card");
+      const card = el3("div", "staff-card");
       card.append(characterAvatar(ctx, presentation.asset, "staff-avatar", name));
-      const copy = el2("div", "staff-card-copy");
-      const label = el2("strong");
+      const copy = el3("div", "staff-card-copy");
+      const label = el3("strong");
       label.textContent = name;
-      const wage = el2("span");
+      const wage = el3("span");
       wage.textContent = `\uC77C\uAE09 ${formatMoney2(item.dailyWage)}`;
       copy.append(label, wage);
       if (presentation.group) {
@@ -18739,15 +19108,15 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
           copy.append(select);
         }
       }
-      const fire = button2("\uD574\uACE0", "secondary-btn staff-fire-btn");
+      const fire = button3("\uD574\uACE0", "secondary-btn staff-fire-btn");
       fire.disabled = busy;
       fire.addEventListener("click", () => openCannedScene(`'${name}'\uC5D0\uAC8C \uD574\uACE0\uB97C \uD1B5\uBCF4\uD558\uB294 \uC7A5\uBA74\uC744 \uC5F4\uC5B4\uB77C. \uB300\uD654\uAC00 \uB9C8\uBB34\uB9AC\uB418\uBA74 fire \uC0AC\uAC74\uC744 \uB0B4\uB77C.`, ctx, render2));
       card.append(copy, fire);
       grid.append(card);
     }
-    const capacity = el2("div", "staff-capacity");
+    const capacity = el3("div", "staff-capacity");
     capacity.textContent = `\uBE48 \uC790\uB9AC ${(state2.staff || []).length}/${staffMax2(schema2, state2)}`;
-    const help = el2("p", "staff-help");
+    const help = el3("p", "staff-help");
     help.textContent = "\uCC44\uD305\uC73C\uB85C \uACE0\uC6A9 \uD611\uC0C1\uC744 \uD560 \uC218 \uC788\uC5B4\uC694 (\uC608: '\uC2E4\uBE44\uC544\uC5D0\uAC8C \uC77C\uD574\uBCF4\uC9C0 \uC54A\uACA0\uB0D0\uACE0 \uC81C\uC548\uD55C\uB2E4')";
     group.append(heading, grid, capacity, help);
     section.append(group);
@@ -18764,35 +19133,35 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const baseline = ctx.lore ? estimateLorebookTokens2(ctx.lore.entries).constant || BASELINE_REF : BASELINE_REF;
     section.append(tokenGauge(current, baseline));
     if (lastPrompt) {
-      const list = el2("div", "engine-list");
+      const list = el3("div", "engine-list");
       for (const [key, value] of Object.entries(lastPrompt.injectedParts)) {
-        const item = el2("div", "engine-list-row");
+        const item = el3("div", "engine-list-row");
         item.textContent = `${key}: ${value.toLocaleString("ko-KR")}`;
         list.append(item);
       }
       section.append(list);
       if (lastPrompt.promptTrace && lastPrompt.promptTrace.length) {
-        const trace = el2("details", "import-raw-details");
-        const heading = el2("summary");
+        const trace = el3("details", "import-raw-details");
+        const heading = el3("summary");
         heading.textContent = `Risu \uD504\uB86C\uD504\uD2B8 \uAC80\uC0AC \xB7 ${lastPrompt.promptTrace.filter((item) => item.active).length}/${lastPrompt.promptTrace.length} \uBE14\uB85D \uD65C\uC131`;
-        const rows = el2("div", "engine-list");
+        const rows = el3("div", "engine-list");
         for (const item of lastPrompt.promptTrace) {
-          const rowNode = el2("div", "engine-list-row");
+          const rowNode = el3("div", "engine-list-row");
           rowNode.textContent = `${item.active ? "\uC804\uC1A1" : "\uC81C\uC678"} \xB7 ${item.blockId} \xB7 ${item.role} \xB7 ${item.tokensEstimate || 0}\uD1A0\uD070${item.reason && item.reason !== "ok" ? ` \xB7 ${item.reason}` : ""}`;
           rows.append(rowNode);
         }
         for (const warning of lastPrompt.promptWarnings || []) {
-          const rowNode = el2("div", "engine-list-row engine-warning");
+          const rowNode = el3("div", "engine-list-row engine-warning");
           rowNode.textContent = `\uACBD\uACE0 \xB7 ${warning.code} \xB7 ${warning.detail || warning.path || ""}`;
           rows.append(rowNode);
         }
         trace.append(heading, rows);
         section.append(trace);
         if (lastPrompt.promptComparison) {
-          const comparison = el2("details", "import-raw-details");
-          const comparisonHeading = el2("summary");
+          const comparison = el3("details", "import-raw-details");
+          const comparisonHeading = el3("summary");
           comparisonHeading.textContent = `\uD504\uB86C\uD504\uD2B8 \uBE44\uAD50 \xB7 Risu \uC6D0\uBB38 ${lastPrompt.promptComparison.risu.messages.length}\uAC1C / SimPack ${lastPrompt.promptComparison.simpack.messages.length}\uAC1C`;
-          const result = el2("p", lastPrompt.promptComparison.additive ? "muted-line" : "engine-warning");
+          const result = el3("p", lastPrompt.promptComparison.additive ? "muted-line" : "engine-warning");
           result.textContent = lastPrompt.promptComparison.additive ? `\uC6D0\uBB38 \uBE14\uB85D \uC21C\uC11C\xB7\uC5ED\uD560 \uC720\uC9C0 \xB7 \uC5D4\uC9C4 \uC804\uC6A9 \uBE14\uB85D ${lastPrompt.promptComparison.addedBlocks.filter((item) => item.active).length}\uAC1C\uB9CC \uCD94\uAC00` : "\uC6D0\uBB38 \uBE14\uB85D\uC5D0\uB3C4 \uCC28\uC774\uAC00 \uAC10\uC9C0\uB428 \u2014 \uD504\uB9AC\uC14B\uC744 \uAC80\uD1A0\uD558\uC138\uC694.";
           comparison.append(comparisonHeading, result);
           section.append(comparison);
@@ -18800,7 +19169,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       }
     }
     if (!ctx.lore) {
-      const note = el2("p", "muted-line");
+      const note = el3("p", "muted-line");
       note.textContent = "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4.";
       section.append(note);
     }
@@ -18808,16 +19177,16 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   }
   function tokenGauge(current, baseline) {
     const pct = baseline > 0 ? Math.min(100, Math.round(current / baseline * 100)) : 0;
-    const wrap = el2("div", "play-token-meter");
-    const now = el2("div", "play-token-now");
+    const wrap = el3("div", "play-token-meter");
+    const now = el3("div", "play-token-now");
     now.textContent = `${current.toLocaleString("ko-KR")} \uD1A0\uD070`;
-    const sub = el2("div", "play-token-sub");
+    const sub = el3("div", "play-token-sub");
     sub.textContent = "\uC774\uBC88 \uD134 \uC8FC\uC785";
-    const track = el2("div", "play-token-track");
-    const fill = el2("div", "play-token-fill");
+    const track = el3("div", "play-token-track");
+    const fill = el3("div", "play-token-fill");
     fill.style.setProperty("--pct", pct + "%");
     track.append(fill);
-    const base = el2("div", "play-token-base");
+    const base = el3("div", "play-token-base");
     base.textContent = `\uC0C1\uC2DC \uB85C\uC5B4\uBD81(\uC6D0\uBCF8 \uB9E4\uD134 \uACE0\uC815) ${baseline.toLocaleString("ko-KR")} \uD1A0\uD070\uC758 ${pct}%`;
     wrap.append(now, sub, track, base);
     return wrap;
@@ -19092,8 +19461,8 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return `\uC694\uCCAD \uC2E4\uD328: ${masked}`;
   }
   function titled(title) {
-    const section = el2("section", "play-side-section");
-    const h3 = el2("h3");
+    const section = el3("section", "play-side-section");
+    const h3 = el3("h3");
     h3.textContent = title;
     section.append(h3);
     return section;
@@ -19246,7 +19615,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   var { patchSchemaWithMined } = require_schemaPatch();
   var { PROVIDERS: PROVIDERS2, callProvider: callProvider2 } = require_providers();
   var { providerConfig: providerConfig2, loadSettings: loadSettings2, saveSettings: saveSettings2, registerCustomOrigin: registerCustomOrigin2, readKey: readKey3, keyName: keyName2, defaultModel: defaultModel2 } = require_byokSettings();
-  var { el: el3, button: button3, field: field3, row: row2, notice: notice2, hiddenBase: hiddenBase2, namedInput: namedInput3, namedTextarea: namedTextarea2, namedSelect: namedSelect3, appendOption: appendOption3, copyFallback } = require_dom();
+  var { el: el4, button: button4, field: field3, row: row2, notice: notice2, hiddenBase: hiddenBase2, namedInput: namedInput3, namedTextarea: namedTextarea2, namedSelect: namedSelect3, appendOption: appendOption3, copyFallback } = require_dom();
   var { validateSchema } = require_validate();
   var SECTION_KEYS = ["meta", "resources", "scales", "ladders", "entities", "formulas", "processes", "events", "initialState", "_assumptions"];
   var stateByCard = /* @__PURE__ */ new Map();
@@ -19258,7 +19627,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   }
   function renderImportView(container, ctx) {
     registerCustomOrigin2(settings2);
-    const root = el3("div", "import-view");
+    const root = el4("div", "import-view");
     container.append(root);
     const render2 = () => {
       root.replaceChildren();
@@ -19354,27 +19723,27 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return opened && depth > 0;
   }
   function renderHeader2(ctx, render2) {
-    const header = el3("div", "view-header import-header");
-    const title = el3("div");
-    const h2 = el3("h2");
+    const header = el4("div", "view-header import-header");
+    const title = el4("div");
+    const h2 = el4("h2");
     h2.textContent = "\uC784\uD3EC\uD2B8 \uCEF4\uD30C\uC77C\uB7EC";
-    const p = el3("p");
+    const p = el4("p");
     p.textContent = "\uCE74\uB4DC\uB97C \uAC8C\uC784 \uADDC\uCE59\uC73C\uB85C \uBCC0\uD658\uD569\uB2C8\uB2E4.";
     title.append(h2, p);
-    const buttonRow = el3("div", "engine-header-controls");
-    const compile = button3(busy2 ? "\uCEF4\uD30C\uC77C \uC911..." : "\uCEF4\uD30C\uC77C", "primary-btn");
+    const buttonRow = el4("div", "engine-header-controls");
+    const compile = button4(busy2 ? "\uCEF4\uD30C\uC77C \uC911..." : "\uCEF4\uD30C\uC77C", "primary-btn");
     compile.disabled = busy2 || !ctx.lore && settings2.provider !== "mock";
     compile.addEventListener("click", async () => {
       await runCompile(ctx, render2);
     });
-    const revert = button3("\uB0B4\uC7A5 \uC2A4\uD0A4\uB9C8\uB85C \uB418\uB3CC\uB9AC\uAE30", "secondary-btn");
+    const revert = button4("\uB0B4\uC7A5 \uC2A4\uD0A4\uB9C8\uB85C \uB418\uB3CC\uB9AC\uAE30", "secondary-btn");
     revert.disabled = busy2;
     revert.addEventListener("click", () => {
       setActiveSchema(null);
       addLog(ctx, "\uB0B4\uC7A5(\uAE30\uBCF8) \uC2A4\uD0A4\uB9C8\uB85C \uB418\uB3CC\uB838\uC2B5\uB2C8\uB2E4. \uD50C\uB808\uC774 \uD0ED\uC5D0\uC11C \uB9E4\uB044\uB7FD\uAC8C \uD50C\uB808\uC774\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
       render2();
     });
-    const combatSchema = button3("\uBC94\uC6A9 \uC804\uD22C \uCF54\uC5B4 \uC0D8\uD50C \uC801\uC6A9", "secondary-btn");
+    const combatSchema = button4("\uBC94\uC6A9 \uC804\uD22C \uCF54\uC5B4 \uC0D8\uD50C \uC801\uC6A9", "secondary-btn");
     combatSchema.disabled = busy2;
     combatSchema.addEventListener("click", () => {
       setActiveSchema(require_generic_combat_v0());
@@ -19386,25 +19755,25 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return header;
   }
   function renderLayout2(ctx, render2) {
-    const layout = el3("div", "import-layout");
+    const layout = el4("div", "import-layout");
     layout.append(renderRunPanel(ctx, render2), renderReviewPanel(ctx, render2));
     return layout;
   }
   function renderRunPanel(ctx, render2) {
-    const panel = el3("section", "import-run-panel");
+    const panel = el4("section", "import-run-panel");
     panel.append(renderSettings2(render2));
     const status = titled2("\uC0C1\uD0DC");
-    const cardLine = el3("p", "muted-line");
+    const cardLine = el4("p", "muted-line");
     cardLine.textContent = ctx.lore ? `\uCE74\uB4DC \uB85C\uC5B4\uBD81 \uD56D\uBAA9: ${ctx.lore.entries.length}\uAC1C` : settings2.provider === "mock" ? "\uCE74\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. mock \uC81C\uACF5\uC790\uB294 \uCE74\uB4DC \uC5C6\uC774\uB3C4 \uACB0\uC815\uB860 \uC2A4\uD0A4\uB9C8\uB97C \uB9CC\uB4ED\uB2C8\uB2E4." : "\uC2E4\uC81C \uC81C\uACF5\uC790\uB85C \uCEF4\uD30C\uC77C\uD558\uB824\uBA74 \uBA3C\uC800 \uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uC138\uC694.";
     status.append(cardLine);
     const result = currentResult(ctx);
     if (result) {
       const counts = issueCounts(result.issues);
-      const stamp = el3("p", "muted-line");
+      const stamp = el4("p", "muted-line");
       stamp.textContent = `\uB9C8\uC9C0\uB9C9 \uCEF4\uD30C\uC77C: ${result.compiledAt} / \uC5D0\uB7EC ${counts.error} / \uACBD\uACE0 ${counts.warn}`;
       status.append(stamp);
       if (result.approved) {
-        const approved = el3("p", "badge engine-ok import-status-badge");
+        const approved = el4("p", "badge engine-ok import-status-badge");
         approved.textContent = "\uC2B9\uC778\uB428 \xB7 \uC5D4\uC9C4 \uC138\uC158\uC5D0 \uBC18\uC601\uB428";
         status.append(approved);
       }
@@ -19412,13 +19781,13 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const log = titled2("\uCEF4\uD30C\uC77C \uB85C\uADF8");
     const lines = currentLog(ctx);
     if (!lines.length) {
-      const empty = el3("p", "muted-line");
+      const empty = el4("p", "muted-line");
       empty.textContent = "\uC544\uC9C1 \uCEF4\uD30C\uC77C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
       log.append(empty);
     } else {
-      const list = el3("div", "engine-list");
+      const list = el4("div", "engine-list");
       for (const line of lines) {
-        const row3 = el3("div", "engine-list-row");
+        const row3 = el4("div", "engine-list-row");
         row3.textContent = line;
         list.append(row3);
       }
@@ -19432,10 +19801,10 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   function renderCardDiagnosis(ctx) {
     const report = diagnosisFor(ctx);
     const section = titled2("\uCE74\uB4DC MRI \xB7 \uCEF4\uD30C\uC77C \uC804 \uC9C4\uB2E8");
-    const summary = el3("p", "muted-line");
+    const summary = el4("p", "muted-line");
     summary.textContent = `${classificationLabel(report.classification)} \xB7 \uB85C\uC5B4 ${report.content.loreEntries}\uAC1C \xB7 \uC5D0\uC14B ${report.assets.count.toLocaleString("ko-KR")}\uAC1C`;
     section.append(summary);
-    const list = el3("div", "engine-list");
+    const list = el4("div", "engine-list");
     const moduleName = report.runtime.embeddedModule && report.runtime.embeddedModule.name;
     const rows = [
       ["\uB0B4\uC7A5 \uBAA8\uB4C8", moduleName || "\uC5C6\uC74C"],
@@ -19445,31 +19814,31 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       ["\uCEF4\uD30C\uC77C \uC785\uB825", `${report.compilerCoverage.includedEntries}/${report.compilerCoverage.totalEntries}\uAC1C \uD3EC\uD568`]
     ];
     for (const [label, value] of rows) {
-      const rowNode = el3("div", "engine-list-row");
+      const rowNode = el4("div", "engine-list-row");
       rowNode.textContent = `${label}: ${value}`;
       list.append(rowNode);
     }
     section.append(list);
     if (ctx && ctx.compatibility) section.append(renderCompatibilitySummary(ctx.compatibility));
     if (report.runtime.featureFlags.length) {
-      const flags = el3("p", "muted-line");
+      const flags = el4("p", "muted-line");
       flags.textContent = `\uAE30\uB2A5 \uD1A0\uAE00: ${report.runtime.featureFlags.map((flag) => `${flag.id}=${flag.enabled ? "\uCF1C\uC9D0" : "\uAEBC\uC9D0"}`).join(", ")}`;
       section.append(flags);
     }
     if (report.issues.length) {
-      const issues = el3("div", "engine-list");
+      const issues = el4("div", "engine-list");
       for (const item of report.issues) {
-        const rowNode = el3("div", item.level === "warn" ? "engine-list-row engine-warning" : "engine-list-row");
+        const rowNode = el4("div", item.level === "warn" ? "engine-list-row engine-warning" : "engine-list-row");
         rowNode.textContent = `${item.level === "warn" ? "\uAC80\uD1A0 \uD544\uC694" : "\uC548\uB0B4"} \xB7 ${item.message}`;
         issues.append(rowNode);
       }
       section.append(issues);
     }
     if (report.compilerCoverage.omittedEntries > 0) {
-      const details = el3("details", "import-raw-details");
-      const detailsSummary = el3("summary");
+      const details = el4("details", "import-raw-details");
+      const detailsSummary = el4("summary");
       detailsSummary.textContent = `\uCEF4\uD30C\uC77C\uC5D0\uC11C \uC81C\uC678\uB420 \uB85C\uC5B4 ${report.compilerCoverage.omittedEntries}\uAC1C \uBCF4\uAE30`;
-      const omitted = el3("p", "muted-line");
+      const omitted = el4("p", "muted-line");
       omitted.textContent = report.compilerCoverage.omitted.map((entry) => entry.name).join(", ");
       details.append(detailsSummary, omitted);
       section.append(details);
@@ -19477,23 +19846,23 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return section;
   }
   function renderCompatibilitySummary(envelope) {
-    const wrap = el3("div", "compatibility-summary");
-    const heading = el3("h4");
+    const wrap = el4("div", "compatibility-summary");
+    const heading = el4("h4");
     heading.textContent = "Risu \uD638\uD658\uC131 \xB7 \uC6D0\uBCF8 \uBCF4\uC874 \uC0C1\uD0DC";
     const totals = envelope.compatibility && envelope.compatibility.totals || {};
-    const summary = el3("p", "muted-line");
+    const summary = el4("p", "muted-line");
     summary.textContent = `\uC9C0\uC6D0 ${totals.supported || 0} \xB7 \uC548\uC804 \uBCC0\uD658 ${totals.translated || 0} \xB7 \uC6D0\uBCF8 \uBCF4\uC874 ${totals.preserved || 0} \xB7 \uC800\uD558 ${totals.degraded || 0} \xB7 \uC2E4\uD589 \uCC28\uB2E8 ${totals.blocked || 0}`;
     wrap.append(heading, summary);
-    const list = el3("div", "engine-list");
+    const list = el4("div", "engine-list");
     const labels = { supported: "\uC9C0\uC6D0", translated: "\uC548\uC804 \uBCC0\uD658", preserved: "\uC6D0\uBCF8 \uBCF4\uC874", degraded: "\uC77C\uBD80 \uC800\uD558", blocked: "\uC2E4\uD589 \uCC28\uB2E8" };
     for (const feature of envelope.compatibility.features || []) {
-      const rowNode = el3("div", `engine-list-row compatibility-${feature.status}`);
+      const rowNode = el4("div", `engine-list-row compatibility-${feature.status}`);
       rowNode.textContent = `${labels[feature.status] || feature.status} \xB7 ${feature.label}${feature.count ? ` ${feature.count}\uAC1C` : ""} \u2014 ${feature.reason}`;
       list.append(rowNode);
     }
     wrap.append(list);
     const raw = envelope.raw || {};
-    const preserved = el3("p", "muted-line");
+    const preserved = el4("p", "muted-line");
     preserved.textContent = `\uC6D0\uBCF8 \uCEE8\uD14C\uC774\uB108 ${Array.isArray(raw.containerEntries) ? raw.containerEntries.length : 0}\uAC1C \uD56D\uBAA9 \xB7 \uC6D0\uBCF8 \uBC14\uC774\uD2B8 ${raw.sourceBytes ? "\uBCF4\uC874\uB428" : "\uC5C6\uC74C"}`;
     wrap.append(preserved);
     return wrap;
@@ -19508,10 +19877,10 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     }[value] || value;
   }
   function renderSettings2(render2) {
-    const details = el3("details", "play-settings import-settings");
+    const details = el4("details", "play-settings import-settings");
     const hasKey = settings2.provider === "mock" || !!readKey3(settings2.provider);
     details.open = !hasKey;
-    const summary = el3("summary");
+    const summary = el4("summary");
     summary.textContent = "\uC81C\uACF5\uC790 \uC124\uC815";
     details.append(summary);
     const provider = namedSelect3("provider");
@@ -19549,7 +19918,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const key = settings2.provider === "vertex" ? namedTextarea2("apiKey", "") : namedInput3("apiKey", "", "password");
     key.placeholder = readKey3(settings2.provider) ? maskedKey2(settings2.provider) : settings2.provider === "vertex" ? "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uBD99\uC5EC\uB123\uAE30" : "API \uD0A4";
     key.disabled = settings2.provider === "mock";
-    const save = button3("\uD0A4 \uC800\uC7A5", "secondary-btn");
+    const save = button4("\uD0A4 \uC800\uC7A5", "secondary-btn");
     save.disabled = settings2.provider === "mock";
     save.addEventListener("click", () => {
       const value = key.value.trim();
@@ -19557,7 +19926,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       key.value = "";
       render2();
     });
-    const del = button3("\uD0A4 \uC0AD\uC81C", "secondary-btn");
+    const del = button4("\uD0A4 \uC0AD\uC81C", "secondary-btn");
     del.disabled = settings2.provider === "mock";
     del.addEventListener("click", () => {
       localStorage.removeItem(keyName2(settings2.provider));
@@ -19575,13 +19944,13 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return details;
   }
   function renderReviewPanel(ctx, render2) {
-    const panel = el3("section", "import-review-panel");
+    const panel = el4("section", "import-review-panel");
     const result = currentResult(ctx);
     if (!result) {
-      const empty = el3("div", "empty-state import-empty");
-      const h = el3("h2");
+      const empty = el4("div", "empty-state import-empty");
+      const h = el4("h2");
       h.textContent = "\uC2A4\uD0A4\uB9C8 \uC81C\uC548 \uC5C6\uC74C";
-      const p = el3("p");
+      const p = el4("p");
       p.textContent = "\uCEF4\uD30C\uC77C\uC744 \uC2E4\uD589\uD558\uBA74 \uC2A4\uD0A4\uB9C8\uB97C \uAC80\uC218\xB7\uD3B8\uC9D1\xB7\uAC80\uC99D\xB7\uC2B9\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
       empty.append(h, p);
       panel.append(empty);
@@ -19595,8 +19964,8 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     return panel;
   }
   function renderCopyBar(result) {
-    const bar = el3("div", "import-copy-bar");
-    const copy = button3("\uAC80\uC218 \uACB0\uACFC \uBCF5\uC0AC", "secondary-btn");
+    const bar = el4("div", "import-copy-bar");
+    const copy = button4("\uAC80\uC218 \uACB0\uACFC \uBCF5\uC0AC", "secondary-btn");
     copy.addEventListener("click", () => {
       const issues = (result.issues || []).map((i2) => `${String(i2.level).toUpperCase()} ${i2.path}: ${i2.msg}`).join("\n") || "(\uC774\uC288 \uC5C6\uC74C)";
       const patches = (result.patches || []).map((p) => `${p.path}: ${fmtPatchVal(p.from)} \u2192 ${fmtPatchVal(p.to)}`).join("\n") || "(\uC5C6\uC74C)";
@@ -19622,21 +19991,21 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
   }
   function renderIssueSummary(result) {
     const section = titled2("\uC810\uAC80 \uC0AC\uD56D");
-    const list = el3("div", "import-issue-list");
+    const list = el4("div", "import-issue-list");
     const patches = result.patches || [];
     if (!result.issues.length && !patches.length) {
-      const ok = el3("p", "badge engine-ok import-status-badge");
+      const ok = el4("p", "badge engine-ok import-status-badge");
       ok.textContent = "\u2705 \uC790\uB3D9 \uC810\uAC80 \uD1B5\uACFC";
       list.append(ok);
     } else {
       for (const patch of patches) {
-        const item = el3("div", "import-check-card import-check-auto");
+        const item = el4("div", "import-check-card import-check-auto");
         item.textContent = `\u{1F527} \uC790\uB3D9\uC73C\uB85C \uBCF4\uC815\uD588\uC5B4\uC694 \xB7 ${patch.path}: ${fmtPatchVal(patch.from)} \u2192 ${fmtPatchVal(patch.to)}`;
         list.append(item);
       }
       for (const issue of result.issues) {
         const isError = issue.level === "error";
-        const item = el3("div", `import-check-card ${isError ? "import-check-error" : "import-check-review"}`);
+        const item = el4("div", `import-check-card ${isError ? "import-check-error" : "import-check-review"}`);
         item.textContent = `${isError ? "\u26D4" : "\u26A0\uFE0F"} \uD655\uC778\uC774 \uD544\uC694\uD574\uC694 \xB7 ${issue.path}: ${issue.msg}`;
         list.append(item);
       }
@@ -19651,12 +20020,12 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
   function renderSchemaSummary(schema2) {
     const section = titled2("\uACB0\uACFC \uC694\uC57D");
     if (!schema2) {
-      const p = el3("p", "engine-warning");
+      const p = el4("p", "engine-warning");
       p.textContent = "\uCEF4\uD30C\uC77C\uB7EC \uCD9C\uB825\uC744 JSON\uC73C\uB85C \uD30C\uC2F1\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.";
       section.append(p);
       return section;
     }
-    const grid = el3("div", "import-section-grid");
+    const grid = el4("div", "import-section-grid");
     for (const [label, value] of [
       ["\uC790\uC6D0", `${count(schema2.resources)}\uC885`],
       ["\uC2DC\uC124", `${entityCount(schema2, "facility")}\uAC1C`],
@@ -19673,14 +20042,14 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     const section = titled2("\uAC00\uC815(\uD655\uC815 \uBABB \uD55C \uAC12)");
     const items = Array.isArray(schema2._assumptions) ? schema2._assumptions : schema2.meta && Array.isArray(schema2.meta.assumptions) ? schema2.meta.assumptions : [];
     if (!items.length) {
-      const p = el3("p", "muted-line");
+      const p = el4("p", "muted-line");
       p.textContent = "\uAE30\uB85D\uB41C \uAC00\uC815\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.";
       section.append(p);
       return section;
     }
-    const list = el3("ul", "import-assumption-list");
+    const list = el4("ul", "import-assumption-list");
     for (const item of items) {
-      const li = el3("li");
+      const li = el4("li");
       li.textContent = String(item);
       list.append(li);
     }
@@ -19688,25 +20057,25 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     return section;
   }
   function renderSectionEditors(ctx, result, render2) {
-    const wrap = el3("div", "import-editor-list");
+    const wrap = el4("div", "import-editor-list");
     result.drafts = result.drafts || {};
     result.openSections = result.openSections || {};
     for (const key of SECTION_KEYS) {
       if (!result.schema || !(key in result.schema)) continue;
-      const details = el3("details", "import-editor");
+      const details = el4("details", "import-editor");
       details.open = !!result.openSections[key];
       details.addEventListener("toggle", () => {
         result.openSections[key] = details.open;
       });
-      const summary = el3("summary");
+      const summary = el4("summary");
       summary.textContent = key;
-      const textarea = el3("textarea", "import-json-input");
+      const textarea = el4("textarea", "import-json-input");
       textarea.name = key;
       textarea.value = key in result.drafts ? result.drafts[key] : JSON.stringify(result.schema[key], null, 2);
       textarea.addEventListener("input", () => {
         result.drafts[key] = textarea.value;
       });
-      const validate = button3("\uC139\uC158 \uC7AC\uAC80\uC99D", "secondary-btn");
+      const validate = button4("\uC139\uC158 \uC7AC\uAC80\uC99D", "secondary-btn");
       validate.addEventListener("click", () => {
         revalidateSection(ctx, key, textarea.value);
         render2();
@@ -19717,28 +20086,28 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     return wrap;
   }
   function renderAdvancedEditor(ctx, result, render2) {
-    const details = el3("details", "import-advanced");
+    const details = el4("details", "import-advanced");
     details.open = !!result.advancedOpen;
     details.addEventListener("toggle", () => {
       result.advancedOpen = details.open;
     });
-    const summary = el3("summary");
+    const summary = el4("summary");
     summary.textContent = "\uACE0\uAE09: \uADDC\uCE59 \uC6D0\uBB38(JSON) \uC9C1\uC811 \uD3B8\uC9D1";
     details.append(summary, renderSectionEditors(ctx, result, render2), renderFullJson(result.schema));
     return details;
   }
   function renderFullJson(schema2) {
-    const details = el3("details", "import-full-json");
-    const summary = el3("summary");
+    const details = el4("details", "import-full-json");
+    const summary = el4("summary");
     summary.textContent = "\uC815\uADDC\uD654\uB41C JSON \uBBF8\uB9AC\uBCF4\uAE30";
-    const pre = el3("pre", "engine-preview import-json-pre");
+    const pre = el4("pre", "engine-preview import-json-pre");
     pre.textContent = JSON.stringify(schema2, null, 2);
     details.append(summary, pre);
     return details;
   }
   function renderApproval(ctx, result, render2) {
-    const section = el3("section", "import-approval");
-    const approve = button3("\uC774 \uADDC\uCE59\uC73C\uB85C \uD50C\uB808\uC774 \uC2DC\uC791", "primary-btn");
+    const section = el4("section", "import-approval");
+    const approve = button4("\uC774 \uADDC\uCE59\uC73C\uB85C \uD50C\uB808\uC774 \uC2DC\uC791", "primary-btn");
     const counts = issueCounts(result.issues);
     const pendingDrafts = result.drafts ? Object.keys(result.drafts) : [];
     approve.disabled = !result.schema || counts.error > 0 || busy2 || pendingDrafts.length > 0;
@@ -19755,7 +20124,7 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
       addLog(ctx, "\uC2A4\uD0A4\uB9C8 \uC2B9\uC778\uB428 \xB7 \uC5D4\uC9C4 \uC138\uC158\uC774 \uC7AC\uC124\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
       ctx.goToPlay();
     });
-    const note = el3("p", "muted-line");
+    const note = el4("p", "muted-line");
     const hasJsonError = (result.issues || []).some((issue) => issue.source === "advanced-json");
     note.textContent = pendingDrafts.length > 0 ? `\uACE0\uAE09 \uD3B8\uC9D1\uC5D0 \uC800\uC7A5\uB418\uC9C0 \uC54A\uC740 \uC218\uC815\uC774 \uC788\uC5B4\uC694(${pendingDrafts.join(", ")}) \u2014 \uAC01 \uC139\uC158\uC758 "\uC139\uC158 \uC7AC\uAC80\uC99D"\uC744 \uBA3C\uC800 \uB20C\uB7EC\uC8FC\uC138\uC694.` : hasJsonError ? "\uACE0\uAE09 \uD3B8\uC9D1\uC758 JSON\uC5D0 \uC624\uB958\uAC00 \uC788\uC5B4\uC694 \u2014 \uB418\uB3CC\uB9AC\uB824\uBA74 \uB2E4\uC2DC \uCEF4\uD30C\uC77C" : counts.error > 0 ? "\uD50C\uB808\uC774\uB97C \uC2DC\uC791\uD558\uB824\uBA74 \uD655\uC778\uC774 \uD544\uC694\uD55C \uC624\uB958\uB97C \uD574\uACB0\uD574 \uC8FC\uC138\uC694." : "\uC2B9\uC778\uD558\uBA74 \uD65C\uC131 \uC5D4\uC9C4 \uC138\uC158\uC774 \uC774 \uC815\uADDC\uD654\uB41C \uC2A4\uD0A4\uB9C8\uB85C \uC7AC\uC124\uC815\uB429\uB2C8\uB2E4.";
     section.append(approve, note);
@@ -19884,17 +20253,17 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     return message.replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/g, "[redacted-key]").replace(/"private_key"\s*:\s*"[^"]*"?/g, '"private_key":"[redacted]"').replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/https?:\/\/\S+/g, "[url]").slice(0, 360);
   }
   function titled2(title) {
-    const section = el3("section", "play-side-section import-section");
-    const h3 = el3("h3");
+    const section = el4("section", "play-side-section import-section");
+    const h3 = el4("h3");
     h3.textContent = title;
     section.append(h3);
     return section;
   }
   function metric2(label, value) {
-    const card = el3("div", "metric import-metric");
-    const span = el3("span");
+    const card = el4("div", "metric import-metric");
+    const span = el4("span");
     span.textContent = label;
-    const strong = el3("strong");
+    const strong = el4("strong");
     strong.textContent = String(value);
     card.append(span, strong);
     return card;
@@ -20082,12 +20451,12 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     render();
   }
   function shellButton(label, handler) {
-    const button4 = document.createElement("button");
-    button4.type = "button";
-    button4.className = "secondary-btn";
-    button4.textContent = label;
-    button4.addEventListener("click", handler);
-    return button4;
+    const button5 = document.createElement("button");
+    button5.type = "button";
+    button5.className = "secondary-btn";
+    button5.textContent = label;
+    button5.addEventListener("click", handler);
+    return button5;
   }
   function enterCreator() {
     clearTabResources();
@@ -20105,20 +20474,20 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     const nav = document.getElementById("tabs");
     nav.replaceChildren();
     for (const tab of tabs.filter((item) => item.id !== "play")) {
-      const button4 = document.createElement("button");
-      button4.type = "button";
-      button4.className = "tab";
-      button4.textContent = tab.label;
-      button4.setAttribute("aria-selected", String(state.activeTab === tab.id));
-      button4.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine" && tab.id !== "import";
-      button4.addEventListener("click", () => {
+      const button5 = document.createElement("button");
+      button5.type = "button";
+      button5.className = "tab";
+      button5.textContent = tab.label;
+      button5.setAttribute("aria-selected", String(state.activeTab === tab.id));
+      button5.disabled = !state.parsed && tab.id !== "overview" && tab.id !== "engine" && tab.id !== "import";
+      button5.addEventListener("click", () => {
         if (state.activeTab === tab.id) return;
         clearTabResources();
         state.activeTab = tab.id;
         renderTabs();
         render();
       });
-      nav.append(button4);
+      nav.append(button5);
     }
   }
   async function loadFile(file) {
@@ -20341,16 +20710,16 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     return wrap;
   }
   function statCard(label, value) {
-    const el4 = document.createElement("section");
-    el4.className = "stat-card";
+    const el5 = document.createElement("section");
+    el5.className = "stat-card";
     const k = document.createElement("div");
     k.className = "stat-label";
     k.textContent = label;
     const v = document.createElement("div");
     v.className = "stat-value";
     v.textContent = value;
-    el4.append(k, v);
-    return el4;
+    el5.append(k, v);
+    return el5;
   }
   function sectionTitle(text) {
     const h = document.createElement("h2");
@@ -20388,8 +20757,8 @@ ${result.schema ? JSON.stringify(result.schema, null, 2) : "(\uD30C\uC2F1 \uC2E4
     state.viewUrls.clear();
   }
   function setMessage(text) {
-    const el4 = document.getElementById("message");
-    if (el4) el4.textContent = text;
+    const el5 = document.getElementById("message");
+    if (el5) el5.textContent = text;
   }
   function formatBytes(value) {
     const n = Number(value || 0);

@@ -99,6 +99,8 @@ registerModule({
 
 초기 위젯 레지스트리는 `speaker-stage`, `chat`, `stat-strip`, `gauge`, `entity-card`, `action-group`, `decision-card`, `quest-board`, `inventory-grid`, `facility-grid`, `map-nodes`, `combat-hud`, `timeline` 정도로 제한한다.
 
+현재 구현은 위 목록에 `table`, `slot-grid`, `detail-panel`, `calendar`, `crafting-queue`, `sidebar`를 더한 고정 레지스트리를 사용한다. 위젯은 raw 프로젝트 코드를 실행하지 않고 selector 결과와 정적 props만 받으며, 버튼은 엔진 event 관문을 그대로 통과한다.
+
 조건 표현은 임의 JavaScript가 아닌 허용 목록 기반 AST를 사용한다. `and`, `or`, `not`, `eq`, `gte`, `add`, `mul`, `min`, `max`, `hasTag`와 허가된 selector 참조부터 시작한다. 숙박 배정이나 전투 계산처럼 복잡한 알고리즘은 코드 모듈에 두고 제작자는 숫자와 테이블을 편집한다.
 
 ## 편집기 정보 구조

@@ -283,13 +283,15 @@ Recall@5는 28%로 B(53%)보다 낮고 hard-negative를 거르지 못했다. 따
 
 ## P2 — 다중 화면 선언 런타임
 
-- [ ] `screens[]`와 화면 내비게이션
-- [ ] 탭·모달·오버레이·선택 상태
-- [ ] selector 기반 데이터 연결
-- [ ] event 기반 버튼 연결
-- [ ] 허용 목록 조건식
-- [ ] 데스크톱·모바일 배치
-- [ ] 기본 위젯: 카드 목록, 상세 패널, 표, 슬롯, 게이지, 퀘스트, 인벤토리, 지도 노드, 달력, 제작 대기열, 전투 HUD
+- [x] `screens[]`와 화면 내비게이션
+- [x] 탭·모달·오버레이·선택 상태
+- [x] selector 기반 데이터 연결
+- [x] event 기반 버튼 연결
+- [x] 허용 목록 조건식
+- [x] 데스크톱·모바일 배치
+- [x] 기본 위젯: 카드 목록, 상세 패널, 표, 슬롯, 게이지, 퀘스트, 인벤토리, 지도 노드, 달력, 제작 대기열, 전투 HUD
+
+구현: `core/screens/runtime.js`가 화면 정규화, own-property selector 경로, 허용 AST(`all/any/not/eq/ne/gt/gte/lt/lte/truthy/includes`), event params 연결을 담당한다. `declarativeScreenView.js`는 프로젝트 id별 화면·모달·선택 상태를 보관하고 공통 위젯만 렌더링한다. 화면에 chat/sidebar가 없으면 기존 안전 플레이 셸을 자동으로 붙여 빈 화면을 막는다. 프로젝트 이름을 검사하는 분기는 없다.
 
 금지: `playView.js`에 Alternate Hunters, 소녀전선, Belladonna 전용 분기를 추가하지 않는다.
 

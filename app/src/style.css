@@ -996,6 +996,42 @@ select:focus { border-color: var(--amber-line); }
 .compatibility-preserved { color: var(--ink-mid); }
 .compatibility-degraded { border-color: var(--warn); background: var(--warn-wash); color: var(--warn); }
 .compatibility-blocked { border-color: var(--bad); background: var(--bad-wash); color: var(--bad); }
+
+/* SimPack declarative screens: the manifest chooses regions/widgets; CSS only
+   supplies responsive layout presets, never project-specific branches. */
+.declarative-layout { display: block; }
+.declarative-player { display: grid; gap: 12px; min-width: 0; }
+.declarative-nav { display: flex; gap: 8px; overflow-x: auto; padding: 4px; }
+.declarative-nav-active { border-color: var(--cyan); color: var(--cyan); background: rgba(116,183,195,.12); }
+.declarative-screen { display: grid; gap: 12px; min-width: 0; }
+.declarative-screen > h2 { margin: 0; }
+.declarative-region { display: grid; gap: 10px; min-width: 0; }
+.layout-dashboard { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.layout-dashboard > h2 { grid-column: 1 / -1; }
+.layout-dashboard .region-main { grid-column: 1 / 9; }
+.layout-dashboard .region-sidebar, .layout-dashboard .region-hud { grid-column: 9 / -1; }
+.layout-stage-chat-hud, .layout-chat-stage-sidebar { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
+.layout-stage-chat-hud > h2, .layout-chat-stage-sidebar > h2 { grid-column: 1 / -1; }
+.region-stage, .region-main, .region-chat { grid-column: 1; }
+.region-hud, .region-sidebar, .region-actions { grid-column: 2; }
+.declarative-widget { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); min-width: 0; overflow: auto; }
+.declarative-widget h3 { margin: 0 0 8px; }
+.declarative-stat-strip, .declarative-card-grid, .declarative-actions, .declarative-slots { display: flex; flex-wrap: wrap; gap: 8px; }
+.declarative-stat, .declarative-slot { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.declarative-card { display: grid; text-align: left; gap: 3px; min-width: 130px; }
+.declarative-card small { color: var(--ink-mid); }
+.declarative-widget table { width: 100%; border-collapse: collapse; }
+.declarative-widget th, .declarative-widget td { padding: 6px; border-bottom: 1px solid var(--line); text-align: left; }
+.declarative-core-play { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 12px; }
+.declarative-modal, .declarative-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.58); }
+.declarative-modal > .declarative-screen, .declarative-overlay > .declarative-screen { width: min(900px, 100%); max-height: 90vh; overflow: auto; padding: 16px; border-radius: 14px; background: var(--panel); }
+
+@media (max-width: 820px) {
+  .layout-dashboard, .layout-stage-chat-hud, .layout-chat-stage-sidebar, .declarative-core-play { grid-template-columns: 1fr; }
+  .layout-dashboard .region-main, .layout-dashboard .region-sidebar, .layout-dashboard .region-hud,
+  .region-stage, .region-main, .region-chat, .region-hud, .region-sidebar, .region-actions { grid-column: 1; }
+  .declarative-widget { padding: 10px; }
+}
 .import-advanced {
   background: var(--surface);
   border: 1px solid var(--line);
