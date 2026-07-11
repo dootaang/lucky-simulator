@@ -654,11 +654,11 @@ function renderLedgerSection(render) {
       const line = el('div', 'purchase-stepper');
       const name = el('span'); name.textContent = item.label || item.id;
       const minus = button('−', 'secondary-btn');
-      const qty = el('input', 'purchase-qty'); qty.type = 'number'; qty.min = '1'; qty.max = '999'; qty.value = '1';
+      const qty = el('input', 'purchase-qty'); qty.type = 'number'; qty.min = '0'; qty.max = '999'; qty.value = '1';
       const plus = button('+', 'secondary-btn');
       const subtotal = el('span', 'purchase-subtotal');
-      const readQty = () => Math.max(1, Math.min(999, Math.round(Number(qty.value) || 1)));
-      qty.value = String(purchaseDraft[item.id] || 1);
+      const readQty = () => Math.max(0, Math.min(999, Math.round(Number(qty.value) || 0)));
+      qty.value = String(purchaseDraft[item.id] ?? 1);
       const update = () => { const value = readQty(); purchaseDraft[item.id] = value; subtotal.textContent = formatMoney(Number(item.basePrice || 0) * value); return value; };
       const clamp = () => { const value = update(); qty.value = String(value); return value; };
       minus.disabled = busy; plus.disabled = busy; qty.disabled = busy;
@@ -668,12 +668,13 @@ function renderLedgerSection(render) {
       clamp(); line.append(name, minus, qty, plus, subtotal); sectionNode.append(line);
     }
     if (section.type === 'purchase') {
-      const items = section.items.map((item) => ({ resource: item.id, qty: Math.max(1, Math.min(999, Number(purchaseDraft[item.id]) || 1)) }));
+      // 0 수량 행은 배치에서 제외 — 엔진 purchase_batch는 qty<=0을 거부하므로(경계 유지) 제외는 UI 책임.
+      const items = section.items.map((item) => ({ resource: item.id, qty: Math.max(0, Math.min(999, Number(purchaseDraft[item.id] ?? 1))) })).filter((item) => item.qty > 0);
       const total = items.reduce((sum, item) => {
         const def = section.items.find((row) => row.id === item.resource);
         return sum + Number(def && def.basePrice || 0) * item.qty;
       }, 0);
-      addButton(`선택 수량 일괄 구매 · ${formatMoney(total)}`, { id: 'purchase_batch', params: { items } }, Number(getEngineState().gold || 0) < total);
+      addButton(`선택 수량 일괄 구매 · ${formatMoney(total)}`, { id: 'purchase_batch', params: { items } }, !items.length || Number(getEngineState().gold || 0) < total);
     }
     if (section.type === 'upgrade') for (const item of section.items) {
       addButton(item.maxed ? `${item.label} Lv.${item.level} (최대)` : `${item.label} Lv.${item.level}→${item.level + 1} (${formatMoney(item.nextCost)})`, { id: 'upgrade', params: { facility: item.id } }, item.maxed || !item.affordable);

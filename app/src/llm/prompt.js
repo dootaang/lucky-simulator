@@ -238,7 +238,7 @@ function buildNarrationPrompt({ schema, state, results, flavorText, recentMessag
     changesText ? '' : '',
     decisionContext || '',
     combatActive ? combatLine : managementLines,
-    narrationNpcText ? `[직원 관계 상태]\n${narrationNpcText}` : '',
+    narrationNpcText ? `[직원 관계 상태 — 수치나 단계가 변했을 때만 서사에 언급하고, 변화가 없으면 관계 묘사를 생략하라. 이전 서사에서 쓴 관계 묘사 문구를 그대로 반복하지 마라]\n${narrationNpcText}` : '',
     flavorText ? `플레이어의 연출 의도: ${flavorText}` : '',
     Array.isArray(emotions) && emotions.length ? `서사 뒤에 \`\`\`json {"emotion":"값"} \`\`\` 블록을 덧붙여도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
   ].filter(Boolean).join('\n');
