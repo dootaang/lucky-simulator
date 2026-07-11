@@ -16,7 +16,7 @@ const SALE_JSON_EXAMPLE = `\`\`\`json
 const EVENT_PROMPTS = {
   sale: `- sale {menuName, qty} — 메뉴 판매 완결 시. (엔진: 매출 가산 + 식자재 차감)`,
   purchase: `- purchase {resource:"food"|"drink", qty} — 재료 구매. (엔진: 원가 차감 + 재고 가산. 유저가 산 그 한 건만, gold 변동을 따로 넣지 마라)`,
-  buyItem: `- buy_item {menuName, qty} — 상점 품목 구매 완결 시. menuName은 [메뉴 목록] 그대로. (엔진: 대금 차감 + 소지품 가산. 가격·골드를 쓰지 마라)`,
+  buyItem: `- buy_item {menuName, qty} — 상점 품목 구매 완결 시. menuName은 [메뉴 목록] 그대로. 구매는 buy_item, 판매는 sale이다 — 방향을 혼동하지 마라. 채집(gain_resource)은 [상태]의 자원(res 등)에만 쓴다. (엔진: 대금 차감 + 소지품 가산. 가격·골드를 쓰지 마라)`,
   upgrade: `- upgrade {facility} — 시설 확장. facility는 상태의 시설 id(tavern/kitchen/room/quarters). (엔진: 비용 차감 + 레벨 상승. 비용·골드·레벨은 쓰지 마라)`,
   gather: `- gain_resource {resource:"food"|"drink", scale:"small"|"large"|"bulk", reason} — 사냥·채집·부산물로 재료를 얻을 때. (엔진: 규모 표에서 수량 결정. qty·amount·gold는 쓰지 마라)`,
   room: `- checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName} — roomNo는 [객실 목록]의 실제 호수(예: 101). (엔진: 숙박비 선불 가산)`,
@@ -321,9 +321,11 @@ function menuListText(schema, state) {
   const block = (schema.entities || []).find((entry) => entry.type === 'menuItem');
   const items = block && Array.isArray(block.instances) ? block.instances : [];
   const kitchen = Number((state && state.facilities && state.facilities.kitchen) || 1);
-  return items
-    .filter((m) => Number(m.requiresKitchenLevel || 1) <= kitchen)
-    .map((m) => `${m.name}${m.category ? ` (${m.category})` : ''}${m.price != null ? ` ${Number(m.price).toLocaleString('ko-KR')}원` : ''}`)
+  const visible = items.filter((m) => Number(m.requiresKitchenLevel || 1) <= kitchen);
+  // 표기 여부는 실제 노출분 기준 — 잠긴 buy 메뉴 때문에 sell만 보이는데 (판매)가 붙는 경계 방지(감사 지적).
+  const showTrade = visible.some((item) => item.trade === 'buy');
+  return visible
+    .map((m) => `${m.name}${m.category ? ` (${m.category})` : ''}${m.price != null ? ` ${Number(m.price).toLocaleString('ko-KR')}원` : ''}${showTrade ? ` (${m.trade === 'buy' ? '구매' : '판매'})` : ''}`)
     .join('\n');
 }
 

@@ -94,10 +94,24 @@ test('buy menus expose only buy_item vocabulary and narration uses generic resul
   const shop = { meta: { title: '상점' }, resources: [], entities: [{ type: 'menuItem', instances: [{ name: '서약반지', price: 30000, trade: 'buy' }] }] };
   const system = buildSystemPrompt(shop);
   assert.match(system, /buy_item \{menuName, qty\}/);
+  assert.match(system, /구매는 buy_item, 판매는 sale이다/);
   assert.doesNotMatch(system, /- sale \{/);
+  const context = buildPrompt({ schema: shop, state: { gold: 70000 }, recentMessages: [], userInput: '산다' }).messages.at(-1).content;
+  assert.match(context, /서약반지 30,000원 \(구매\)/);
   const narration = buildNarrationPrompt({ schema: shop, state: { gold: 70000, items: { 서약반지: 1 } }, results: ['구매'], recentMessages: [] });
   assert.match(narration.messages.at(-1).content, /^\[확정된 결과\]/);
   assert.match(narration.messages.at(-1).content, /\[소지품\] 서약반지 ×1/);
+});
+
+test('sell-only inn menu list preserves its existing bytes', () => {
+  const context = buildPrompt({ schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '판다' }).messages.at(-1).content;
+  const menu = context.split('[메뉴 목록]\n')[1].split('\n\n[객실 목록]')[0];
+  const block = innSchema.entities.find((entry) => entry.type === 'menuItem');
+  const expected = block.instances
+    .filter((item) => Number(item.requiresKitchenLevel || 1) <= 1)
+    .map((item) => `${item.name}${item.category ? ` (${item.category})` : ''}${item.price != null ? ` ${Number(item.price).toLocaleString('ko-KR')}원` : ''}`)
+    .join('\n');
+  assert.equal(menu, expected);
 });
 
 test('consumables inject vocabulary and stocked item list while inn stays unchanged', () => {

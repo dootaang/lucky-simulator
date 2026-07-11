@@ -28,7 +28,9 @@ function availableManagement(schema, state) {
   if (sell.length) sections.push({ type: 'sell', items: sell });
   const buy = menus.filter((item) => menuTrade(item) === 'buy').map((item) => ({ name: item.name, price: Number(item.price || 0), category: item.category, affordable: Number(state.gold || 0) >= Number(item.price || 0), owned: Number((state.items && state.items[item.name]) || 0) }));
   if (buy.length) sections.push({ type: 'buy', items: buy });
-  const purchase = (schema.resources || []).filter((item) => item.id !== 'gold' && item.basePrice != null).map((item) => ({ id: item.id, ...(item.label == null ? {} : { label: item.label }), basePrice: Number(item.basePrice), affordable: Number(state.gold || 0) >= Number(item.basePrice) }));
+  const menuNames = new Set(entityList(schema, 'menuItem').map((item) => item.name));
+  // label이 없는(undefined) 자원이 menuNames의 undefined와 오매칭돼 제외되지 않게 null 가드(감사 지적).
+  const purchase = (schema.resources || []).filter((item) => item.id !== 'gold' && item.basePrice != null && !menuNames.has(item.id) && (item.label == null || !menuNames.has(item.label))).map((item) => ({ id: item.id, ...(item.label == null ? {} : { label: item.label }), basePrice: Number(item.basePrice), affordable: Number(state.gold || 0) >= Number(item.basePrice) }));
   if (purchase.length) sections.push({ type: 'purchase', items: purchase });
   const upgrade = entityList(schema, 'facility').map((item) => {
     const level = Number((state.facilities && state.facilities[item.id]) || 1); // 폴백 1 — upgrade 핸들러와 동일(감사 지적)
@@ -37,7 +39,8 @@ function availableManagement(schema, state) {
     return { id: item.id, label: item.label || item.id, level, nextCost: Number.isFinite(nextCost) ? nextCost : null, affordable: !maxed && Number.isFinite(nextCost) && Number(state.gold || 0) >= nextCost, maxed };
   });
   if (upgrade.length) sections.push({ type: 'upgrade', items: upgrade });
-  if (schema.gather) sections.push({ type: 'gather', resources: (schema.resources || []).filter((item) => item.id !== 'gold').map((item) => item.id), scales: ['small', 'large', 'bulk'].filter((id) => Array.isArray(schema.gather[id])).map((id) => ({ id, range: schema.gather[id].slice() })) });
+  const gatherResources = Object.keys((state && state.resources) || {}).filter((id) => id !== 'gold'); // state null 가드(감사 지적)
+  if (schema.gather && gatherResources.length) sections.push({ type: 'gather', resources: gatherResources, scales: ['small', 'large', 'bulk'].filter((id) => Array.isArray(schema.gather[id])).map((id) => ({ id, range: schema.gather[id].slice() })) });
   if ((schema.processes || []).some((process) => process.trigger === 'dayEnd')) sections.push({ type: 'day_end' });
   return { sections };
 }
@@ -121,6 +124,10 @@ function summarize(schema, state) {
     lines.push(`[객실] ${occupied.length ? occupied.join(' · ') + ' · 나머지 공실' : '전 객실 공실'}`);
   } else if (Number(state.gold || 0) !== 0 || Object.keys(resources).length > 0) {
     lines.push(`[자원] 골드 ${formatNumber(state.gold)}원`);
+  }
+  if (!innLike) {
+    const facilityItems = entityList(schema, 'facility');
+    if (facilityItems.length) lines.push(`[시설] ${facilityItems.map((item) => `${item.label || item.id} Lv.${Number(facilities[item.id] || 1)}`).join(' · ')}`);
   }
 
   if (ladderById(schema, 'reputation')) {

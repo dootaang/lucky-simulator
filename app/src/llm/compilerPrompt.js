@@ -10,7 +10,8 @@ const TRADE_SCHEMA_APPENDIX = `
 
 [거래 방향 확장]
 - menuItem 형식에 "trade": "sell"|"buy"를 추가한다.
-- ★trade: 플레이어가 손님/시장에 파는 품목이면 "sell", 상점에서 사오는 품목이면 "buy". 여관 메뉴판은 sell, 기지 상점·보급품 구매 목록은 buy다.`;
+- ★trade: 플레이어가 손님/시장에 파는 품목이면 "sell", 상점에서 사오는 품목이면 "buy". 여관 메뉴판은 sell, 기지 상점·보급품 구매 목록은 buy다.
+- ★menuItem에 넣은 품목을 resources에 중복 생성하지 마라. resources는 원자재·소모 재화(자원·부품·식자재 등)만 담고, 상점 품목·선물·장비는 menuItem에만 둔다.`;
 
 const COMBAT_SCHEMA_APPENDIX = `
 

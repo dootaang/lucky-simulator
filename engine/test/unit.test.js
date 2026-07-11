@@ -114,6 +114,25 @@ test('availableMenu respects kitchen level gates', () => {
   assert.equal(availableMenu(schema, state).some((item) => item.name === '허브 로스트'), true);
 });
 
+test('management lists follow state resources, hide menu duplicates, and summarize non-inn facilities', () => {
+  const shop = {
+    resources: [
+      { id: 'res', basePrice: 10 }, { id: 'part', basePrice: 20 },
+      { id: 'ring', label: '서약반지', basePrice: 999 }, { id: 'unused', basePrice: 30 },
+    ],
+    entities: [
+      { type: 'menuItem', instances: [{ name: '서약반지', price: 300, trade: 'buy' }] },
+      { type: 'facility', instances: [{ id: 'training', label: '훈련 시설' }, { id: 'defense', label: '방위 시설' }] },
+    ],
+    gather: { small: [1, 2] },
+  };
+  const state = { gold: 1000, resources: { res: 1, part: 2 }, facilities: { training: 2 } };
+  const sections = availableManagement(shop, state).sections;
+  assert.deepEqual(sections.find((section) => section.type === 'gather').resources, ['res', 'part']);
+  assert.deepEqual(sections.find((section) => section.type === 'purchase').items.map((item) => item.id), ['res', 'part', 'unused']);
+  assert.equal(summarize(shop, state), '[자원] 골드 1,000원\n[시설] 훈련 시설 Lv.2 · 방위 시설 Lv.1');
+});
+
 test('frozen failed state remains intact', () => {
   const state = createState(schema);
   const before = JSON.stringify(state);

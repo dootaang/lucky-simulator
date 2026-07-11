@@ -5184,7 +5184,8 @@ select:focus { border-color: var(--amber-line); }
         if (sell.length) sections.push({ type: "sell", items: sell });
         const buy = menus.filter((item) => menuTrade(item) === "buy").map((item) => ({ name: item.name, price: Number(item.price || 0), category: item.category, affordable: Number(state2.gold || 0) >= Number(item.price || 0), owned: Number(state2.items && state2.items[item.name] || 0) }));
         if (buy.length) sections.push({ type: "buy", items: buy });
-        const purchase = (schema2.resources || []).filter((item) => item.id !== "gold" && item.basePrice != null).map((item) => ({ id: item.id, ...item.label == null ? {} : { label: item.label }, basePrice: Number(item.basePrice), affordable: Number(state2.gold || 0) >= Number(item.basePrice) }));
+        const menuNames = new Set(entityList(schema2, "menuItem").map((item) => item.name));
+        const purchase = (schema2.resources || []).filter((item) => item.id !== "gold" && item.basePrice != null && !menuNames.has(item.id) && (item.label == null || !menuNames.has(item.label))).map((item) => ({ id: item.id, ...item.label == null ? {} : { label: item.label }, basePrice: Number(item.basePrice), affordable: Number(state2.gold || 0) >= Number(item.basePrice) }));
         if (purchase.length) sections.push({ type: "purchase", items: purchase });
         const upgrade = entityList(schema2, "facility").map((item) => {
           const level = Number(state2.facilities && state2.facilities[item.id] || 1);
@@ -5193,7 +5194,8 @@ select:focus { border-color: var(--amber-line); }
           return { id: item.id, label: item.label || item.id, level, nextCost: Number.isFinite(nextCost) ? nextCost : null, affordable: !maxed && Number.isFinite(nextCost) && Number(state2.gold || 0) >= nextCost, maxed };
         });
         if (upgrade.length) sections.push({ type: "upgrade", items: upgrade });
-        if (schema2.gather) sections.push({ type: "gather", resources: (schema2.resources || []).filter((item) => item.id !== "gold").map((item) => item.id), scales: ["small", "large", "bulk"].filter((id) => Array.isArray(schema2.gather[id])).map((id) => ({ id, range: schema2.gather[id].slice() })) });
+        const gatherResources = Object.keys(state2 && state2.resources || {}).filter((id) => id !== "gold");
+        if (schema2.gather && gatherResources.length) sections.push({ type: "gather", resources: gatherResources, scales: ["small", "large", "bulk"].filter((id) => Array.isArray(schema2.gather[id])).map((id) => ({ id, range: schema2.gather[id].slice() })) });
         if ((schema2.processes || []).some((process) => process.trigger === "dayEnd")) sections.push({ type: "day_end" });
         return { sections };
       }
@@ -5268,6 +5270,10 @@ select:focus { border-color: var(--amber-line); }
           lines.push(`[\uAC1D\uC2E4] ${occupied.length ? occupied.join(" \xB7 ") + " \xB7 \uB098\uBA38\uC9C0 \uACF5\uC2E4" : "\uC804 \uAC1D\uC2E4 \uACF5\uC2E4"}`);
         } else if (Number(state2.gold || 0) !== 0 || Object.keys(resources).length > 0) {
           lines.push(`[\uC790\uC6D0] \uACE8\uB4DC ${formatNumber(state2.gold)}\uC6D0`);
+        }
+        if (!innLike) {
+          const facilityItems = entityList(schema2, "facility");
+          if (facilityItems.length) lines.push(`[\uC2DC\uC124] ${facilityItems.map((item) => `${item.label || item.id} Lv.${Number(facilities[item.id] || 1)}`).join(" \xB7 ")}`);
         }
         if (ladderById(schema2, "reputation")) {
           const repParts = Object.entries(state2.reputation || {}).map(([axis, rep]) => `${labels[axis] || axis} ${rep.rank}(${rep.exp})`);
@@ -6239,7 +6245,7 @@ select:focus { border-color: var(--amber-line); }
       var EVENT_PROMPTS = {
         sale: `- sale {menuName, qty} \u2014 \uBA54\uB274 \uD310\uB9E4 \uC644\uACB0 \uC2DC. (\uC5D4\uC9C4: \uB9E4\uCD9C \uAC00\uC0B0 + \uC2DD\uC790\uC7AC \uCC28\uAC10)`,
         purchase: `- purchase {resource:"food"|"drink", qty} \u2014 \uC7AC\uB8CC \uAD6C\uB9E4. (\uC5D4\uC9C4: \uC6D0\uAC00 \uCC28\uAC10 + \uC7AC\uACE0 \uAC00\uC0B0. \uC720\uC800\uAC00 \uC0B0 \uADF8 \uD55C \uAC74\uB9CC, gold \uBCC0\uB3D9\uC744 \uB530\uB85C \uB123\uC9C0 \uB9C8\uB77C)`,
-        buyItem: `- buy_item {menuName, qty} \u2014 \uC0C1\uC810 \uD488\uBAA9 \uAD6C\uB9E4 \uC644\uACB0 \uC2DC. menuName\uC740 [\uBA54\uB274 \uBAA9\uB85D] \uADF8\uB300\uB85C. (\uC5D4\uC9C4: \uB300\uAE08 \uCC28\uAC10 + \uC18C\uC9C0\uD488 \uAC00\uC0B0. \uAC00\uACA9\xB7\uACE8\uB4DC\uB97C \uC4F0\uC9C0 \uB9C8\uB77C)`,
+        buyItem: `- buy_item {menuName, qty} \u2014 \uC0C1\uC810 \uD488\uBAA9 \uAD6C\uB9E4 \uC644\uACB0 \uC2DC. menuName\uC740 [\uBA54\uB274 \uBAA9\uB85D] \uADF8\uB300\uB85C. \uAD6C\uB9E4\uB294 buy_item, \uD310\uB9E4\uB294 sale\uC774\uB2E4 \u2014 \uBC29\uD5A5\uC744 \uD63C\uB3D9\uD558\uC9C0 \uB9C8\uB77C. \uCC44\uC9D1(gain_resource)\uC740 [\uC0C1\uD0DC]\uC758 \uC790\uC6D0(res \uB4F1)\uC5D0\uB9CC \uC4F4\uB2E4. (\uC5D4\uC9C4: \uB300\uAE08 \uCC28\uAC10 + \uC18C\uC9C0\uD488 \uAC00\uC0B0. \uAC00\uACA9\xB7\uACE8\uB4DC\uB97C \uC4F0\uC9C0 \uB9C8\uB77C)`,
         upgrade: `- upgrade {facility} \u2014 \uC2DC\uC124 \uD655\uC7A5. facility\uB294 \uC0C1\uD0DC\uC758 \uC2DC\uC124 id(tavern/kitchen/room/quarters). (\uC5D4\uC9C4: \uBE44\uC6A9 \uCC28\uAC10 + \uB808\uBCA8 \uC0C1\uC2B9. \uBE44\uC6A9\xB7\uACE8\uB4DC\xB7\uB808\uBCA8\uC740 \uC4F0\uC9C0 \uB9C8\uB77C)`,
         gather: `- gain_resource {resource:"food"|"drink", scale:"small"|"large"|"bulk", reason} \u2014 \uC0AC\uB0E5\xB7\uCC44\uC9D1\xB7\uBD80\uC0B0\uBB3C\uB85C \uC7AC\uB8CC\uB97C \uC5BB\uC744 \uB54C. (\uC5D4\uC9C4: \uADDC\uBAA8 \uD45C\uC5D0\uC11C \uC218\uB7C9 \uACB0\uC815. qty\xB7amount\xB7gold\uB294 \uC4F0\uC9C0 \uB9C8\uB77C)`,
         room: `- checkin {roomNo, guestName, stayDays} / checkout {roomNo, guestName} \u2014 roomNo\uB294 [\uAC1D\uC2E4 \uBAA9\uB85D]\uC758 \uC2E4\uC81C \uD638\uC218(\uC608: 101). (\uC5D4\uC9C4: \uC219\uBC15\uBE44 \uC120\uBD88 \uAC00\uC0B0)`,
@@ -6501,7 +6507,9 @@ ${lines.join("\n")}`;
         const block = (schema2.entities || []).find((entry) => entry.type === "menuItem");
         const items = block && Array.isArray(block.instances) ? block.instances : [];
         const kitchen = Number(state2 && state2.facilities && state2.facilities.kitchen || 1);
-        return items.filter((m) => Number(m.requiresKitchenLevel || 1) <= kitchen).map((m) => `${m.name}${m.category ? ` (${m.category})` : ""}${m.price != null ? ` ${Number(m.price).toLocaleString("ko-KR")}\uC6D0` : ""}`).join("\n");
+        const visible = items.filter((m) => Number(m.requiresKitchenLevel || 1) <= kitchen);
+        const showTrade = visible.some((item) => item.trade === "buy");
+        return visible.map((m) => `${m.name}${m.category ? ` (${m.category})` : ""}${m.price != null ? ` ${Number(m.price).toLocaleString("ko-KR")}\uC6D0` : ""}${showTrade ? ` (${m.trade === "buy" ? "\uAD6C\uB9E4" : "\uD310\uB9E4"})` : ""}`).join("\n");
       }
       function roomListText(schema2) {
         const block = (schema2.entities || []).find((entry) => entry.type === "room");
@@ -6967,7 +6975,8 @@ ${row3.entry.content}`).join("\n\n");
 
 [\uAC70\uB798 \uBC29\uD5A5 \uD655\uC7A5]
 - menuItem \uD615\uC2DD\uC5D0 "trade": "sell"|"buy"\uB97C \uCD94\uAC00\uD55C\uB2E4.
-- \u2605trade: \uD50C\uB808\uC774\uC5B4\uAC00 \uC190\uB2D8/\uC2DC\uC7A5\uC5D0 \uD30C\uB294 \uD488\uBAA9\uC774\uBA74 "sell", \uC0C1\uC810\uC5D0\uC11C \uC0AC\uC624\uB294 \uD488\uBAA9\uC774\uBA74 "buy". \uC5EC\uAD00 \uBA54\uB274\uD310\uC740 sell, \uAE30\uC9C0 \uC0C1\uC810\xB7\uBCF4\uAE09\uD488 \uAD6C\uB9E4 \uBAA9\uB85D\uC740 buy\uB2E4.`;
+- \u2605trade: \uD50C\uB808\uC774\uC5B4\uAC00 \uC190\uB2D8/\uC2DC\uC7A5\uC5D0 \uD30C\uB294 \uD488\uBAA9\uC774\uBA74 "sell", \uC0C1\uC810\uC5D0\uC11C \uC0AC\uC624\uB294 \uD488\uBAA9\uC774\uBA74 "buy". \uC5EC\uAD00 \uBA54\uB274\uD310\uC740 sell, \uAE30\uC9C0 \uC0C1\uC810\xB7\uBCF4\uAE09\uD488 \uAD6C\uB9E4 \uBAA9\uB85D\uC740 buy\uB2E4.
+- \u2605menuItem\uC5D0 \uB123\uC740 \uD488\uBAA9\uC744 resources\uC5D0 \uC911\uBCF5 \uC0DD\uC131\uD558\uC9C0 \uB9C8\uB77C. resources\uB294 \uC6D0\uC790\uC7AC\xB7\uC18C\uBAA8 \uC7AC\uD654(\uC790\uC6D0\xB7\uBD80\uD488\xB7\uC2DD\uC790\uC7AC \uB4F1)\uB9CC \uB2F4\uACE0, \uC0C1\uC810 \uD488\uBAA9\xB7\uC120\uBB3C\xB7\uC7A5\uBE44\uB294 menuItem\uC5D0\uB9CC \uB454\uB2E4.`;
       var COMBAT_SCHEMA_APPENDIX = `
 
 [\uC804\uD22C \uCE74\uB4DC \uC804\uC6A9 \uCD9C\uB825 \uD615\uC2DD \u2014 \uC804\uD22C \uADDC\uCE59\uC774 \uC788\uB294 \uCE74\uB4DC\uB9CC \uCD94\uAC00\uD558\uACE0, \uC5C6\uC73C\uBA74 \uC0DD\uB7B5\uD55C \uC774\uC720\uB97C _assumptions\uC5D0 \uAE30\uB85D]
