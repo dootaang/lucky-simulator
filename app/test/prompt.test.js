@@ -149,3 +149,23 @@ test('consumables inject vocabulary and stocked item list while inn stays unchan
   assert.doesNotMatch(buildSystemPrompt(innSchema), /use_item/);
   assert.doesNotMatch(buildPrompt({ schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '쉰다' }).messages.at(-1).content, /\[소모품 목록\]/);
 });
+
+test('recentChanges omission preserves buildPrompt output bytes', () => {
+  const base = { schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '영업을 시작한다' };
+  assert.deepEqual(buildPrompt(base), buildPrompt({ ...base, recentChanges: undefined }));
+});
+
+test('recentChanges injects the owner-managed change block into both prompts', () => {
+  const changes = ['재료(food) 20인분을 구매해 창고에 보관했다'];
+  const prompt = buildPrompt({ schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '영업한다', recentChanges: changes });
+  const narration = buildNarrationPrompt({ schema: innSchema, state: createState(innSchema), results: ['영업 완료'], recentMessages: [], recentChanges: changes });
+  for (const result of [prompt, narration]) {
+    assert.match(result.messages.at(-1).content, /\[직전 장면 이후 주인장이 직접 처리한 변화/);
+    assert.match(result.messages.at(-1).content, /- 재료\(food\) 20인분을 구매해 창고에 보관했다/);
+  }
+});
+
+test('empty recentChanges does not inject a change block', () => {
+  const prompt = buildPrompt({ schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '영업한다', recentChanges: [] });
+  assert.doesNotMatch(prompt.messages.at(-1).content, /직전 장면 이후 주인장이 직접 처리한 변화/);
+});

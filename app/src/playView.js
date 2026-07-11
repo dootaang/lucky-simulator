@@ -22,6 +22,7 @@ let character = null;
 let mgmtConsoleOpen = false;
 let lodgingSelection = new Set();
 let lodgingSelectionDay = null;
+let ledgerDeltas = [];
 
 export function primaryCharacter(parsed, lore) {
   const name = String((parsed && parsed.name) || '시뮬봇');
@@ -63,6 +64,7 @@ export function renderPlayView(container, ctx) {
     mgmtConsoleOpen = false;
     lodgingSelection = new Set();
     lodgingSelectionDay = null;
+    ledgerDeltas = [];
     detachSheetKeyHandler();
     character = primaryCharacter(ctx.parsed, ctx.lore);
     // 말풍선 아바타는 기본 표정으로 고정한다 — 감정 스왑은 히어로 헤더에만 반영.
@@ -136,7 +138,7 @@ function renderBottomSheet(ctx, render) {
   const sheet = el('aside', 'play-bottom-sheet'); sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', '플레이 상태와 설정');
   const head = el('div', 'sheet-head'); const handle = button('상태 패널 닫기', 'sheet-handle'); const close = button('닫기', 'secondary-btn');
   handle.addEventListener('click', closeSheet); close.addEventListener('click', closeSheet); head.append(handle, close);
-  sheet.append(head, renderSettings(render), renderStateBox(), renderTokenBox(ctx)); overlay.append(sheet);
+  sheet.append(head, renderLedgerSection(render), renderSettings(render), renderStateBox(), renderTokenBox(ctx)); overlay.append(sheet);
   detachSheetKeyHandler(); // 재렌더 시 이전 렌더의 리스너가 남지 않도록 항상 정리
   if (mobileSheetOpen) {
     document.body.classList.add('sheet-open');
@@ -184,6 +186,7 @@ function renderChat(ctx, render) {
   clear.addEventListener('click', () => {
     if (busy) return;
     messages = [];
+    ledgerDeltas = [];
     lastPrompt = null;
     fastCombatLog = [];
     render();
@@ -281,6 +284,13 @@ function renderDecisionCard(input, ctx, render) {
 }
 
 function renderMessage(message, ctx, showIdentity) {
+  if (message.role === 'ledger') {
+    const row = el('article', 'play-ledger-message');
+    const chips = el('div', 'play-chip-row');
+    for (const chip of message.chips || []) chips.append(renderChip(chip));
+    row.append(chips);
+    return row;
+  }
   const wrap = el('article', `play-message ${message.role}`);
   const text = el('div', 'play-message-text');
   text.textContent = message.content;
@@ -347,7 +357,7 @@ function renderSide(ctx, render) {
   const side = el('aside', 'play-side-panel');
   const hud = renderCombatHud();
   if (hud) side.append(hud);
-  side.append(renderSettings(render), renderStateBox(), renderTokenBox(ctx));
+  side.append(renderLedgerSection(render), renderSettings(render), renderStateBox(), renderTokenBox(ctx));
   return side;
 }
 
@@ -456,9 +466,10 @@ function renderManagementConsole(input, ctx, render) {
   details.open = mgmtConsoleOpen;
   details.addEventListener('toggle', () => { mgmtConsoleOpen = details.open; });
   const summary = el('summary');
-  summary.textContent = '🗂 관리';
+  summary.textContent = '⚔ 현장 행동';
   details.append(summary);
   for (const section of descriptor.sections) {
+    if (['sell', 'buy', 'purchase', 'upgrade'].includes(section.type)) continue;
     const group = el('div', 'mgmt-section');
     const label = el('span', 'combat-command-label');
     const trafficDay = Number(getEngineState().day);
@@ -497,6 +508,7 @@ function renderManagementConsole(input, ctx, render) {
       check.addEventListener('click', () => runManagementTurn({ id: 'mail_check', params: {} }, input, ctx, render));
       group.append(check);
       for (const letter of section.mail.letters) {
+        if (letter.type === 'reward') continue;
         const kind = letter.type === 'reward' ? '감사 선물' : '의뢰 편지';
         const open = button(`📨 ${letter.axis} ${kind} 개봉`, 'secondary-btn');
         open.disabled = busy;
@@ -504,14 +516,14 @@ function renderManagementConsole(input, ctx, render) {
         group.append(open);
       }
     }
-    if (section.type === 'sell' || section.type === 'buy') for (const item of section.items) {
+    if (false && (section.type === 'sell' || section.type === 'buy')) for (const item of section.items) {
       const owned = section.type === 'buy' && item.owned ? ` · 보유 ${item.owned}` : '';
       const control = button(`${item.name} (${formatMoney(item.price)})${owned}`, 'secondary-btn');
       control.disabled = busy || (section.type === 'buy' && !item.affordable);
       control.addEventListener('click', () => runManagementTurn({ id: section.type === 'buy' ? 'buy_item' : 'sale', params: { menuName: item.name, qty: 1 } }, input, ctx, render));
       group.append(control);
     }
-    if (section.type === 'purchase') for (const item of section.items) {
+    if (false && section.type === 'purchase') for (const item of section.items) {
       const line = el('div', 'mgmt-row purchase-stepper');
       const name = el('span'); name.textContent = item.label || item.id;
       const minus = button('−', 'secondary-btn');
@@ -538,7 +550,7 @@ function renderManagementConsole(input, ctx, render) {
       line.append(name, minus, qty, plus, control);
       group.append(line);
     }
-    if (section.type === 'upgrade') for (const item of section.items) {
+    if (false && section.type === 'upgrade') for (const item of section.items) {
       const control = button(item.maxed ? `${item.label} Lv.${item.level} (최대)` : `${item.label} Lv.${item.level}→${item.level + 1} (${formatMoney(item.nextCost)})`, 'secondary-btn');
       control.disabled = busy || item.maxed || !item.affordable;
       control.addEventListener('click', () => runManagementTurn({ id: 'upgrade', params: { facility: item.id } }, input, ctx, render));
@@ -570,6 +582,74 @@ function renderManagementConsole(input, ctx, render) {
   return details;
 }
 
+function renderLedgerSection(render) {
+  const sectionNode = titled('🧾 경영');
+  sectionNode.classList.add('ledger-section');
+  if (busy) sectionNode.classList.add('is-busy');
+  const descriptor = availableManagement(getSchema(), getEngineState());
+  const addButton = (label, event, disabled = false) => {
+    const control = button(label, 'secondary-btn');
+    control.disabled = busy || disabled;
+    control.addEventListener('click', () => runLedgerAction(event, render));
+    sectionNode.append(control);
+  };
+  for (const section of descriptor.sections) {
+    if (section.type === 'traffic' && section.mail) for (const letter of section.mail.letters.filter((item) => item.type === 'reward')) {
+      addButton(`📨 ${letter.axis} 감사 선물 개봉`, { id: 'mail_open', params: { mailId: letter.id } });
+    }
+    if (section.type === 'sell' || section.type === 'buy') for (const item of section.items) {
+      const owned = section.type === 'buy' && item.owned ? ` · 보유 ${item.owned}` : '';
+      addButton(`${section.type === 'sell' ? '판매' : '구매'} · ${item.name} (${formatMoney(item.price)})${owned}`, { id: section.type === 'buy' ? 'buy_item' : 'sale', params: { menuName: item.name, qty: 1 } }, section.type === 'buy' && !item.affordable);
+    }
+    if (section.type === 'purchase') for (const item of section.items) {
+      const line = el('div', 'purchase-stepper');
+      const name = el('span'); name.textContent = item.label || item.id;
+      const minus = button('−', 'secondary-btn');
+      const qty = el('input', 'purchase-qty'); qty.type = 'number'; qty.min = '1'; qty.max = '999'; qty.value = '1';
+      const plus = button('+', 'secondary-btn');
+      const control = button('', 'secondary-btn');
+      const readQty = () => Math.max(1, Math.min(999, Math.round(Number(qty.value) || 1)));
+      const update = () => { const value = readQty(); control.textContent = `구매 (합계 ${formatMoney(Number(item.basePrice || 0) * value)})`; control.disabled = busy || Number(getEngineState().gold || 0) < Number(item.basePrice || 0) * value; return value; };
+      const clamp = () => { const value = update(); qty.value = String(value); return value; };
+      minus.disabled = busy; plus.disabled = busy; qty.disabled = busy;
+      minus.addEventListener('click', () => { qty.value = String(readQty() - 1); clamp(); });
+      plus.addEventListener('click', () => { qty.value = String(readQty() + 1); clamp(); });
+      qty.addEventListener('input', update); qty.addEventListener('change', clamp);
+      control.addEventListener('click', () => runLedgerAction({ id: 'purchase', params: { resource: item.id, qty: clamp() } }, render));
+      clamp(); line.append(name, minus, qty, plus, control); sectionNode.append(line);
+    }
+    if (section.type === 'upgrade') for (const item of section.items) {
+      addButton(item.maxed ? `${item.label} Lv.${item.level} (최대)` : `${item.label} Lv.${item.level}→${item.level + 1} (${formatMoney(item.nextCost)})`, { id: 'upgrade', params: { facility: item.id } }, item.maxed || !item.affordable);
+    }
+  }
+  return sectionNode;
+}
+
+function runLedgerAction(event, render) {
+  if (busy) return;
+  const result = runEvent(event);
+  const chips = [];
+  for (const entry of result.entries || []) {
+    const item = summarizeEventItem(event.id, entry, formatMoney);
+    chips.push({ ok: !!entry.ok, text: item.text, kind: item.kind });
+    if (entry.ok) ledgerDeltas.push(ledgerDelta(event, item.text));
+  }
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'ledger') last.chips.push(...chips);
+  else messages.push({ role: 'ledger', chips });
+  render();
+}
+
+function ledgerDelta(event, summary) {
+  const params = event.params || {};
+  if (event.id === 'purchase') return `재료(${params.resource}) ${params.qty}인분을 구매해 창고에 보관했다 (${summary})`;
+  if (event.id === 'buy_item') return `${params.menuName} ${params.qty || 1}개를 구매했다 (${summary})`;
+  if (event.id === 'sale') return `${params.menuName} ${params.qty || 1}개를 판매했다 (${summary})`;
+  if (event.id === 'upgrade') return `${params.facility} 시설을 증축 완료했다 (${summary})`;
+  if (event.id === 'mail_open') return `감사 선물 편지를 개봉했다 (${summary})`;
+  return `${event.id} 행동을 처리했다 (${summary})`;
+}
+
 async function runManagementTurn(event, input, ctx, render) {
   if (busy) return;
   busy = true;
@@ -577,6 +657,7 @@ async function runManagementTurn(event, input, ctx, render) {
   const chips = [];
   const resultTexts = [];
   const recentForNarration = messages.slice(-4);
+  const recentChanges = ledgerDeltas.slice();
   if (flavorText) messages.push({ role: 'user', content: flavorText });
   input.value = '';
   // 스포 방지(사용자 피드백): 엔진은 먼저 굴리되, 칩·메시지·상태 패널 공개는 서사 도착과 함께.
@@ -586,7 +667,7 @@ async function runManagementTurn(event, input, ctx, render) {
   appendEventChips(event.id, result.entries, chips, resultTexts);
   const pending = { role: 'assistant', content: '', chips };
   try {
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions() });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges });
     lastPrompt = prompt;
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     applyEmotion(parsed.emotion);
@@ -597,6 +678,7 @@ async function runManagementTurn(event, input, ctx, render) {
     chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '관리 결과가 반영되었습니다.';
   } finally {
+    ledgerDeltas = [];
     messages.push(pending); // 서사와 칩·상태가 함께 나타난다
     busy = false;
     render();
@@ -610,6 +692,7 @@ async function runManagementBatch(items, input, ctx, render) {
   const chips = [];
   const resultTexts = [];
   const recentForNarration = messages.slice(-4);
+  const recentChanges = ledgerDeltas.slice();
   if (flavorText) messages.push({ role: 'user', content: flavorText });
   input.value = '';
   render();
@@ -623,7 +706,7 @@ async function runManagementBatch(items, input, ctx, render) {
   }
   const pending = { role: 'assistant', content: '', chips };
   try {
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions() });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges });
     lastPrompt = prompt;
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     applyEmotion(parsed.emotion);
@@ -634,6 +717,7 @@ async function runManagementBatch(items, input, ctx, render) {
     chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '관리 결과가 반영되었습니다.';
   } finally {
+    ledgerDeltas = [];
     messages.push(pending);
     busy = false;
     render();
@@ -875,8 +959,9 @@ async function runCombatTurn(event, input, ctx, render) {
   }
   try {
     const narrationResults = fastCombat ? [...fastCombatLog, ...resultTexts] : resultTexts;
+    const recentChanges = ledgerDeltas.slice();
     if (fastCombat) fastCombatLog = [];
-    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions() });
+    const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: narrationResults, flavorText, recentMessages: recentForNarration, emotions: emotions(), recentChanges });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
@@ -888,6 +973,7 @@ async function runCombatTurn(event, input, ctx, render) {
     chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '전투 결과가 반영되었습니다.';
   } finally {
+    ledgerDeltas = [];
     busy = false;
     render();
   }
@@ -921,9 +1007,10 @@ async function startCombat(ctx, render) {
   if (busy) return;
   busy = true;
   render();
+  const recentChanges = ledgerDeltas.slice();
   try {
     const instruction = '이번 장면에 어울리는 적 명부로 start_encounter 사건 하나만 JSON으로 내라. 서사는 1~2문장만 허용한다.';
-    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions() });
+    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), recentChanges });
     lastPrompt = prompt;
     const parsed = parseAssistantResponse(await callProvider(providerConfig(settings), prompt));
     const event = parsed.events.find((item) => item.id === 'start_encounter');
@@ -942,6 +1029,7 @@ async function startCombat(ctx, render) {
   } catch (_) {
     messages.push({ role: 'assistant', content: '', chips: [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }] });
   } finally {
+    ledgerDeltas = [];
     busy = false;
     render();
   }
@@ -952,10 +1040,11 @@ async function submitTurn(text, ctx, render) {
   busy = true;
   messages.push({ role: 'user', content: text });
   render();
+  const recentChanges = ledgerDeltas.slice();
   try {
     const schema = getSchema();
     const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === 'assistant');
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions() });
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), recentChanges });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
@@ -977,6 +1066,7 @@ async function submitTurn(text, ctx, render) {
   } catch (err) {
     messages.push({ role: 'assistant', content: safeError(err), chips: [{ ok: false, kind: 'system', text: 'API 오류' }] });
   } finally {
+    ledgerDeltas = [];
     busy = false;
     render();
   }
@@ -1017,7 +1107,7 @@ function formatMoney(value) {
 function transcriptText() {
   const out = [];
   for (const m of messages) {
-    out.push((m.role === 'user' ? '유저: ' : 'AI: ') + String(m.content || ''));
+    if (m.role !== 'ledger') out.push((m.role === 'user' ? '유저: ' : 'AI: ') + String(m.content || ''));
     if (m.chips && m.chips.length) out.push(m.chips.map((c) => `[${c.text}]`).join(' '));
   }
   return out.join('\n\n');

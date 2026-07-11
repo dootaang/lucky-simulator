@@ -818,6 +818,8 @@ select:focus { border-color: var(--amber-line); }
   border-color: var(--card-accent, var(--amber-line));
 }
 .play-message.assistant { justify-self: start; background: var(--surface-2); }
+.play-ledger-message { justify-self: start; max-width: min(760px, 96%); padding: 4px 8px; border-left: 2px solid var(--line-strong); background: var(--inset); }
+.play-ledger-message .play-chip-row { margin-top: 0; }
 .play-message-text { white-space: pre-wrap; }
 
 .play-chip-row, .play-button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
@@ -862,6 +864,8 @@ select:focus { border-color: var(--amber-line); }
 .play-notice { margin: 0; color: var(--ink-dim); font-size: 11.5px; }
 
 .play-side-section { display: grid; gap: 10px; }
+.ledger-section.is-busy { opacity: 0.5; }
+.ledger-section .purchase-stepper { flex-wrap: wrap; }
 .play-context-pre { max-height: 220px; overflow: auto; color: var(--ink-mid); }
 
 /* 시그니처: 인광 게이지 — 상시 로어북 대비 이번 턴 주입량 */

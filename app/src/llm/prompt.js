@@ -143,7 +143,7 @@ function formatEngineVerdicts(chips) {
   return `[엔진 판정 — 직전 턴 사건 처리 결과]\n${lines.join('\n')}`;
 }
 
-function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions }) {
+function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions, recentChanges }) {
   const combatCapable = isCombatCapable(schema);
   const stateText = summarize(schema, state);
   const npcIds = relatedNpcIds(schema, state, recentMessages, userInput);
@@ -158,6 +158,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   const questList = questListText(schema, state);
   const loreText = loreContext(lore, recentMessages, userInput);
   const verdictText = formatEngineVerdicts(lastVerdicts);
+  const changesText = formatRecentChanges(recentChanges);
 
   const context = [
     '[상태]',
@@ -165,6 +166,8 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     '',
     verdictText,
     verdictText ? '' : '',
+    changesText,
+    changesText ? '' : '',
     npcText ? '[NPC 상태]\n' + npcText + '\n' : '',
     repCats ? '[평판 카테고리]\n' + repCats + '\n' : '',
     expCats ? '[경험치 카테고리]\n' + expCats + '\n' : '',
@@ -211,17 +214,20 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   };
 }
 
-function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages, emotions }) {
+function buildNarrationPrompt({ schema, state, results, flavorText, recentMessages, emotions, recentChanges }) {
   const stateText = summarize(schema, state);
   const combatActive = !!(state.combat && state.combat.active);
   const combatLine = stateText.split('\n').find((line) => line.startsWith('[전투]')) || '[전투] 종료됨';
   const managementLines = stateText.split('\n').filter((line) => /^\[(자원|여관|소지품)\]/.test(line)).slice(0, 2).join('\n') || '상태 변화 없음';
   const resultText = (results || []).map((result) => typeof result === 'string' ? result : String((result && result.text) || '')).filter(Boolean).join('\n');
+  const changesText = formatRecentChanges(recentChanges);
   const context = [
     combatActive ? '[확정된 전투 결과]' : '[확정된 결과]',
     combatActive && (results || []).length > 8 ? '여러 턴의 전투 전체를 시간순으로 요약 서사화하라.' : '',
     resultText || '변화 없음',
     '',
+    changesText,
+    changesText ? '' : '',
     combatActive ? combatLine : managementLines,
     flavorText ? `플레이어의 연출 의도: ${flavorText}` : '',
     Array.isArray(emotions) && emotions.length ? `서사 뒤에 \`\`\`json {"emotion":"값"} \`\`\` 블록을 덧붙여도 된다. 값은 반드시 다음 중 하나: ${emotions.join(', ')}` : '',
@@ -237,6 +243,12 @@ function buildNarrationPrompt({ schema, state, results, flavorText, recentMessag
     relatedNpcIds: [],
     injectedText: { state: injectedState, results: resultText, flavorText: flavorText || '' },
   };
+}
+
+function formatRecentChanges(recentChanges) {
+  if (!Array.isArray(recentChanges) || !recentChanges.length) return '';
+  return '[직전 장면 이후 주인장이 직접 처리한 변화 — 서사 도입부에 자연스럽게 녹일 것. 마법처럼 갑자기가 아니라 막간에 처리된 결과로. 이미 언급한 변화는 반복 금지]\n'
+    + recentChanges.map((change) => `- ${String(change)}`).join('\n');
 }
 
 // 대화 이력을 API 전송용으로 정리: ①마커 전용 assistant 메시지('⚡'/'🧪' — 엔진 전용 턴 표기)를
