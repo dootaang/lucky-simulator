@@ -123,7 +123,9 @@ function summarize(schema, state) {
     }
     lines.push(`[객실] ${occupied.length ? occupied.join(' · ') + ' · 나머지 공실' : '전 객실 공실'}`);
   } else if (Number(state.gold || 0) !== 0 || Object.keys(resources).length > 0) {
-    lines.push(`[자원] 골드 ${formatNumber(state.gold)}원`);
+    // 자원 수량도 함께 — 골드만 보이면 정산으로 불어난 자원이 상태에 안 나타난다(사용자 피드백).
+    const resourceParts = Object.entries(resources).filter(([id]) => id !== 'gold').map(([id, qty]) => `${id} ${formatNumber(qty)}`);
+    lines.push(`[자원] 골드 ${formatNumber(state.gold)}원${resourceParts.length ? ` · ${resourceParts.join(' · ')}` : ''}`);
   }
   if (!innLike) {
     const facilityItems = entityList(schema, 'facility');

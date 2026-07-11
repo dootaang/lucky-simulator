@@ -106,7 +106,8 @@ export function summarizeEvent(type, entry, formatMoney) {
       else if (Array.isArray(step.pools)) for (const pool of step.pools) healedByPool[pool.id] = (healedByPool[pool.id] || 0) + Number(pool.healed || 0);
       else if (step.type === 'upkeep') text += ` · 유지비 -${step.paid}`;
     }
-    for (const [id, healed] of Object.entries(healedByPool)) text += ` · ${String(id).toUpperCase()} +${healed}`;
+    // 0 회복(가득 찬 풀)은 표기 생략 — "HP +0" 노이즈가 서사로 오염됨(사용자 피드백).
+    for (const [id, healed] of Object.entries(healedByPool)) if (healed > 0) text += ` · ${String(id).toUpperCase()} +${healed}`;
     return text;
   }
   if (type === 'sale') {

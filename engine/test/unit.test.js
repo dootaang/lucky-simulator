@@ -130,7 +130,8 @@ test('management lists follow state resources, hide menu duplicates, and summari
   const sections = availableManagement(shop, state).sections;
   assert.deepEqual(sections.find((section) => section.type === 'gather').resources, ['res', 'part']);
   assert.deepEqual(sections.find((section) => section.type === 'purchase').items.map((item) => item.id), ['res', 'part', 'unused']);
-  assert.equal(summarize(shop, state), '[자원] 골드 1,000원\n[시설] 훈련 시설 Lv.2 · 방위 시설 Lv.1');
+  // [자원] 줄은 자원 수량도 함께 표기한다(M9a.1 — 정산으로 불어난 자원 가시화).
+  assert.equal(summarize(shop, state), '[자원] 골드 1,000원 · res 1 · part 2\n[시설] 훈련 시설 Lv.2 · 방위 시설 Lv.1');
 });
 
 test('frozen failed state remains intact', () => {
