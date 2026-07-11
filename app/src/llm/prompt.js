@@ -26,6 +26,7 @@ const EVENT_PROMPTS = {
   experience: `- exp_gain {category, reason} — 의미 있는 행동에만, 매 턴 금지. category는 [경험치 카테고리] 목록에서만(목록에 없으면 내지 마라). (엔진이 값 결정)`,
   dayEnd: `- day_end {} — 플레이어가 하루를 마무리할 때 ("오늘은 여기까지", "잠자리에 든다" 등). (엔진: 매출 정산·임금·체크아웃)`,
   item: `- use_item {itemId} — 소모품 사용. itemId는 [소모품 목록]의 id만. (엔진: 재고 차감 + 회복. 회복량·수치는 쓰지 마라)`,
+  quest: `- attempt_quest {questId} — [의뢰 목록]의 의뢰에 도전(성공 판정·보상은 엔진). questId는 목록의 id 그대로. 성공·실패·보상액을 서사로 단정하지 마라 — 엔진 판정이 결과다.`,
 };
 
 const EVENT_RULES_HEADER = `[사건 규칙]
@@ -98,6 +99,7 @@ function eventSections(schema) {
   if (ladders.some((ladder) => ladder.id === 'player_level' && ladder.sources)) sections.push(EVENT_PROMPTS.experience);
   if ((schema.processes || []).some((process) => process.trigger === 'dayEnd') || (Array.isArray(schema.settlement) && schema.settlement.length)) sections.push(EVENT_PROMPTS.dayEnd);
   if (hasConsumables(schema)) sections.push(EVENT_PROMPTS.item);
+  if (Array.isArray(schema.quests) && schema.quests.length) sections.push(EVENT_PROMPTS.quest);
   return sections;
 }
 
@@ -153,6 +155,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   const roomList = roomListText(schema);
   const skillList = combatCapable ? skillListText(schema) : '';
   const itemList = consumableListText(schema, state);
+  const questList = questListText(schema, state);
   const loreText = loreContext(lore, recentMessages, userInput);
   const verdictText = formatEngineVerdicts(lastVerdicts);
 
@@ -170,6 +173,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     roomList ? '[객실 목록]\n' + roomList + '\n' : '',
     combatCapable && skillList ? '[스킬 목록]\n' + skillList + '\n' : '',
     itemList ? '[소모품 목록]\n' + itemList + '\n' : '',
+    questList ? '[의뢰 목록]\n' + questList + '\n' : '',
     '[세계 정보]',
     loreText || (lore ? '없음' : '카드를 드롭하면 세계관 로어북이 자동 주입됩니다'),
     '',
@@ -191,6 +195,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     items: estimateTokens(itemList),
     lore: estimateTokens(loreText || ''),
   };
+  if (questList) injectedParts.quests = estimateTokens(questList);
   if (verdictText) injectedParts.verdicts = estimateTokens(verdictText);
   if (combatCapable) injectedParts.skills = estimateTokens(skillList);
   const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
@@ -201,7 +206,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     injectedTokens,
     injectedParts,
     relatedNpcIds: npcIds,
-    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, lore: loreText },
+    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, ...(questList ? { quests: questList } : {}), lore: loreText },
   };
 }
 
@@ -314,6 +319,13 @@ function consumableListText(schema, state) {
     const count = Number(state.resources[resource.id]);
     return `${resource.id}: ${resource.label || resource.id} ×${count} (+${resource.effect.amount} ${String(resource.effect.pool).toUpperCase()})`;
   }).join('\n');
+}
+
+function questListText(schema, state) {
+  if (!Array.isArray(schema.quests) || !schema.quests.length) return '';
+  const descriptor = require('../../../engine/core/selectors.js').availableManagement(schema, state);
+  const section = descriptor.sections.find((entry) => entry.type === 'quests');
+  return section ? section.items.map((item) => `${item.done ? '✓ ' : ''}${item.id}: ${item.name} (성공 ${item.chance}% · 보상 ${item.reward ? item.reward.map((n) => Number(n).toLocaleString('ko-KR')).join('~') : '없음'})`).join('\n') : '';
 }
 
 // 현재 주방 레벨에서 팔 수 있는 메뉴 이름을 LLM에 정확히 알려준다(sale 이름 불일치 방지).

@@ -5196,8 +5196,32 @@ select:focus { border-color: var(--amber-line); }
         if (upgrade.length) sections.push({ type: "upgrade", items: upgrade });
         const gatherResources = Object.keys(state2 && state2.resources || {}).filter((id) => id !== "gold");
         if (schema2.gather && gatherResources.length) sections.push({ type: "gather", resources: gatherResources, scales: ["small", "large", "bulk"].filter((id) => Array.isArray(schema2.gather[id])).map((id) => ({ id, range: schema2.gather[id].slice() })) });
+        if (Array.isArray(schema2.quests) && schema2.quests.length) {
+          const claimed = state2.claimedRewards || [];
+          const rewards = schema2.rewards && schema2.rewards.gold;
+          const items = schema2.quests.map((quest) => ({
+            id: quest.id,
+            name: quest.name || quest.id,
+            chance: questChance(quest.check, state2),
+            reward: Array.isArray(rewards && rewards[quest.rewardTier]) ? rewards[quest.rewardTier].slice() : null,
+            done: !quest.repeatable && claimed.includes(quest.id)
+          }));
+          sections.push({ type: "quests", items });
+        }
         if ((schema2.processes || []).some((process) => process.trigger === "dayEnd")) sections.push({ type: "day_end" });
         return { sections };
+      }
+      function questChance(check, state2) {
+        if (check && check.mode === "rate") return Math.max(0, Math.min(100, Number(check.rate) || 0));
+        const sidesRaw = Math.trunc(Number(check && check.sides));
+        const sides = Math.max(1, Number.isFinite(sidesRaw) ? sidesRaw : 20);
+        const dcRaw = Math.trunc(Number(check && check.dc));
+        const dc = Number.isFinite(dcRaw) ? dcRaw : 10;
+        const stat2 = check && check.stat;
+        const mod = stat2 ? Number((state2.player && state2.player[stat2]) ?? (state2.player && state2.player.stats && state2.player.stats[stat2]) ?? 0) : 0;
+        let successes = 0;
+        for (let roll = 1; roll <= sides; roll += 1) if (roll + mod >= dc) successes += 1;
+        return Math.round(successes / sides * 100);
       }
       function roomStatus2(schema2, state2) {
         return entityList(schema2, "room").map((room) => {
@@ -5808,6 +5832,7 @@ select:focus { border-color: var(--amber-line); }
       var { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require_combat();
       var { staffMax: staffMax2, tierOf, menuTrade } = require_selectors();
       var { poolHeal } = require_pools();
+      var { resolveCheck } = require_resolveCheck();
       var {
         clone,
         clamp,
@@ -5840,6 +5865,8 @@ select:focus { border-color: var(--amber-line); }
             return upgrade(schema2, next, params, ok, fail);
           case "reward":
             return reward(schema2, next, params, rng2, ok, fail);
+          case "attempt_quest":
+            return attemptQuest(schema2, next, params, rng2, ok, fail);
           case "gain_resource":
             return gainResource(schema2, next, params, rng2, ok, fail);
           case "resource_delta":
@@ -5917,6 +5944,27 @@ select:focus { border-color: var(--amber-line); }
         state2.gold = Number(state2.gold || 0) + amount;
         state2.claimedRewards = (state2.claimedRewards || []).concat([normalizedQuestId]);
         return ok({ questId: normalizedQuestId, tier, goldDelta: amount, before, after: state2.gold, reason: params.reason || "" });
+      }
+      function attemptQuest(schema2, state2, params, rng2, ok, fail) {
+        if (["amount", "gold", "goldDelta", "roll", "tier"].some((key) => key in params)) return fail("quest_number_not_allowed");
+        if (state2.combat && state2.combat.active) return fail("in_combat");
+        const questId = params.questId == null ? "" : String(params.questId);
+        const quest = (schema2.quests || []).find((entry) => entry && entry.id === questId);
+        if (!quest) return fail("unknown_quest", questId);
+        if (!quest.repeatable && (state2.claimedRewards || []).includes(questId)) return fail("already_claimed", questId);
+        const range = schema2 && schema2.rewards && schema2.rewards.gold && schema2.rewards.gold[quest.rewardTier];
+        if (!isRewardRange(range)) return fail("unknown_reward_tier", quest.rewardTier);
+        const check = Object.assign({}, quest.check);
+        if (check.mode === "dc" && check.stat) {
+          check.mod = Number((state2.player && state2.player[check.stat]) ?? (state2.player && state2.player.stats && state2.player.stats[check.stat]) ?? 0);
+        }
+        const result = resolveCheck(rng2, check);
+        const base = { questId, name: quest.name || questId, roll: result.rand, tier: result.tier, success: result.success };
+        if (!result.success) return ok(base);
+        const goldDelta2 = rng2.int(range[0], range[1]);
+        state2.gold = Number(state2.gold || 0) + goldDelta2;
+        if (!quest.repeatable) state2.claimedRewards = (state2.claimedRewards || []).concat([questId]);
+        return ok(Object.assign(base, { goldDelta: goldDelta2, claimed: !quest.repeatable }));
       }
       function isRewardRange(range) {
         if (!Array.isArray(range) || range.length !== 2) return false;
@@ -6311,7 +6359,8 @@ select:focus { border-color: var(--amber-line); }
         reputation: `- rep_event {axis, category, reason} \u2014 \uD3C9\uD310 \uBCC0\uB3D9. axis\xB7category\uB294 [\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC. (\uC5D4\uC9C4\uC774 \uBCC0\uB3D9\uAC12 \uACB0\uC815)`,
         experience: `- exp_gain {category, reason} \u2014 \uC758\uBBF8 \uC788\uB294 \uD589\uB3D9\uC5D0\uB9CC, \uB9E4 \uD134 \uAE08\uC9C0. category\uB294 [\uACBD\uD5D8\uCE58 \uCE74\uD14C\uACE0\uB9AC] \uBAA9\uB85D\uC5D0\uC11C\uB9CC(\uBAA9\uB85D\uC5D0 \uC5C6\uC73C\uBA74 \uB0B4\uC9C0 \uB9C8\uB77C). (\uC5D4\uC9C4\uC774 \uAC12 \uACB0\uC815)`,
         dayEnd: `- day_end {} \u2014 \uD50C\uB808\uC774\uC5B4\uAC00 \uD558\uB8E8\uB97C \uB9C8\uBB34\uB9AC\uD560 \uB54C ("\uC624\uB298\uC740 \uC5EC\uAE30\uAE4C\uC9C0", "\uC7A0\uC790\uB9AC\uC5D0 \uB4E0\uB2E4" \uB4F1). (\uC5D4\uC9C4: \uB9E4\uCD9C \uC815\uC0B0\xB7\uC784\uAE08\xB7\uCCB4\uD06C\uC544\uC6C3)`,
-        item: `- use_item {itemId} \u2014 \uC18C\uBAA8\uD488 \uC0AC\uC6A9. itemId\uB294 [\uC18C\uBAA8\uD488 \uBAA9\uB85D]\uC758 id\uB9CC. (\uC5D4\uC9C4: \uC7AC\uACE0 \uCC28\uAC10 + \uD68C\uBCF5. \uD68C\uBCF5\uB7C9\xB7\uC218\uCE58\uB294 \uC4F0\uC9C0 \uB9C8\uB77C)`
+        item: `- use_item {itemId} \u2014 \uC18C\uBAA8\uD488 \uC0AC\uC6A9. itemId\uB294 [\uC18C\uBAA8\uD488 \uBAA9\uB85D]\uC758 id\uB9CC. (\uC5D4\uC9C4: \uC7AC\uACE0 \uCC28\uAC10 + \uD68C\uBCF5. \uD68C\uBCF5\uB7C9\xB7\uC218\uCE58\uB294 \uC4F0\uC9C0 \uB9C8\uB77C)`,
+        quest: `- attempt_quest {questId} \u2014 [\uC758\uB8B0 \uBAA9\uB85D]\uC758 \uC758\uB8B0\uC5D0 \uB3C4\uC804(\uC131\uACF5 \uD310\uC815\xB7\uBCF4\uC0C1\uC740 \uC5D4\uC9C4). questId\uB294 \uBAA9\uB85D\uC758 id \uADF8\uB300\uB85C. \uC131\uACF5\xB7\uC2E4\uD328\xB7\uBCF4\uC0C1\uC561\uC744 \uC11C\uC0AC\uB85C \uB2E8\uC815\uD558\uC9C0 \uB9C8\uB77C \u2014 \uC5D4\uC9C4 \uD310\uC815\uC774 \uACB0\uACFC\uB2E4.`
       };
       var EVENT_RULES_HEADER = `[\uC0AC\uAC74 \uADDC\uCE59]
 - \uC2E4\uC81C\uB85C \uC644\uACB0\uB41C \uC77C\uB9CC. \uC9C4\uD589 \uC911\xB7\uACC4\uD68D\uC740 \uC0AC\uAC74\uC774 \uC544\uB2C8\uB2E4.
@@ -6375,6 +6424,7 @@ select:focus { border-color: var(--amber-line); }
         if (ladders.some((ladder) => ladder.id === "player_level" && ladder.sources)) sections.push(EVENT_PROMPTS.experience);
         if ((schema2.processes || []).some((process) => process.trigger === "dayEnd") || Array.isArray(schema2.settlement) && schema2.settlement.length) sections.push(EVENT_PROMPTS.dayEnd);
         if (hasConsumables(schema2)) sections.push(EVENT_PROMPTS.item);
+        if (Array.isArray(schema2.quests) && schema2.quests.length) sections.push(EVENT_PROMPTS.quest);
         return sections;
       }
       function hasConsumables(schema2) {
@@ -6424,6 +6474,7 @@ ${lines.join("\n")}`;
         const roomList = roomListText(schema2);
         const skillList = combatCapable ? skillListText(schema2) : "";
         const itemList = consumableListText(schema2, state2);
+        const questList = questListText(schema2, state2);
         const loreText = loreContext(lore, recentMessages, userInput);
         const verdictText = formatEngineVerdicts(lastVerdicts);
         const context = [
@@ -6440,6 +6491,7 @@ ${lines.join("\n")}`;
           roomList ? "[\uAC1D\uC2E4 \uBAA9\uB85D]\n" + roomList + "\n" : "",
           combatCapable && skillList ? "[\uC2A4\uD0AC \uBAA9\uB85D]\n" + skillList + "\n" : "",
           itemList ? "[\uC18C\uBAA8\uD488 \uBAA9\uB85D]\n" + itemList + "\n" : "",
+          questList ? "[\uC758\uB8B0 \uBAA9\uB85D]\n" + questList + "\n" : "",
           "[\uC138\uACC4 \uC815\uBCF4]",
           loreText || (lore ? "\uC5C6\uC74C" : "\uCE74\uB4DC\uB97C \uB4DC\uB86D\uD558\uBA74 \uC138\uACC4\uAD00 \uB85C\uC5B4\uBD81\uC774 \uC790\uB3D9 \uC8FC\uC785\uB429\uB2C8\uB2E4"),
           "",
@@ -6458,6 +6510,7 @@ ${lines.join("\n")}`;
           items: estimateTokens2(itemList),
           lore: estimateTokens2(loreText || "")
         };
+        if (questList) injectedParts.quests = estimateTokens2(questList);
         if (verdictText) injectedParts.verdicts = estimateTokens2(verdictText);
         if (combatCapable) injectedParts.skills = estimateTokens2(skillList);
         const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
@@ -6467,7 +6520,7 @@ ${lines.join("\n")}`;
           injectedTokens,
           injectedParts,
           relatedNpcIds: npcIds,
-          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, lore: loreText }
+          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, items: itemList, ...questList ? { quests: questList } : {}, lore: loreText }
         };
       }
       function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages }) {
@@ -6559,6 +6612,12 @@ ${lines.join("\n")}`;
           const count2 = Number(state2.resources[resource.id]);
           return `${resource.id}: ${resource.label || resource.id} \xD7${count2} (+${resource.effect.amount} ${String(resource.effect.pool).toUpperCase()})`;
         }).join("\n");
+      }
+      function questListText(schema2, state2) {
+        if (!Array.isArray(schema2.quests) || !schema2.quests.length) return "";
+        const descriptor = require_selectors().availableManagement(schema2, state2);
+        const section = descriptor.sections.find((entry) => entry.type === "quests");
+        return section ? section.items.map((item) => `${item.done ? "\u2713 " : ""}${item.id}: ${item.name} (\uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.map((n) => Number(n).toLocaleString("ko-KR")).join("~") : "\uC5C6\uC74C"})`).join("\n") : "";
       }
       function menuListText(schema2, state2) {
         const block = (schema2.entities || []).find((entry) => entry.type === "menuItem");
@@ -7061,8 +7120,11 @@ combat \uD310\uC815\uAC12\uC774 \uB8F0\uBD81\uC5D0 \uC5C6\uC73C\uBA74 \uC5D4\uC9
 skills\uC5D0\uB294 \uB8F0\uBD81\uC5D0 \uC774\uB984\uACFC \uCF54\uC2A4\uD2B8\xB7\uC704\uB825\uC774 \uBA85\uC2DC\uB41C \uC2A4\uD0AC\uB9CC \uB123\uB294\uB2E4. \uC5C6\uC73C\uBA74 \uBE48 \uAC1D\uCCB4 \uB610\uB294 \uC0DD\uB7B5\uD55C\uB2E4. "acc"\uB294 \uBA85\uC911\uB960 %\uAC00 \uC544\uB2C8\uB77C d20 \uAD74\uB9BC\uC5D0 \uB354\uD558\uB294 \uBCF4\uC815\uCE58\uB2E4(-5~+5 \uAD8C\uC7A5, \uCD5C\uB300 \xB115). \uBA85\uC911\uB960 \uAC1C\uB150\uC740 \uB123\uC9C0 \uB9C8\uB77C.
 \uC804\uD22C \uCE74\uB4DC\uC758 initialState.player\uC5D0\uB294 "pools":{"hp":{"cur":\uC815\uC218,"max":\uC815\uC218}} \uD615\uD0DC\uB85C \uAC01 \uC790\uC6D0\uC744 \uB123\uACE0 atk/def/evade/acc\uB97C \uB123\uB294\uB2E4. \uB8F0\uBD81 \uADFC\uAC70\uAC00 \uC5C6\uC73C\uBA74 \uAC01\uAC01 5/0/10/0\uC744 \uC0AC\uC6A9\uD558\uACE0 _assumptions\uC5D0 \uAE30\uB85D\uD55C\uB2E4.`;
       var REWARD_SCHEMA_APPENDIX = '\n\n[rewards/upgrades/gather table rules]\nOutput JSON must include "rewards": { "gold": { "E":[min,max], "D":[min,max], "C":[min,max], "B":[min,max], "A":[min,max], "S":[min,max] } }. Quest/manual/request reward gold belongs only in this engine table, not in individual event params.\n\n\u2605 Reward gold source priority: if the mined rules block has a per-rank table with a pay/reward range (e.g. a questPay or reward field already given as [min,max] numbers), copy those numbers EXACTLY into rewards.gold for the matching rank. Do NOT scale, round up, multiply, or inflate them \u2014 the mined numbers are the authoritative amounts. Only invent ranges for ranks that are ABSENT from the mined table, and keep those consistent in magnitude with the nearest mined rank (a lower rank must not exceed a higher rank). Sanity bound: unless a mined value explicitly says so, no rewards.gold max should exceed roughly 3x the most expensive facility upgrade cost \u2014 if your inferred number blows past that, you are hallucinating; pull it back down. If the rulebook gives no reward amounts at all, infer sensible tier ranges from menu prices and upgrade costs, then record the reason in _assumptions as temporary reward values.\n\nEach facility instance should include "upgradeCosts": { "2": cost, "3": cost, "4": cost } for the next-level expansion costs. Upgrade costs are engine-owned table values; never place costs, gold deltas, or target levels in individual upgrade events. If the rulebook does not provide exact costs, infer them from the economy scale and record the temporary assumption in _assumptions.\n\nOutput top-level "gather": { "small":[min,max], "large":[min,max], "bulk":[min,max], "note":"..." } for self-supply yields such as hunting, gathering, and monster byproducts. Gather quantities are engine-owned table values; never place qty or amount in individual gain_resource events.';
+      var QUEST_SCHEMA_APPENDIX = `
+
+\u2605\uC784\uBB34\xB7\uC758\uB8B0\xB7\uC791\uC804\xB7\uAC8C\uC2DC\uD310 \uB370\uC774\uD130\uB294 quests\uB85C \uCD9C\uB825\uD558\uB77C. rewardTier\uB294 rewards.gold\uC758 \uD0A4\uC640 \uC815\uD655\uD788 \uC77C\uCE58\uD574\uC57C \uD55C\uB2E4(\uC784\uBB34 \uCF54\uB4DC\uBCC4 \uBCF4\uC0C1\uC744 rewards.gold\uC5D0 \uB123\uC5C8\uC73C\uBA74 \uADF8 \uCF54\uB4DC\uB97C rewardTier\uB85C). quests \uD56D\uBAA9\uC740 {id,name,check:{mode:"rate",rate:\uC815\uC218}|{mode:"dc",dc:\uC815\uC218,sides?:\uC815\uC218,stat?:\uBB38\uC790\uC5F4},rewardTier,repeatable?} \uD615\uC2DD\uC774\uB2E4. \uC131\uACF5\uB960\uC774 \uCE74\uB4DC\uC5D0 \uC788\uC73C\uBA74 rate\uB85C, \uB09C\uC774\uB3C4\uB9CC \uC788\uC73C\uBA74 \uB4F1\uAE09\uBCC4 \uCD94\uC815(E 90%~S 30% \uC120)\uD558\uACE0 _assumptions\uC5D0 \uAE30\uB85D\uD558\uB77C. \uBC18\uBCF5 \uAC00\uB2A5\uD55C \uC77C\uC0C1 \uC758\uB8B0\uB9CC repeatable: true.`;
       function promptTemplate() {
-        return SYSTEM_PROMPT + SETTLEMENT_SCHEMA_APPENDIX + TRADE_SCHEMA_APPENDIX + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX;
+        return SYSTEM_PROMPT + SETTLEMENT_SCHEMA_APPENDIX + TRADE_SCHEMA_APPENDIX + COMBAT_SCHEMA_APPENDIX + REWARD_SCHEMA_APPENDIX + QUEST_SCHEMA_APPENDIX;
       }
       function buildCompilerInput2(lore, mined) {
         const entries = Array.isArray(lore && lore.entries) ? lore.entries : [];
@@ -7855,6 +7917,7 @@ ${row3.content}`;
         validateFormulas(schema2, issues);
         validateProcesses(schema2, issues);
         validateRewards(schema2, issues);
+        validateQuests(schema2, issues);
         validateGather(schema2, issues);
         validateSettlement(schema2, issues);
         validateEvents(schema2, issues);
@@ -8264,6 +8327,58 @@ ${row3.content}`;
             warn(issues, path, "Reward range should ascend.");
           }
         }
+      }
+      function validateQuests(schema2, issues) {
+        if (schema2.quests == null) return;
+        if (!Array.isArray(schema2.quests)) {
+          warn(issues, "quests", "quests must be an array; removed.");
+          delete schema2.quests;
+          return;
+        }
+        const seen = /* @__PURE__ */ new Set();
+        const normalized = [];
+        schema2.quests.forEach((raw, index) => {
+          const path = `quests[${index}]`;
+          if (!isObject(raw) || typeof raw.id !== "string" || !raw.id.trim()) {
+            warn(issues, `${path}.id`, "Quest id must be a non-empty string; removed.");
+            return;
+          }
+          const id = raw.id.trim();
+          if (seen.has(id)) {
+            warn(issues, `${path}.id`, `Duplicate quest id ${id}; removed.`);
+            return;
+          }
+          seen.add(id);
+          if (typeof raw.rewardTier !== "string" || !raw.rewardTier.trim()) {
+            warn(issues, `${path}.rewardTier`, "Quest rewardTier must be a non-empty string; removed.");
+            return;
+          }
+          const rewardTier = raw.rewardTier.trim();
+          let check;
+          if (isObject(raw.check) && raw.check.mode === "rate") {
+            const value = Math.trunc(Number(raw.check.rate));
+            check = { mode: "rate", rate: Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 50 };
+            if (!Number.isFinite(value)) warn(issues, `${path}.check.rate`, "Invalid rate normalized to 50.");
+            else if (value !== Number(raw.check.rate) || value < 0 || value > 100) warn(issues, `${path}.check.rate`, "Rate normalized to an integer from 0 to 100.");
+          } else if (isObject(raw.check) && raw.check.mode === "dc") {
+            const dc = Math.trunc(Number(raw.check.dc));
+            const sides = Math.trunc(Number(raw.check.sides));
+            check = { mode: "dc", dc: Number.isFinite(dc) ? dc : 10, sides: Number.isFinite(sides) && sides > 0 ? sides : 20 };
+            if (typeof raw.check.stat === "string" && raw.check.stat.trim()) check.stat = raw.check.stat.trim();
+            const dcInvalid = raw.check.dc != null && !Number.isFinite(dc);
+            const sidesInvalid = raw.check.sides != null && !(Number.isFinite(sides) && sides > 0);
+            if (dcInvalid || sidesInvalid) warn(issues, `${path}.check`, "Invalid dc/sides normalized to defaults.");
+            else if (raw.check.dc != null && dc !== Number(raw.check.dc) || raw.check.sides != null && sides !== Number(raw.check.sides)) warn(issues, `${path}.check`, "dc/sides normalized to integers.");
+          } else {
+            check = { mode: "rate", rate: 50 };
+            warn(issues, `${path}.check`, "Invalid or missing check normalized to rate 50.");
+          }
+          if (!isObject(schema2.rewards) || !isObject(schema2.rewards.gold) || !(rewardTier in schema2.rewards.gold)) {
+            warn(issues, `${path}.rewardTier`, `Unknown rewards.gold key ${rewardTier}; attempt will be rejected.`);
+          }
+          normalized.push({ id, name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable) });
+        });
+        schema2.quests = normalized;
       }
       function validateGather(schema2, issues) {
         if (schema2.gather == null) return;
@@ -9142,6 +9257,7 @@ ${Array.from(extras).join(" ")}` : text;
     "rep_event",
     "exp_gain",
     "reward",
+    "attempt_quest",
     "gold_delta",
     "resource_delta",
     "use_item",
@@ -9189,6 +9305,7 @@ ${Array.from(extras).join(" ")}` : text;
     return item;
   }
   function summarizeEvent(type, entry, formatMoney3) {
+    if (entry.ok && type === "attempt_quest") return entry.success ? `\u2696 ${entry.name} \u{1F3B2}${entry.roll}${entry.tier === "critical_success" ? " \uD06C\uB9AC\uD2F0\uCEEC" : ""} \uC131\uACF5 \xB7 +${formatMoney3(entry.goldDelta)}` : `\u2696 ${entry.name} \u{1F3B2}${entry.roll} \uC2E4\uD328`;
     if (entry.ok && type === "buy_item") return `\u{1F6D2} ${entry.menuName} \xD7${entry.qty} \xB7 -${formatMoney3(-entry.goldDelta)} (\uBCF4\uC720 ${entry.owned})`;
     if (entry.ok && type === "use_item") {
       const def = (activeSchema && activeSchema.resources || []).find((resource) => resource.id === entry.itemId);
@@ -9966,6 +10083,13 @@ ${Array.from(extras).join(" ")}` : text;
         const control = button2("\uD558\uB8E8 \uB9C8\uAC10", "primary-btn");
         control.disabled = busy;
         control.addEventListener("click", () => runManagementTurn({ id: "day_end", params: {} }, input2, ctx, render2));
+        group.append(control);
+      }
+      if (section.type === "quests") for (const item of section.items) {
+        const label2 = item.done ? `\u2713 ${item.name} (\uC644\uB8CC)` : `\u2696 ${item.name} \xB7 \uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.join("~") : "\uC5C6\uC74C"}`;
+        const control = button2(label2, "secondary-btn");
+        control.disabled = busy || item.done;
+        control.addEventListener("click", () => runManagementTurn({ id: "attempt_quest", params: { questId: item.id } }, input2, ctx, render2));
         group.append(control);
       }
       details.append(group);

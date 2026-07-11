@@ -4,6 +4,7 @@ const { runDayEnd } = require('./dayEnd.js');
 const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = require('./combat.js');
 const { staffMax, tierOf, menuTrade } = require('./selectors.js');
 const { poolHeal } = require('./pools.js');
+const { resolveCheck } = require('./resolveCheck.js');
 const {
   clone,
   clamp,
@@ -39,6 +40,8 @@ function applyEvent(schema, state, event, rng) {
       return upgrade(schema, next, params, ok, fail);
     case 'reward':
       return reward(schema, next, params, rng, ok, fail);
+    case 'attempt_quest':
+      return attemptQuest(schema, next, params, rng, ok, fail);
     case 'gain_resource':
       return gainResource(schema, next, params, rng, ok, fail);
     case 'resource_delta':
@@ -120,6 +123,31 @@ function reward(schema, state, params, rng, ok, fail) {
   state.gold = Number(state.gold || 0) + amount;
   state.claimedRewards = (state.claimedRewards || []).concat([normalizedQuestId]);
   return ok({ questId: normalizedQuestId, tier, goldDelta: amount, before, after: state.gold, reason: params.reason || '' });
+}
+
+function attemptQuest(schema, state, params, rng, ok, fail) {
+  if (['amount', 'gold', 'goldDelta', 'roll', 'tier'].some((key) => key in params)) return fail('quest_number_not_allowed');
+  // 전투 중 의뢰 수행 금지 — 콘솔은 숨기지만 자유 텍스트·수동 트리거 경로까지 엔진이 차단(감사 지적).
+  if (state.combat && state.combat.active) return fail('in_combat');
+  const questId = params.questId == null ? '' : String(params.questId);
+  const quest = (schema.quests || []).find((entry) => entry && entry.id === questId);
+  if (!quest) return fail('unknown_quest', questId);
+  if (!quest.repeatable && (state.claimedRewards || []).includes(questId)) return fail('already_claimed', questId);
+  const range = schema && schema.rewards && schema.rewards.gold && schema.rewards.gold[quest.rewardTier];
+  if (!isRewardRange(range)) return fail('unknown_reward_tier', quest.rewardTier);
+
+  const check = Object.assign({}, quest.check);
+  if (check.mode === 'dc' && check.stat) {
+    check.mod = Number((state.player && state.player[check.stat]) ?? (state.player && state.player.stats && state.player.stats[check.stat]) ?? 0);
+  }
+  const result = resolveCheck(rng, check);
+  const base = { questId, name: quest.name || questId, roll: result.rand, tier: result.tier, success: result.success };
+  if (!result.success) return ok(base);
+
+  const goldDelta = rng.int(range[0], range[1]);
+  state.gold = Number(state.gold || 0) + goldDelta;
+  if (!quest.repeatable) state.claimedRewards = (state.claimedRewards || []).concat([questId]);
+  return ok(Object.assign(base, { goldDelta, claimed: !quest.repeatable }));
 }
 
 function isRewardRange(range) {

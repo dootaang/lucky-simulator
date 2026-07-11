@@ -34,6 +34,7 @@ function validateSchema(obj) {
   validateFormulas(schema, issues);
   validateProcesses(schema, issues);
   validateRewards(schema, issues);
+  validateQuests(schema, issues);
   validateGather(schema, issues);
   validateSettlement(schema, issues);
   validateEvents(schema, issues);
@@ -483,6 +484,60 @@ function validateRewards(schema, issues) {
       warn(issues, path, 'Reward range should ascend.');
     }
   }
+}
+
+function validateQuests(schema, issues) {
+  if (schema.quests == null) return;
+  if (!Array.isArray(schema.quests)) {
+    warn(issues, 'quests', 'quests must be an array; removed.');
+    delete schema.quests;
+    return;
+  }
+  const seen = new Set();
+  const normalized = [];
+  schema.quests.forEach((raw, index) => {
+    const path = `quests[${index}]`;
+    if (!isObject(raw) || typeof raw.id !== 'string' || !raw.id.trim()) {
+      warn(issues, `${path}.id`, 'Quest id must be a non-empty string; removed.');
+      return;
+    }
+    const id = raw.id.trim();
+    if (seen.has(id)) {
+      warn(issues, `${path}.id`, `Duplicate quest id ${id}; removed.`);
+      return;
+    }
+    seen.add(id);
+    if (typeof raw.rewardTier !== 'string' || !raw.rewardTier.trim()) {
+      warn(issues, `${path}.rewardTier`, 'Quest rewardTier must be a non-empty string; removed.');
+      return;
+    }
+    const rewardTier = raw.rewardTier.trim();
+    let check;
+    if (isObject(raw.check) && raw.check.mode === 'rate') {
+      const value = Math.trunc(Number(raw.check.rate));
+      check = { mode: 'rate', rate: Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 50 };
+      if (!Number.isFinite(value)) warn(issues, `${path}.check.rate`, 'Invalid rate normalized to 50.');
+      else if (value !== Number(raw.check.rate) || value < 0 || value > 100) warn(issues, `${path}.check.rate`, 'Rate normalized to an integer from 0 to 100.');
+    } else if (isObject(raw.check) && raw.check.mode === 'dc') {
+      const dc = Math.trunc(Number(raw.check.dc));
+      const sides = Math.trunc(Number(raw.check.sides));
+      check = { mode: 'dc', dc: Number.isFinite(dc) ? dc : 10, sides: Number.isFinite(sides) && sides > 0 ? sides : 20 };
+      if (typeof raw.check.stat === 'string' && raw.check.stat.trim()) check.stat = raw.check.stat.trim();
+      // 생략(undefined)은 기본값의 정상 경로 — 잘못된 값이 "있을 때만" 경고(감사 지적: 오발 경고).
+      const dcInvalid = raw.check.dc != null && !Number.isFinite(dc);
+      const sidesInvalid = raw.check.sides != null && !(Number.isFinite(sides) && sides > 0);
+      if (dcInvalid || sidesInvalid) warn(issues, `${path}.check`, 'Invalid dc/sides normalized to defaults.');
+      else if ((raw.check.dc != null && dc !== Number(raw.check.dc)) || (raw.check.sides != null && sides !== Number(raw.check.sides))) warn(issues, `${path}.check`, 'dc/sides normalized to integers.');
+    } else {
+      check = { mode: 'rate', rate: 50 };
+      warn(issues, `${path}.check`, 'Invalid or missing check normalized to rate 50.');
+    }
+    if (!isObject(schema.rewards) || !isObject(schema.rewards.gold) || !(rewardTier in schema.rewards.gold)) {
+      warn(issues, `${path}.rewardTier`, `Unknown rewards.gold key ${rewardTier}; attempt will be rejected.`);
+    }
+    normalized.push({ id, name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable) });
+  });
+  schema.quests = normalized;
 }
 
 function validateGather(schema, issues) {

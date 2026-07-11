@@ -41,8 +41,35 @@ function availableManagement(schema, state) {
   if (upgrade.length) sections.push({ type: 'upgrade', items: upgrade });
   const gatherResources = Object.keys((state && state.resources) || {}).filter((id) => id !== 'gold'); // state null 가드(감사 지적)
   if (schema.gather && gatherResources.length) sections.push({ type: 'gather', resources: gatherResources, scales: ['small', 'large', 'bulk'].filter((id) => Array.isArray(schema.gather[id])).map((id) => ({ id, range: schema.gather[id].slice() })) });
+  if (Array.isArray(schema.quests) && schema.quests.length) {
+    const claimed = state.claimedRewards || [];
+    const rewards = schema.rewards && schema.rewards.gold;
+    const items = schema.quests.map((quest) => ({
+      id: quest.id,
+      name: quest.name || quest.id,
+      chance: questChance(quest.check, state),
+      reward: Array.isArray(rewards && rewards[quest.rewardTier]) ? rewards[quest.rewardTier].slice() : null,
+      done: !quest.repeatable && claimed.includes(quest.id),
+    }));
+    sections.push({ type: 'quests', items });
+  }
   if ((schema.processes || []).some((process) => process.trigger === 'dayEnd')) sections.push({ type: 'day_end' });
   return { sections };
+}
+
+function questChance(check, state) {
+  if (check && check.mode === 'rate') return Math.max(0, Math.min(100, Number(check.rate) || 0));
+  // resolveCheck의 intOr 의미와 정확히 일치시킨다 — `|| 기본값`은 정상 값 0을 왜곡해
+  // 화면 확률과 실제 판정이 어긋난다(감사 지적: High).
+  const sidesRaw = Math.trunc(Number(check && check.sides));
+  const sides = Math.max(1, Number.isFinite(sidesRaw) ? sidesRaw : 20);
+  const dcRaw = Math.trunc(Number(check && check.dc));
+  const dc = Number.isFinite(dcRaw) ? dcRaw : 10;
+  const stat = check && check.stat;
+  const mod = stat ? Number((state.player && state.player[stat]) ?? (state.player && state.player.stats && state.player.stats[stat]) ?? 0) : 0;
+  let successes = 0;
+  for (let roll = 1; roll <= sides; roll += 1) if (roll + mod >= dc) successes += 1;
+  return Math.round(successes / sides * 100);
 }
 
 function roomStatus(schema, state) {

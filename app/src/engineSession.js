@@ -23,6 +23,7 @@ export const eventTypes = [
   'rep_event',
   'exp_gain',
   'reward',
+  'attempt_quest',
   'gold_delta',
   'resource_delta',
   'use_item',
@@ -79,6 +80,9 @@ export function runEvent(event) {
 }
 
 export function summarizeEvent(type, entry, formatMoney) {
+  if (entry.ok && type === 'attempt_quest') return entry.success
+    ? `⚖ ${entry.name} 🎲${entry.roll}${entry.tier === 'critical_success' ? ' 크리티컬' : ''} 성공 · +${formatMoney(entry.goldDelta)}`
+    : `⚖ ${entry.name} 🎲${entry.roll} 실패`;
   if (entry.ok && type === 'buy_item') return `🛒 ${entry.menuName} ×${entry.qty} · -${formatMoney(-entry.goldDelta)} (보유 ${entry.owned})`;
   if (entry.ok && type === 'use_item') {
     const def = ((activeSchema && activeSchema.resources) || []).find((resource) => resource.id === entry.itemId);

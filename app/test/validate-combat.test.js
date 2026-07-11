@@ -16,6 +16,23 @@ function errors(result) {
   return result.issues.filter((issue) => issue.level === 'error');
 }
 
+test('quests normalize with warnings only and unknown reward tier does not lock approval', () => {
+  const result = validateSchema(base({
+    rewards: { gold: { E: [1, 2] } },
+    quests: [
+      { id: 'fallback', rewardTier: 'E' },
+      { id: 'dc', name: 'DC', check: { mode: 'dc', dc: '12', sides: 'bad', stat: 'strength' }, rewardTier: 'MISSING', repeatable: 1 },
+      { id: 'fallback', rewardTier: 'E' },
+    ],
+  }));
+  assert.deepEqual(errors(result), []);
+  assert.deepEqual(result.schema.quests[0].check, { mode: 'rate', rate: 50 });
+  assert.deepEqual(result.schema.quests[1].check, { mode: 'dc', dc: 12, sides: 20, stat: 'strength' });
+  assert.equal(result.schema.quests[1].repeatable, true);
+  assert.equal(result.schema.quests.length, 2);
+  assert.ok(result.issues.some((issue) => issue.level === 'warn' && /attempt will be rejected/.test(issue.msg)));
+});
+
 test('valid pools, combat, and skills produce zero errors', () => {
   const result = validateSchema(base({
     pools: [{ id: 'hp', label: '체력', max: 100 }],

@@ -9,6 +9,20 @@ const { summarize } = require('../../engine/core/selectors.js');
 const { buildSystemPrompt, formatEngineVerdicts, buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require('../src/llm/prompt.js');
 const { validateSchema } = require('../src/schema/validate.js');
 
+test('quest vocabulary and list are conditional while inn prompt bytes stay unchanged', () => {
+  const before = buildPrompt({ schema: innSchema, state: createState(innSchema), recentMessages: [], userInput: '쉰다' });
+  const questSchema = JSON.parse(JSON.stringify(innSchema));
+  questSchema.quests = [{ id: 'Q1', name: '첫 의뢰', check: { mode: 'rate', rate: 65 }, rewardTier: 'E' }];
+  questSchema.rewards = { gold: { E: [1000, 1000] } };
+  const prompt = buildPrompt({ schema: questSchema, state: createState(questSchema), recentMessages: [], userInput: '도전' });
+  assert.match(prompt.system, /attempt_quest \{questId\}/);
+  assert.match(prompt.messages.at(-1).content, /\[의뢰 목록\]/);
+  assert.match(prompt.messages.at(-1).content, /Q1: 첫 의뢰 \(성공 65% · 보상 1,000~1,000\)/);
+  assert.ok(prompt.injectedParts.quests > 0);
+  assert.doesNotMatch(before.system, /attempt_quest/);
+  assert.doesNotMatch(before.messages.at(-1).content, /\[의뢰 목록\]/);
+});
+
 test('inn system prompt keeps its identity and all inn event vocabulary', () => {
   const system = buildSystemPrompt(innSchema);
   assert.match(system, /"용사여관"의 내레이터/);
