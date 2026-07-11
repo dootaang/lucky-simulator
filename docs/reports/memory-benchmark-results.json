@@ -1,0 +1,90 @@
+{
+  "provider": "fixed-hashgram-256",
+  "corpus": {
+    "messages": 329,
+    "records": 102,
+    "questions": 120
+  },
+  "groups": {
+    "A. recent-only": {
+      "retrieval": {
+        "recallAt1": 0.1,
+        "recallAt5": 0.16,
+        "recallAt10": 0.16,
+        "mrr": 0.125,
+        "ndcgAt10": 0.13392789260714374,
+        "attributionPrecision": 1,
+        "supersededRejectionRate": 1
+      },
+      "facts": {
+        "supersededAsCurrentCount": 0,
+        "forbiddenClaimCount": 10
+      },
+      "resources": {
+        "meanMemoryTokens": 32.75,
+        "maxMemoryTokens": 63,
+        "budgetTokens": 2000
+      }
+    },
+    "B. structured+lexical": {
+      "retrieval": {
+        "recallAt1": 0.23,
+        "recallAt5": 0.53,
+        "recallAt10": 0.73,
+        "mrr": 0.35865397510985764,
+        "ndcgAt10": 0.43463058392957543,
+        "attributionPrecision": 1,
+        "supersededRejectionRate": 1
+      },
+      "facts": {
+        "supersededAsCurrentCount": 0,
+        "forbiddenClaimCount": 31
+      },
+      "resources": {
+        "meanMemoryTokens": 131.075,
+        "maxMemoryTokens": 190,
+        "budgetTokens": 2000
+      }
+    },
+    "C. hypa-v3": {
+      "retrieval": {
+        "recallAt1": 0.1,
+        "recallAt5": 0.22,
+        "recallAt10": 0.5,
+        "mrr": 0.18515854978354973,
+        "ndcgAt10": 0.24508617206035105,
+        "attributionPrecision": 1,
+        "supersededRejectionRate": 1
+      },
+      "facts": {
+        "supersededAsCurrentCount": 0,
+        "forbiddenClaimCount": 14
+      },
+      "resources": {
+        "meanMemoryTokens": 121.38333333333334,
+        "maxMemoryTokens": 148,
+        "budgetTokens": 2000
+      }
+    },
+    "D. simbot-hybrid": {
+      "retrieval": {
+        "recallAt1": 0.16,
+        "recallAt5": 0.48,
+        "recallAt10": 0.7,
+        "mrr": 0.2981031972413551,
+        "ndcgAt10": 0.3829649020134454,
+        "attributionPrecision": 1,
+        "supersededRejectionRate": 1
+      },
+      "facts": {
+        "supersededAsCurrentCount": 0,
+        "forbiddenClaimCount": 30
+      },
+      "resources": {
+        "meanMemoryTokens": 139.95833333333334,
+        "maxMemoryTokens": 193,
+        "budgetTokens": 2000
+      }
+    }
+  }
+}
