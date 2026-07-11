@@ -83,3 +83,21 @@ test('non-inn schema (no rooms) does not get traffic', () => {
   const { schema } = validateSchema(input);
   assert.equal(schema.traffic, undefined);
 });
+
+test('quests in combat schemas get default encounter chance by name heuristic', () => {
+  const input = compiledInnLike();
+  input.combat = { d: 20 };
+  input.pools = [{ id: 'hp', label: '체력', max: 100 }];
+  input.rewards = { gold: { D: [1000, 2000] } };
+  input.quests = [
+    { id: 'DUNGEON', name: '던전 탐사 의뢰', check: { mode: 'rate', rate: 70 }, rewardTier: 'D' },
+    { id: 'INTEL', name: '정보 거래 의뢰', check: { mode: 'rate', rate: 85 }, rewardTier: 'D' },
+    { id: 'FIXED', name: '고정 의뢰', check: { mode: 'rate', rate: 50 }, rewardTier: 'D', encounterChance: 5 },
+  ];
+  const { schema } = validateSchema(input);
+  const byId = Object.fromEntries(schema.quests.map((quest) => [quest.id, quest.encounterChance]));
+  assert.equal(byId.DUNGEON, 35);
+  assert.equal(byId.INTEL, 15);
+  assert.equal(byId.FIXED, 5); // 명시 값은 존중
+  assert.ok(schema.encounters && schema.encounters.pool.length >= 3); // 기본 풀 합성 선행 확인
+});

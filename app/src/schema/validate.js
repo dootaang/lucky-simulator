@@ -35,6 +35,9 @@ function validateSchema(obj) {
   validateFormulas(schema, issues);
   validateProcesses(schema, issues);
   validateRewards(schema, issues);
+  // 조우 풀 합성·검증이 의뢰 검증보다 먼저 — 미지정 encounterChance 기본치 부여가 풀 존재를 본다.
+  synthesizeEncounterModule(schema, issues);
+  validateEncounters(schema, issues);
   validateQuests(schema, issues);
   validateGather(schema, issues);
   validateSettlement(schema, issues);
@@ -194,6 +197,31 @@ function synthesizeTrafficModule(schema, issues) {
   }
   schema.traffic = traffic;
   warn(issues, 'traffic', '컴파일 결과에 영업 모듈이 없어 기본 traffic(파동 영업·숙박·우편·사건)을 자동 구성했습니다.');
+}
+
+function synthesizeEncounterModule(schema, issues) {
+  if (schema.encounters != null || !schema.combat || !schema.pools) return;
+  schema.encounters = { pool: [
+    { id: 'goblin_pack', name: '고블린 무리', rank: 'E', count: [2, 3] },
+    { id: 'wild_wolf', name: '들개 떼', rank: 'E', count: [1, 2] },
+    { id: 'bandit', name: '산적', rank: 'D', count: [1, 2] },
+  ] };
+  warn(issues, 'encounters', '전투 스키마에 기본 조우 풀을 자동 구성했습니다.');
+}
+
+function validateEncounters(schema, issues) {
+  if (schema.encounters == null) return;
+  if (!isObject(schema.encounters) || !Array.isArray(schema.encounters.pool)) {
+    warn(issues, 'encounters', 'encounters.pool must be an array; removed.'); delete schema.encounters; return;
+  }
+  schema.encounters.pool = schema.encounters.pool.map((raw, index) => {
+    if (!isObject(raw)) { warn(issues, `encounters.pool[${index}]`, 'Invalid encounter removed.'); return null; }
+    const rank = ['E','D','C','B','A','S'].includes(raw.rank) ? raw.rank : 'E';
+    let count = isRange(raw.count) ? raw.count.map((v) => Math.max(1, Math.trunc(Number(v)) || 1)) : [1, 1];
+    if (count[1] < count[0]) count = [count[1], count[0]];
+    if (rank !== raw.rank || !isRange(raw.count)) warn(issues, `encounters.pool[${index}]`, 'rank/count normalized.');
+    return { id: String(raw.id || `encounter_${index + 1}`), name: String(raw.name || raw.id || `적 ${index + 1}`), rank, count };
+  }).filter(Boolean);
 }
 
 // requires.ladderRank 게이트 정합: 사다리 id가 스키마에 존재하고 rank가 E..S 안이어야 한다.
@@ -909,7 +937,18 @@ function validateQuests(schema, issues) {
     if (!isObject(schema.rewards) || !isObject(schema.rewards.gold) || !(rewardTier in schema.rewards.gold)) {
       warn(issues, `${path}.rewardTier`, `Unknown rewards.gold key ${rewardTier}; attempt will be rejected.`);
     }
-    normalized.push({ id, name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable) });
+    const chanceRaw = Math.trunc(Number(raw.encounterChance));
+    let encounterChance = raw.encounterChance == null ? 0 : (Number.isFinite(chanceRaw) ? Math.max(0, Math.min(100, chanceRaw)) : 0);
+    if (raw.encounterChance != null && (encounterChance !== Number(raw.encounterChance))) warn(issues, `${path}.encounterChance`, 'Encounter chance normalized to an integer from 0 to 100.');
+    // 컴파일러(LLM)는 encounterChance를 모른다 — 전투·조우 풀이 있는 스키마에서 미지정 의뢰는
+    // 이름 휴리스틱으로 기본치 부여(없으면 연쇄가 실플레이에서 영원히 죽는다).
+    if (raw.encounterChance == null && schema.combat && isObject(schema.encounters) && Array.isArray(schema.encounters.pool) && schema.encounters.pool.length) {
+      const label = `${id} ${typeof raw.name === 'string' ? raw.name : ''}`;
+      encounterChance = /던전|토벌|현상|호위|구출|dungeon|bounty|subjugat|escort|rescue/i.test(label) ? 35
+        : /채집|정보|gather|intel/i.test(label) ? 15 : 25;
+      warn(issues, `${path}.encounterChance`, `Default encounter chance ${encounterChance} assigned (combat schema with encounter pool).`);
+    }
+    normalized.push({ id, name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable), encounterChance });
   });
   schema.quests = normalized;
 }

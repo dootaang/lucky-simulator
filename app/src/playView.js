@@ -440,7 +440,7 @@ function renderCombatConsole(input, ctx, render) {
     return consoleBox;
   }
   if (!descriptor.active) {
-    if (schema.combat || schema.pools) {
+    if ((schema.combat || schema.pools) && lsGet('simbot.play.manualCombat') === '1') {
       const start = button('⚔ 전투 개시', 'secondary-btn');
       start.disabled = busy;
       start.addEventListener('click', () => startCombat(ctx, render));
@@ -615,7 +615,7 @@ function renderManagementConsole(input, ctx, render) {
       group.append(control);
     }
     if (section.type === 'quests') for (const item of section.items) {
-      const label = item.done ? `✓ ${item.name} (완료)` : `⚖ ${item.name} · 성공 ${item.chance}% · 보상 ${item.reward ? item.reward.join('~') : '없음'}`;
+      const label = item.pending ? `⚖ ${item.name} 계속` : item.done ? `✓ ${item.name} (완료)` : `⚖ ${item.name} · 성공 ${item.chance}% · 보상 ${item.reward ? item.reward.join('~') : '없음'}`;
       const control = button(label, 'secondary-btn');
       control.disabled = busy || item.done;
       control.addEventListener('click', () => runManagementTurn({ id: 'attempt_quest', params: { questId: item.id } }, input, ctx, render));
@@ -844,12 +844,17 @@ function renderSettings(render) {
     render();
   });
 
+  const manualCombat = namedInput('manualCombat', '1', 'checkbox');
+  manualCombat.checked = lsGet('simbot.play.manualCombat') === '1';
+  manualCombat.addEventListener('change', () => { lsSet('simbot.play.manualCombat', manualCombat.checked ? '1' : '0'); render(); });
+
   details.append(
     field('제공자', provider),
     settings.provider === 'custom' ? field('Base URL', base) : hiddenBase(base),
     settings.provider === 'vertex' ? field('리전', location) : hiddenBase(location),
     field('모델', model),
     field('빠른 전투 (전투 서사를 종료 시 한 번에)', fastCombat),
+    field('디버그: 수동 전투 개시', manualCombat),
     field(settings.provider === 'vertex' ? '서비스 계정 JSON' : 'API 키', key),
     row(save, del),
     settings.provider === 'vertex'

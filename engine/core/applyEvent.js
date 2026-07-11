@@ -5,6 +5,7 @@ const { startEncounter, combatAction, enemyAction, enemyTurn, endEncounter } = r
 const { staffMax, tierOf, menuTrade } = require('./selectors.js');
 const { poolHeal } = require('./pools.js');
 const { resolveCheck } = require('./resolveCheck.js');
+const { rollQuestEncounter } = require('./questEncounter.js');
 const { rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require('./traffic.js');
 const {
   clone,
@@ -24,6 +25,7 @@ function applyEvent(schema, state, event, rng) {
   const params = (event && event.params) || event || {};
   if (type === 'day_end') {
     const result = runDayEnd(schema, state, rng);
+    if (result.state.pendingQuest && result.state.pendingQuest.day !== result.state.day) delete result.state.pendingQuest;
     return { state: result.state, log: [{ ok: true, event: type, report: result.report }] };
   }
 
@@ -166,6 +168,19 @@ function attemptQuest(schema, state, params, rng, ok, fail) {
   if (!quest.repeatable && (state.claimedRewards || []).includes(questId)) return fail('already_claimed', questId);
   const range = schema && schema.rewards && schema.rewards.gold && schema.rewards.gold[quest.rewardTier];
   if (!isRewardRange(range)) return fail('unknown_reward_tier', quest.rewardTier);
+
+  if (state.pendingQuest && state.pendingQuest.day !== state.day) delete state.pendingQuest;
+  if (state.pendingQuest && state.pendingQuest.questId === questId) {
+    delete state.pendingQuest;
+  } else {
+    const encounter = rollQuestEncounter(schema, state, quest);
+    if (encounter) {
+      const started = startEncounter(schema, state, { enemies: encounter.enemies }, rng, (entry) => ({ state, log: [Object.assign({ ok: true, event: 'start_encounter' }, entry)] }), fail);
+      if (!started.log[0].ok) return started;
+      state.pendingQuest = { questId, day: state.day };
+      return ok({ questId, name: quest.name || questId, encounter: encounter.encounter.id, enemies: started.log[0].enemies, text: `${quest.name || questId} 수행 중 ${encounter.encounter.name} 조우!` });
+    }
+  }
 
   const check = Object.assign({}, quest.check);
   if (check.mode === 'dc' && check.stat) {

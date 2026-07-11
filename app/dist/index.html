@@ -4802,6 +4802,13 @@ select:focus { border-color: var(--amber-line); }
             ]
           }
         },
+        encounters: {
+          pool: [
+            { id: "goblin_pack", name: "\uACE0\uBE14\uB9B0 \uBB34\uB9AC", rank: "E", count: [2, 3] },
+            { id: "wild_wolf", name: "\uB4E4\uAC1C \uB5BC", rank: "E", count: [1, 2] },
+            { id: "bandit", name: "\uC0B0\uC801", rank: "D", count: [1, 2] }
+          ]
+        },
         initialState: {
           day: 1,
           gold: 5e5,
@@ -5422,7 +5429,8 @@ select:focus { border-color: var(--amber-line); }
             name: quest.name || quest.id,
             chance: questChance(quest.check, state2),
             reward: Array.isArray(rewards && rewards[quest.rewardTier]) ? rewards[quest.rewardTier].slice() : null,
-            done: !quest.repeatable && claimed.includes(quest.id)
+            done: !quest.repeatable && claimed.includes(quest.id),
+            pending: !!(state2.pendingQuest && state2.pendingQuest.day === state2.day && state2.pendingQuest.questId === quest.id)
           }));
           sections.push({ type: "quests", items });
         }
@@ -6086,6 +6094,53 @@ select:focus { border-color: var(--amber-line); }
     }
   });
 
+  // ../engine/core/questEncounter.js
+  var require_questEncounter = __commonJS({
+    "../engine/core/questEncounter.js"(exports, module) {
+      "use strict";
+      var { deriveRng } = require_rng();
+      var RANKS = ["E", "D", "C", "B", "A", "S"];
+      var STATS = {
+        E: { hp: 8, atk: 4, def: 0, evade: 8, acc: 0 },
+        D: { hp: 12, atk: 6, def: 1, evade: 9, acc: 1 },
+        C: { hp: 18, atk: 8, def: 2, evade: 10, acc: 2 },
+        B: { hp: 26, atk: 11, def: 3, evade: 11, acc: 3 },
+        A: { hp: 36, atk: 14, def: 5, evade: 12, acc: 4 },
+        S: { hp: 50, atk: 18, def: 7, evade: 14, acc: 6 }
+      };
+      function rollQuestEncounter(schema2, state2, quest) {
+        const chance = Number(quest && quest.encounterChance || 0);
+        const pool = schema2 && schema2.encounters && schema2.encounters.pool;
+        if (!(chance > 0) || !schema2.combat || !Array.isArray(pool) || !pool.length) return null;
+        const rng2 = deriveRng(state2.seed ?? 0, `questenc/${state2.day}/${quest.id}`);
+        if (rng2.next() * 100 >= chance) return null;
+        const target = Math.max(0, RANKS.indexOf(quest.rewardTier));
+        let picked = pool[0];
+        let distance = Infinity;
+        for (const entry of pool) {
+          const index = RANKS.indexOf(entry.rank);
+          const nextDistance = Math.abs((index < 0 ? 0 : index) - target);
+          if (nextDistance < distance) {
+            picked = entry;
+            distance = nextDistance;
+          }
+        }
+        const range = picked.count || [1, 1];
+        const count2 = rng2.int(range[0], range[1]);
+        const stats = STATS[picked.rank] || STATS.E;
+        return {
+          encounter: picked,
+          enemies: Array.from({ length: count2 }, (_, index) => ({
+            name: count2 > 1 ? `${picked.name} ${index + 1}` : picked.name,
+            rank: picked.rank,
+            ...stats
+          }))
+        };
+      }
+      module.exports = { rollQuestEncounter };
+    }
+  });
+
   // ../engine/core/traffic.js
   var require_traffic = __commonJS({
     "../engine/core/traffic.js"(exports, module) {
@@ -6388,6 +6443,7 @@ select:focus { border-color: var(--amber-line); }
       var { staffMax: staffMax3, tierOf, menuTrade } = require_selectors();
       var { poolHeal } = require_pools();
       var { resolveCheck } = require_resolveCheck();
+      var { rollQuestEncounter } = require_questEncounter();
       var { rollTrafficIncident, resolveIncidentChoice, generateLodgingQueue, resolveLodgingDecision, checkMail, openMail } = require_traffic();
       var {
         clone,
@@ -6406,6 +6462,7 @@ select:focus { border-color: var(--amber-line); }
         const params = event && event.params || event || {};
         if (type === "day_end") {
           const result = runDayEnd(schema2, state2, rng2);
+          if (result.state.pendingQuest && result.state.pendingQuest.day !== result.state.day) delete result.state.pendingQuest;
           return { state: result.state, log: [{ ok: true, event: type, report: result.report }] };
         }
         const next = clone(state2);
@@ -6540,6 +6597,18 @@ select:focus { border-color: var(--amber-line); }
         if (!quest.repeatable && (state2.claimedRewards || []).includes(questId)) return fail("already_claimed", questId);
         const range = schema2 && schema2.rewards && schema2.rewards.gold && schema2.rewards.gold[quest.rewardTier];
         if (!isRewardRange(range)) return fail("unknown_reward_tier", quest.rewardTier);
+        if (state2.pendingQuest && state2.pendingQuest.day !== state2.day) delete state2.pendingQuest;
+        if (state2.pendingQuest && state2.pendingQuest.questId === questId) {
+          delete state2.pendingQuest;
+        } else {
+          const encounter = rollQuestEncounter(schema2, state2, quest);
+          if (encounter) {
+            const started = startEncounter(schema2, state2, { enemies: encounter.enemies }, rng2, (entry) => ({ state: state2, log: [Object.assign({ ok: true, event: "start_encounter" }, entry)] }), fail);
+            if (!started.log[0].ok) return started;
+            state2.pendingQuest = { questId, day: state2.day };
+            return ok({ questId, name: quest.name || questId, encounter: encounter.encounter.id, enemies: started.log[0].enemies, text: `${quest.name || questId} \uC218\uD589 \uC911 ${encounter.encounter.name} \uC870\uC6B0!` });
+          }
+        }
         const check = Object.assign({}, quest.check);
         if (check.mode === "dc" && check.stat) {
           check.mod = Number((state2.player && state2.player[check.stat]) ?? (state2.player && state2.player.stats && state2.player.stats[check.stat]) ?? 0);
@@ -8478,6 +8547,8 @@ ${row3.content}`;
         validateFormulas(schema2, issues);
         validateProcesses(schema2, issues);
         validateRewards(schema2, issues);
+        synthesizeEncounterModule(schema2, issues);
+        validateEncounters(schema2, issues);
         validateQuests(schema2, issues);
         validateGather(schema2, issues);
         validateSettlement(schema2, issues);
@@ -8629,6 +8700,34 @@ ${row3.content}`;
         }
         schema2.traffic = traffic;
         warn(issues, "traffic", "\uCEF4\uD30C\uC77C \uACB0\uACFC\uC5D0 \uC601\uC5C5 \uBAA8\uB4C8\uC774 \uC5C6\uC5B4 \uAE30\uBCF8 traffic(\uD30C\uB3D9 \uC601\uC5C5\xB7\uC219\uBC15\xB7\uC6B0\uD3B8\xB7\uC0AC\uAC74)\uC744 \uC790\uB3D9 \uAD6C\uC131\uD588\uC2B5\uB2C8\uB2E4.");
+      }
+      function synthesizeEncounterModule(schema2, issues) {
+        if (schema2.encounters != null || !schema2.combat || !schema2.pools) return;
+        schema2.encounters = { pool: [
+          { id: "goblin_pack", name: "\uACE0\uBE14\uB9B0 \uBB34\uB9AC", rank: "E", count: [2, 3] },
+          { id: "wild_wolf", name: "\uB4E4\uAC1C \uB5BC", rank: "E", count: [1, 2] },
+          { id: "bandit", name: "\uC0B0\uC801", rank: "D", count: [1, 2] }
+        ] };
+        warn(issues, "encounters", "\uC804\uD22C \uC2A4\uD0A4\uB9C8\uC5D0 \uAE30\uBCF8 \uC870\uC6B0 \uD480\uC744 \uC790\uB3D9 \uAD6C\uC131\uD588\uC2B5\uB2C8\uB2E4.");
+      }
+      function validateEncounters(schema2, issues) {
+        if (schema2.encounters == null) return;
+        if (!isObject(schema2.encounters) || !Array.isArray(schema2.encounters.pool)) {
+          warn(issues, "encounters", "encounters.pool must be an array; removed.");
+          delete schema2.encounters;
+          return;
+        }
+        schema2.encounters.pool = schema2.encounters.pool.map((raw, index) => {
+          if (!isObject(raw)) {
+            warn(issues, `encounters.pool[${index}]`, "Invalid encounter removed.");
+            return null;
+          }
+          const rank = ["E", "D", "C", "B", "A", "S"].includes(raw.rank) ? raw.rank : "E";
+          let count2 = isRange(raw.count) ? raw.count.map((v) => Math.max(1, Math.trunc(Number(v)) || 1)) : [1, 1];
+          if (count2[1] < count2[0]) count2 = [count2[1], count2[0]];
+          if (rank !== raw.rank || !isRange(raw.count)) warn(issues, `encounters.pool[${index}]`, "rank/count normalized.");
+          return { id: String(raw.id || `encounter_${index + 1}`), name: String(raw.name || raw.id || `\uC801 ${index + 1}`), rank, count: count2 };
+        }).filter(Boolean);
       }
       function validLadderRankGate(schema2, requires) {
         const gate = isObject(requires) ? requires.ladderRank : null;
@@ -9302,7 +9401,15 @@ ${row3.content}`;
           if (!isObject(schema2.rewards) || !isObject(schema2.rewards.gold) || !(rewardTier in schema2.rewards.gold)) {
             warn(issues, `${path}.rewardTier`, `Unknown rewards.gold key ${rewardTier}; attempt will be rejected.`);
           }
-          normalized.push({ id, name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable) });
+          const chanceRaw = Math.trunc(Number(raw.encounterChance));
+          let encounterChance = raw.encounterChance == null ? 0 : Number.isFinite(chanceRaw) ? Math.max(0, Math.min(100, chanceRaw)) : 0;
+          if (raw.encounterChance != null && encounterChance !== Number(raw.encounterChance)) warn(issues, `${path}.encounterChance`, "Encounter chance normalized to an integer from 0 to 100.");
+          if (raw.encounterChance == null && schema2.combat && isObject(schema2.encounters) && Array.isArray(schema2.encounters.pool) && schema2.encounters.pool.length) {
+            const label = `${id} ${typeof raw.name === "string" ? raw.name : ""}`;
+            encounterChance = /던전|토벌|현상|호위|구출|dungeon|bounty|subjugat|escort|rescue/i.test(label) ? 35 : /채집|정보|gather|intel/i.test(label) ? 15 : 25;
+            warn(issues, `${path}.encounterChance`, `Default encounter chance ${encounterChance} assigned (combat schema with encounter pool).`);
+          }
+          normalized.push({ id, name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable), encounterChance });
         });
         schema2.quests = normalized;
       }
@@ -11298,7 +11405,7 @@ ${Array.from(extras).join(" ")}` : text;
       return consoleBox;
     }
     if (!descriptor.active) {
-      if (schema2.combat || schema2.pools) {
+      if ((schema2.combat || schema2.pools) && lsGet("simbot.play.manualCombat") === "1") {
         const start = button2("\u2694 \uC804\uD22C \uAC1C\uC2DC", "secondary-btn");
         start.disabled = busy;
         start.addEventListener("click", () => startCombat(ctx, render2));
@@ -11490,7 +11597,7 @@ ${Array.from(extras).join(" ")}` : text;
         group.append(control);
       }
       if (section.type === "quests") for (const item of section.items) {
-        const label2 = item.done ? `\u2713 ${item.name} (\uC644\uB8CC)` : `\u2696 ${item.name} \xB7 \uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.join("~") : "\uC5C6\uC74C"}`;
+        const label2 = item.pending ? `\u2696 ${item.name} \uACC4\uC18D` : item.done ? `\u2713 ${item.name} (\uC644\uB8CC)` : `\u2696 ${item.name} \xB7 \uC131\uACF5 ${item.chance}% \xB7 \uBCF4\uC0C1 ${item.reward ? item.reward.join("~") : "\uC5C6\uC74C"}`;
         const control = button2(label2, "secondary-btn");
         control.disabled = busy || item.done;
         control.addEventListener("click", () => runManagementTurn({ id: "attempt_quest", params: { questId: item.id } }, input2, ctx, render2));
@@ -11724,12 +11831,19 @@ ${Array.from(extras).join(" ")}` : text;
       if (!fastCombat.checked) fastCombatLog = [];
       render2();
     });
+    const manualCombat = namedInput2("manualCombat", "1", "checkbox");
+    manualCombat.checked = lsGet("simbot.play.manualCombat") === "1";
+    manualCombat.addEventListener("change", () => {
+      lsSet("simbot.play.manualCombat", manualCombat.checked ? "1" : "0");
+      render2();
+    });
     details.append(
       field2("\uC81C\uACF5\uC790", provider),
       settings.provider === "custom" ? field2("Base URL", base) : hiddenBase(base),
       settings.provider === "vertex" ? field2("\uB9AC\uC804", location) : hiddenBase(location),
       field2("\uBAA8\uB378", model),
       field2("\uBE60\uB978 \uC804\uD22C (\uC804\uD22C \uC11C\uC0AC\uB97C \uC885\uB8CC \uC2DC \uD55C \uBC88\uC5D0)", fastCombat),
+      field2("\uB514\uBC84\uADF8: \uC218\uB3D9 \uC804\uD22C \uAC1C\uC2DC", manualCombat),
       field2(settings.provider === "vertex" ? "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON" : "API \uD0A4", key),
       row(save, del),
       settings.provider === "vertex" ? notice("\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON\uC740 GCP \uC804\uCCB4 \uAD8C\uD55C\uC744 \uAC00\uC9C8 \uC218 \uC788\uB294 \uAC15\uB825\uD55C \uC790\uACA9\uC99D\uBA85\uC785\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C \uC800\uC7A5\uD558\uC9C0 \uB9D0\uACE0 \uC0AC\uC6A9 \uD6C4 \uC0AD\uC81C\uD558\uC138\uC694.") : notice("\uD0A4\uB294 \uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 localStorage\uC5D0\uB9CC \uC800\uC7A5\uB429\uB2C8\uB2E4. \uACF5\uC6A9 PC\uC5D0\uC11C\uB294 \uC0AC\uC6A9 \uD6C4 \uBC18\uB4DC\uC2DC \uC0AD\uC81C\uD558\uC138\uC694."),

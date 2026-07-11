@@ -73,6 +73,14 @@
     }
   },
 
+  "encounters": {
+    "pool": [
+      { "id": "goblin_pack", "name": "고블린 무리", "rank": "E", "count": [2, 3] },
+      { "id": "wild_wolf", "name": "들개 떼", "rank": "E", "count": [1, 2] },
+      { "id": "bandit", "name": "산적", "rank": "D", "count": [1, 2] }
+    ]
+  },
+
   "initialState": {
     "day": 1,
     "gold": 500000,
