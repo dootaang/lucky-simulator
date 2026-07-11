@@ -128,7 +128,8 @@ function restoreSessionJournal(schema, data) {
   const records = Array.isArray(data.events) ? data.events : [];
   for (const record of records) {
     const { ok } = journal.append(record.event);
-    if (typeof record.ok === 'boolean' && record.ok !== ok) throw new TypeError(`journal_corrupt:event_${record.index}_verdict`);
+    // 판정은 필수 필드 — 누락/변조 모두 조기 차단(감사 지적: boolean 검사로 우회되던 구멍 제거).
+    if (record.ok !== ok) throw new TypeError(`journal_corrupt:event_${record.index}_verdict`);
   }
   const restoredHead = journal.head();
   const savedHead = data.head || {};

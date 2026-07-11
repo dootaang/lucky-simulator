@@ -70,6 +70,18 @@ function normalizeInt(value, fallback = 0) {
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 }
 
+// 외부 입력(이벤트 params·세션 파일·LLM 응답)이 상태 맵을 인덱싱할 때의 안전 가드 —
+// '__proto__' 같은 키는 프로토타입 체인을 truthy로 반환해 존재 검사를 우회하고
+// Object.prototype을 오염시킬 수 있다(일괄 감사 Critical). 소유 키만 인정한다.
+function safeStateKey(key) {
+  const name = String(key);
+  return name !== '__proto__' && name !== 'prototype' && name !== 'constructor';
+}
+
+function safeOwnKey(target, key) {
+  return safeStateKey(key) && !!target && Object.prototype.hasOwnProperty.call(target, String(key));
+}
+
 module.exports = {
   clone,
   clamp,
@@ -83,5 +95,7 @@ module.exports = {
   formulaById,
   rankIndex,
   normalizeInt,
+  safeStateKey,
+  safeOwnKey,
   saleConsumes,
 };

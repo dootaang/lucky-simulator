@@ -18,6 +18,8 @@ const {
   findRoom,
   findMenu,
   normalizeInt,
+  safeOwnKey,
+  safeStateKey,
   saleConsumes,
 } = require('./utils.js');
 
@@ -194,7 +196,8 @@ function upgrade(schema, state, params, ok, fail) {
 
 function setOutfit(state, params, ok, fail) {
   const npcId = params.npcId;
-  if (!state.npcs || !state.npcs[npcId]) return fail('unknown_target', npcId);
+  // safeOwnKey — '__proto__' 류 키가 프로토타입 체인을 타고 존재 검사를 우회하는 오염 차단(감사 Critical).
+  if (!safeOwnKey(state.npcs, npcId)) return fail('unknown_target', npcId);
   const outfit = normalizeInt(params.outfit);
   if (outfit < 0 || outfit > 9) return fail('invalid_outfit', params.outfit);
   const before = state.npcs[npcId].outfit;
@@ -207,11 +210,11 @@ function checkin(schema, state, params, ok, fail) {
   const room = findRoom(schema, roomNo);
   const stayDays = normalizeInt(params.stayDays, 1);
   const guestName = params.guestName;
-  if (!room) return fail('unknown_room', roomNo);
+  if (!room || !safeStateKey(roomNo)) return fail('unknown_room', roomNo);
   if (!guestName) return fail('missing_guestName');
   if (stayDays <= 0) return fail('invalid_stayDays', stayDays);
   if (Number(room.requiresRoomLevel || 1) > Number((state.facilities && state.facilities.room) || 1)) return fail('room_locked', roomNo);
-  const current = state.rooms[roomNo] || [];
+  const current = safeOwnKey(state.rooms, roomNo) ? state.rooms[roomNo] : [];
   if (room.capacity != null && current.length >= Number(room.capacity)) return fail('room_full', roomNo);
   const price = Number(room.pricePerNight || 0) * stayDays;
   state.rooms[roomNo] = current.concat([{ guestName, nightsLeft: stayDays }]);
@@ -222,7 +225,7 @@ function checkin(schema, state, params, ok, fail) {
 function checkout(state, params, ok, fail) {
   const roomNo = String(params.roomNo);
   const guestName = params.guestName;
-  const current = state.rooms[roomNo] || [];
+  const current = safeOwnKey(state.rooms, roomNo) ? state.rooms[roomNo] : [];
   const idx = current.findIndex((guest) => guest.guestName === guestName);
   if (idx < 0) return fail('guest_not_found', `${roomNo}:${guestName}`);
   const remaining = current.slice(0, idx).concat(current.slice(idx + 1));

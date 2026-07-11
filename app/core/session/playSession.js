@@ -47,10 +47,16 @@ function sanitizePromptRuns(promptRuns) {
 
 // 가져오기 1차 검증 — 구조가 맞으면 정제된 페이로드를 돌려준다.
 // 원장 내용의 진위(해시·판정)는 이후 restoreSessionJournal이 검증한다.
+// 가져오기 상한 — 거대 파일의 동기 재생으로 탭이 멈추는 Self-DoS 방지(감사 지적).
+const MAX_IMPORT_CHARS = 30 * 1024 * 1024;
+const MAX_IMPORT_EVENTS = 50000;
+
 function parsePlaySessionImport(text) {
+  const source = String(text);
+  if (source.length > MAX_IMPORT_CHARS) throw new TypeError('play_session_too_large');
   let parsed;
   try {
-    parsed = JSON.parse(String(text));
+    parsed = JSON.parse(source);
   } catch (_) {
     throw new TypeError('play_session_not_json');
   }
@@ -59,6 +65,9 @@ function parsePlaySessionImport(text) {
   }
   if (!parsed.journal || parsed.journal.contract !== 'session-journal/0.1') {
     throw new TypeError('play_session_journal_missing');
+  }
+  if (Array.isArray(parsed.journal.events) && parsed.journal.events.length > MAX_IMPORT_EVENTS) {
+    throw new TypeError('play_session_too_large');
   }
   return {
     contract: PLAY_SESSION_CONTRACT,

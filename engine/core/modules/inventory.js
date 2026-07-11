@@ -2,7 +2,7 @@
 
 const { poolHeal } = require('../pools.js');
 const { availableMenu, usableItems, menuTrade } = require('../selectors.js');
-const { findMenu, normalizeInt } = require('../utils.js');
+const { findMenu, normalizeInt, safeOwnKey } = require('../utils.js');
 const { scopedEvent } = require('./eventSupport.js');
 
 function createInventoryModule() {
@@ -53,7 +53,8 @@ function useItem(schema, state, params, ok, fail) {
 
 function gainResource(schema, state, params, rng, ok, fail) {
   const resource = params.resource || params.resourceId;
-  if (!resource || !(state.resources && resource in state.resources)) return fail('unknown_resource', resource);
+  // `in` 검사는 프로토타입 상속 키('__proto__'·'constructor')를 통과시킨다 — 소유 키만 인정(감사 Critical).
+  if (!resource || !safeOwnKey(state.resources, resource)) return fail('unknown_resource', resource);
   const table = (schema && schema.gather) || {};
   const requestedScale = params.scale || 'small';
   const scale = table[requestedScale] ? requestedScale : 'small';
@@ -68,7 +69,8 @@ function gainResource(schema, state, params, rng, ok, fail) {
 function resourceDelta(state, params, ok, fail) {
   const resource = params.resource || params.resourceId;
   const amount = normalizeInt(params.amount);
-  if (!resource || !(state.resources && resource in state.resources)) return fail('unknown_resource', resource);
+  // `in` 검사는 프로토타입 상속 키('__proto__'·'constructor')를 통과시킨다 — 소유 키만 인정(감사 Critical).
+  if (!resource || !safeOwnKey(state.resources, resource)) return fail('unknown_resource', resource);
   const before = Number(state.resources[resource] || 0);
   state.resources[resource] = Math.max(0, before + amount);
   return ok({ resource, amount, before, after: state.resources[resource], reason: params.reason || '' });

@@ -89,6 +89,8 @@ export function runEvent(event) {
 
 export function recordPromptRun(run) {
   promptRuns.push(run);
+  // 수백 턴에서 응답 원문 누적으로 메모리가 선형 증가 — 최근 500건만 유지(감사 지적).
+  if (promptRuns.length > 500) promptRuns.splice(0, promptRuns.length - 500);
 }
 
 export function getPromptRuns() {

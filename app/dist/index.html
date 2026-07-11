@@ -5528,6 +5528,13 @@ select:focus { border-color: var(--amber-line); }
         const n = Number(value);
         return Number.isFinite(n) ? Math.trunc(n) : fallback;
       }
+      function safeStateKey(key) {
+        const name = String(key);
+        return name !== "__proto__" && name !== "prototype" && name !== "constructor";
+      }
+      function safeOwnKey(target, key) {
+        return safeStateKey(key) && !!target && Object.prototype.hasOwnProperty.call(target, String(key));
+      }
       module.exports = {
         clone,
         clamp,
@@ -5541,6 +5548,8 @@ select:focus { border-color: var(--amber-line); }
         formulaById,
         rankIndex,
         normalizeInt,
+        safeStateKey,
+        safeOwnKey,
         saleConsumes
       };
     }
@@ -6428,7 +6437,7 @@ select:focus { border-color: var(--amber-line); }
     "../engine/core/traffic.js"(exports, module) {
       "use strict";
       var { deriveRng } = require_rng();
-      var { saleConsumes } = require_utils();
+      var { safeOwnKey, saleConsumes } = require_utils();
       function earlierPendingWave(traffic, resolved, waveId) {
         const targetIndex = (traffic.waves || []).findIndex((entry) => entry.id === waveId);
         return (traffic.waves || []).slice(0, targetIndex).find((entry) => !resolved[entry.id]);
@@ -6597,7 +6606,7 @@ select:focus { border-color: var(--amber-line); }
               const mult = Number.isFinite(multRaw) && multRaw > 0 ? Math.min(3, Math.max(0.5, multRaw)) : 1;
               const delta = Math.floor(base * mult + 0.5);
               const targetIds = affinity.target && affinity.target !== "staff" ? [affinity.target] : (state2.staff || []).map((item) => item.npcId);
-              const targets = Array.from(new Set(targetIds)).filter((npcId) => state2.npcs && state2.npcs[npcId]);
+              const targets = Array.from(new Set(targetIds)).filter((npcId) => safeOwnKey(state2.npcs, npcId));
               if (targets.length) {
                 entry.affinityDeltas = {};
                 const cap = Number(scale.dailyCapPerTarget || scale.dailyCap || 0);
@@ -7033,7 +7042,7 @@ select:focus { border-color: var(--amber-line); }
     "../engine/core/modules/stats.js"(exports, module) {
       "use strict";
       var { tierOf } = require_selectors();
-      var { clamp, clone, ladderById, normalizeInt, rankIndex, scaleById } = require_utils();
+      var { clamp, clone, ladderById, normalizeInt, rankIndex, safeOwnKey, scaleById } = require_utils();
       var { scopedEvent } = require_eventSupport();
       function createStatsModule() {
         return {
@@ -7063,7 +7072,7 @@ select:focus { border-color: var(--amber-line); }
         const target = params.target || params.npcId;
         const scale = scaleById(schema2, scaleId);
         if (!scale) return fail("unknown_scale", scaleId);
-        if (!target || !state2.npcs || !state2.npcs[target]) return fail("unknown_target", target);
+        if (!target || !safeOwnKey(state2.npcs, target)) return fail("unknown_target", target);
         const counterKey = `${scaleId}DeltaToday`;
         const cap = Number(scale.dailyCapPerTarget || scale.dailyCap || 0);
         const used = Number(state2.npcs[target][counterKey] || 0);
@@ -7172,7 +7181,7 @@ select:focus { border-color: var(--amber-line); }
       "use strict";
       var { poolHeal } = require_pools();
       var { availableMenu: availableMenu2, usableItems, menuTrade } = require_selectors();
-      var { findMenu, normalizeInt } = require_utils();
+      var { findMenu, normalizeInt, safeOwnKey } = require_utils();
       var { scopedEvent } = require_eventSupport();
       function createInventoryModule() {
         return {
@@ -7220,7 +7229,7 @@ select:focus { border-color: var(--amber-line); }
       }
       function gainResource(schema2, state2, params, rng, ok, fail) {
         const resource = params.resource || params.resourceId;
-        if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
+        if (!resource || !safeOwnKey(state2.resources, resource)) return fail("unknown_resource", resource);
         const table = schema2 && schema2.gather || {};
         const requestedScale = params.scale || "small";
         const scale = table[requestedScale] ? requestedScale : "small";
@@ -7234,7 +7243,7 @@ select:focus { border-color: var(--amber-line); }
       function resourceDelta(state2, params, ok, fail) {
         const resource = params.resource || params.resourceId;
         const amount = normalizeInt(params.amount);
-        if (!resource || !(state2.resources && resource in state2.resources)) return fail("unknown_resource", resource);
+        if (!resource || !safeOwnKey(state2.resources, resource)) return fail("unknown_resource", resource);
         const before = Number(state2.resources[resource] || 0);
         state2.resources[resource] = Math.max(0, before + amount);
         return ok({ resource, amount, before, after: state2.resources[resource], reason: params.reason || "" });
@@ -7364,6 +7373,8 @@ select:focus { border-color: var(--amber-line); }
         findRoom,
         findMenu,
         normalizeInt,
+        safeOwnKey,
+        safeStateKey,
         saleConsumes
       } = require_utils();
       function applyLegacyEvent(schema2, state2, event, rng) {
@@ -7523,7 +7534,7 @@ select:focus { border-color: var(--amber-line); }
       }
       function setOutfit(state2, params, ok, fail) {
         const npcId = params.npcId;
-        if (!state2.npcs || !state2.npcs[npcId]) return fail("unknown_target", npcId);
+        if (!safeOwnKey(state2.npcs, npcId)) return fail("unknown_target", npcId);
         const outfit = normalizeInt(params.outfit);
         if (outfit < 0 || outfit > 9) return fail("invalid_outfit", params.outfit);
         const before = state2.npcs[npcId].outfit;
@@ -7535,11 +7546,11 @@ select:focus { border-color: var(--amber-line); }
         const room = findRoom(schema2, roomNo);
         const stayDays = normalizeInt(params.stayDays, 1);
         const guestName = params.guestName;
-        if (!room) return fail("unknown_room", roomNo);
+        if (!room || !safeStateKey(roomNo)) return fail("unknown_room", roomNo);
         if (!guestName) return fail("missing_guestName");
         if (stayDays <= 0) return fail("invalid_stayDays", stayDays);
         if (Number(room.requiresRoomLevel || 1) > Number(state2.facilities && state2.facilities.room || 1)) return fail("room_locked", roomNo);
-        const current = state2.rooms[roomNo] || [];
+        const current = safeOwnKey(state2.rooms, roomNo) ? state2.rooms[roomNo] : [];
         if (room.capacity != null && current.length >= Number(room.capacity)) return fail("room_full", roomNo);
         const price = Number(room.pricePerNight || 0) * stayDays;
         state2.rooms[roomNo] = current.concat([{ guestName, nightsLeft: stayDays }]);
@@ -7549,7 +7560,7 @@ select:focus { border-color: var(--amber-line); }
       function checkout(state2, params, ok, fail) {
         const roomNo = String(params.roomNo);
         const guestName = params.guestName;
-        const current = state2.rooms[roomNo] || [];
+        const current = safeOwnKey(state2.rooms, roomNo) ? state2.rooms[roomNo] : [];
         const idx = current.findIndex((guest) => guest.guestName === guestName);
         if (idx < 0) return fail("guest_not_found", `${roomNo}:${guestName}`);
         const remaining = current.slice(0, idx).concat(current.slice(idx + 1));
@@ -7808,7 +7819,7 @@ select:focus { border-color: var(--amber-line); }
         const records = Array.isArray(data.events) ? data.events : [];
         for (const record of records) {
           const { ok } = journal2.append(record.event);
-          if (typeof record.ok === "boolean" && record.ok !== ok) throw new TypeError(`journal_corrupt:event_${record.index}_verdict`);
+          if (record.ok !== ok) throw new TypeError(`journal_corrupt:event_${record.index}_verdict`);
         }
         const restoredHead = journal2.head();
         const savedHead = data.head || {};
@@ -7856,10 +7867,14 @@ select:focus { border-color: var(--amber-line); }
           appliedOk: Number.isFinite(Number(run.appliedOk)) ? Number(run.appliedOk) : 0
         })));
       }
+      var MAX_IMPORT_CHARS = 30 * 1024 * 1024;
+      var MAX_IMPORT_EVENTS = 5e4;
       function parsePlaySessionImport2(text) {
+        const source = String(text);
+        if (source.length > MAX_IMPORT_CHARS) throw new TypeError("play_session_too_large");
         let parsed;
         try {
-          parsed = JSON.parse(String(text));
+          parsed = JSON.parse(source);
         } catch (_) {
           throw new TypeError("play_session_not_json");
         }
@@ -7868,6 +7883,9 @@ select:focus { border-color: var(--amber-line); }
         }
         if (!parsed.journal || parsed.journal.contract !== "session-journal/0.1") {
           throw new TypeError("play_session_journal_missing");
+        }
+        if (Array.isArray(parsed.journal.events) && parsed.journal.events.length > MAX_IMPORT_EVENTS) {
+          throw new TypeError("play_session_too_large");
         }
         return {
           contract: PLAY_SESSION_CONTRACT,
@@ -11869,6 +11887,7 @@ ${Array.from(extras).join(" ")}` : text;
   }
   function recordPromptRun(run) {
     promptRuns.push(run);
+    if (promptRuns.length > 500) promptRuns.splice(0, promptRuns.length - 500);
   }
   function hashPromptPayload(value) {
     return stateHash(value);
@@ -13952,7 +13971,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   }
   function safeError(err) {
     const message = err && err.message ? err.message : String(err || "\uC624\uB958");
-    const masked = message.replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/g, "[redacted-key]").replace(/"private_key"\s*:\s*"[^"]*"?/g, '"private_key":"[redacted]"').replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/https?:\/\/\S+/g, "[url]").slice(0, 360);
+    const masked = message.replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/g, "[redacted-key]").replace(/"private_key"\s*:\s*"[^"]*"?/g, '"private_key":"[redacted]"').replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").replace(/AIza[0-9A-Za-z_-]{20,}/g, "[redacted]").replace(/https?:\/\/\S+/g, "[url]").slice(0, 360);
     return `\uC694\uCCAD \uC2E4\uD328: ${masked}`;
   }
   function titled(title) {

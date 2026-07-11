@@ -1385,6 +1385,7 @@ function safeError(err) {
     .replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/g, '[redacted-key]')
     .replace(/"private_key"\s*:\s*"[^"]*"?/g, '"private_key":"[redacted]"')
     .replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]')
+    .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[redacted]') // Google API 키 포맷(감사 지적)
     .replace(/https?:\/\/\S+/g, '[url]')
     .slice(0, 360);
   return `요청 실패: ${masked}`;

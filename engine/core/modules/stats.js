@@ -1,7 +1,7 @@
 'use strict';
 
 const { tierOf } = require('../selectors.js');
-const { clamp, clone, ladderById, normalizeInt, rankIndex, scaleById } = require('../utils.js');
+const { clamp, clone, ladderById, normalizeInt, rankIndex, safeOwnKey, scaleById } = require('../utils.js');
 const { scopedEvent } = require('./eventSupport.js');
 
 function createStatsModule() {
@@ -33,7 +33,8 @@ function scaleDelta(schema, state, params, ok, fail) {
   const target = params.target || params.npcId;
   const scale = scaleById(schema, scaleId);
   if (!scale) return fail('unknown_scale', scaleId);
-  if (!target || !state.npcs || !state.npcs[target]) return fail('unknown_target', target);
+  // safeOwnKey — '__proto__' 류 키의 프로토타입 오염 차단(감사 Critical). scale_delta는 LLM 노출 이벤트라 특히 중요.
+  if (!target || !safeOwnKey(state.npcs, target)) return fail('unknown_target', target);
 
   const counterKey = `${scaleId}DeltaToday`;
   const cap = Number(scale.dailyCapPerTarget || scale.dailyCap || 0);

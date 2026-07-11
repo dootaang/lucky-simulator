@@ -1,7 +1,7 @@
 'use strict';
 
 const { deriveRng } = require('./rng.js');
-const { saleConsumes } = require('./utils.js');
+const { safeOwnKey, saleConsumes } = require('./utils.js');
 
 function earlierPendingWave(traffic, resolved, waveId) {
   const targetIndex = (traffic.waves || []).findIndex((entry) => entry.id === waveId);
@@ -180,7 +180,8 @@ function resolveIncidentChoice(schema, state, choiceId) {
         const targetIds = affinity.target && affinity.target !== 'staff'
           ? [affinity.target]
           : (state.staff || []).map((item) => item.npcId);
-        const targets = Array.from(new Set(targetIds)).filter((npcId) => state.npcs && state.npcs[npcId]);
+        // safeOwnKey — '__proto__' 류 target의 프로토타입 오염 차단(감사 Critical).
+        const targets = Array.from(new Set(targetIds)).filter((npcId) => safeOwnKey(state.npcs, npcId));
         if (targets.length) {
           entry.affinityDeltas = {};
           const cap = Number(scale.dailyCapPerTarget || scale.dailyCap || 0);
