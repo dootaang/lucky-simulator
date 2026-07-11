@@ -2,6 +2,7 @@ const defaultSchema = require('../../schema/yongsa-inn.v0.json');
 const { getRegisteredEventIds } = require('../../engine/core/applyEvent.js');
 const { createSessionJournal, restoreSessionJournal, stateHash } = require('../../engine/core/sessionJournal.js');
 const { buildPlaySessionExport } = require('../core/session/playSession.js');
+import { createContinuityMemoryStore, formatGroundedMemory, restoreContinuityMemoryStore, validateFactReferences } from '../core/memory/continuityStore.ts';
 
 let activeSchema = defaultSchema;
 let seedValue = 42;
@@ -12,6 +13,7 @@ let engineState = journal.state;
 let logs = [];
 let eventCount = 0;
 let promptRuns = [];
+let continuityMemory = createContinuityMemoryStore();
 
 export function getEventTypes() {
   return getRegisteredEventIds();
@@ -72,6 +74,7 @@ export function resetSession(seed) {
   logs = [];
   eventCount = 0;
   promptRuns = [];
+  continuityMemory = createContinuityMemoryStore();
   sessionEpoch += 1;
   return engineState;
 }
@@ -80,7 +83,7 @@ export function runEvent(event) {
   const { entries } = journal.append(event);
   engineState = journal.state;
   eventCount += 1;
-  const item = { event, entries, index: logs.length + 1 };
+  const item = { event, entries, index: eventCount };
   logs.unshift(item);
   return item;
 }
@@ -97,13 +100,54 @@ export function getPromptRuns() {
   return promptRuns;
 }
 
+export function ingestMemoryTurn(input) {
+  return continuityMemory.ingestTurn(input);
+}
+
+export async function retrieveGroundedMemory(query, config) {
+  const result = await continuityMemory.retrieve(query, config);
+  return { ...result, text: formatGroundedMemory(result.plan, result.records) };
+}
+
+export function getMemoryRecords(status) {
+  return continuityMemory.list(status);
+}
+
+export function approveMemory(recordId, turn) {
+  return continuityMemory.approve(recordId, turn);
+}
+
+export function rejectMemory(recordId) {
+  return continuityMemory.reject(recordId);
+}
+
+export function proposeContinuityPatch(patch, turn) {
+  return continuityMemory.proposePatch(patch, turn);
+}
+
+export function getContinuityPatches(status) {
+  return continuityMemory.listPatches(status);
+}
+
+export function applyContinuityPatch(patchId, turn) {
+  return continuityMemory.applyPatch(patchId, turn);
+}
+
+export function rejectContinuityPatch(patchId) {
+  return continuityMemory.rejectPatch(patchId);
+}
+
+export function validateMemoryFactRefs(factRefs, context) {
+  return validateFactReferences(factRefs, context);
+}
+
 // 프롬프트 해시 — 원장과 같은 안정 직렬화+FNV(손상·중복 감지용, 보안용 아님).
 export function hashPromptPayload(value) {
   return stateHash(value);
 }
 
 export function exportPlaySession({ messages, savedAt, title } = {}) {
-  return buildPlaySessionExport({ journal: journal.toJSON(), messages, promptRuns, savedAt, title });
+  return buildPlaySessionExport({ journal: journal.toJSON(), messages, promptRuns, memory: continuityMemory.toJSON(), savedAt, title });
 }
 
 // 가져오기 — 스키마 지문·손상 검증은 restoreSessionJournal이 수행(불일치 시 throw).
@@ -116,6 +160,12 @@ export function importPlaySession(payload) {
   logs = [];
   eventCount = journal.length;
   promptRuns = Array.isArray(payload.promptRuns) ? payload.promptRuns.slice() : [];
+  continuityMemory = payload.memory ? restoreContinuityMemoryStore(payload.memory) : createContinuityMemoryStore();
+  continuityMemory.reconcileSources({
+    messageIds: (payload.messages || []).map((message) => message && message.id).filter(Boolean),
+    eventIndexes: ((payload.journal && payload.journal.events) || []).map((record) => record && record.index).filter(Number.isInteger),
+    atTurn: (payload.messages || []).filter((message) => message && message.role === 'user').length,
+  });
   sessionEpoch += 1;
   return engineState;
 }

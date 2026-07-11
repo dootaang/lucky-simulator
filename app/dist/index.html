@@ -904,6 +904,12 @@ select:focus { border-color: var(--amber-line); }
 .play-notice { margin: 0; color: var(--ink-dim); font-size: 11.5px; }
 
 .play-side-section { display: grid; gap: 10px; }
+.memory-summary { margin: 0; color: var(--muted); font-size: 12px; }
+.memory-review-list { display: grid; gap: 8px; }
+.memory-review-card { display: grid; gap: 6px; padding: 9px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.025); }
+.memory-review-card p { margin: 0; font-size: 13px; line-height: 1.45; }
+.memory-review-card small { color: var(--muted); overflow-wrap: anywhere; }
+.memory-review-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .ledger-section.is-busy { opacity: 0.5; }
 .ledger-section .purchase-stepper { flex-wrap: wrap; }
 .play-context-pre { max-height: 220px; overflow: auto; color: var(--ink-mid); }
@@ -4871,7 +4877,7 @@ select:focus { border-color: var(--amber-line); }
   var require_tokens = __commonJS({
     "core/lorebook/tokens.js"(exports, module) {
       "use strict";
-      function estimateTokens2(text) {
+      function estimateTokens3(text) {
         const s = String(text == null ? "" : text).trim();
         if (!s) return 0;
         const cjk = (s.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g) || []).length;
@@ -4881,7 +4887,7 @@ select:focus { border-color: var(--amber-line); }
       }
       function estimateEntryTokens(entry) {
         if (!entry || entry.isFolder) return 0;
-        return estimateTokens2(entry.content);
+        return estimateTokens3(entry.content);
       }
       function estimateLorebookTokens3(entries) {
         const real = (entries || []).filter((e) => e && !e.isFolder);
@@ -4917,7 +4923,7 @@ select:focus { border-color: var(--amber-line); }
         }
         return { budget: limit, used, kept, dropped };
       }
-      module.exports = { estimateTokens: estimateTokens2, estimateEntryTokens, estimateLorebookTokens: estimateLorebookTokens3, applyTokenBudget };
+      module.exports = { estimateTokens: estimateTokens3, estimateEntryTokens, estimateLorebookTokens: estimateLorebookTokens3, applyTokenBudget };
     }
   });
 
@@ -5477,7 +5483,7 @@ select:focus { border-color: var(--amber-line); }
   var require_utils = __commonJS({
     "../engine/core/utils.js"(exports, module) {
       "use strict";
-      function clone(value) {
+      function clone2(value) {
         if (value == null || typeof value !== "object") return value;
         return JSON.parse(JSON.stringify(value));
       }
@@ -5536,7 +5542,7 @@ select:focus { border-color: var(--amber-line); }
         return safeStateKey(key) && !!target && Object.prototype.hasOwnProperty.call(target, String(key));
       }
       module.exports = {
-        clone,
+        clone: clone2,
         clamp,
         entityList,
         findEntity,
@@ -5921,11 +5927,11 @@ select:focus { border-color: var(--amber-line); }
   var require_dayEnd = __commonJS({
     "../engine/core/dayEnd.js"(exports, module) {
       "use strict";
-      var { clone, formulaById, findMenu, entityList } = require_utils();
+      var { clone: clone2, formulaById, findMenu, entityList } = require_utils();
       var { availableMenu: availableMenu2, rankWeight } = require_selectors();
       var { poolHeal } = require_pools();
       function runDayEnd(schema2, state2, rng) {
-        const next = clone(state2);
+        const next = clone2(state2);
         const report = {
           day: state2.day,
           customers: 0,
@@ -6777,7 +6783,7 @@ select:focus { border-color: var(--amber-line); }
   var require_moduleRegistry = __commonJS({
     "../engine/core/moduleRegistry.js"(exports, module) {
       "use strict";
-      var { clone } = require_utils();
+      var { clone: clone2 } = require_utils();
       var ModuleRegistry = class {
         constructor() {
           this.modules = /* @__PURE__ */ new Map();
@@ -6810,7 +6816,7 @@ select:focus { border-color: var(--amber-line); }
           const type = event && event.id;
           const route = this.events.get(type);
           if (!route) return unknownEvent(state2, type);
-          const workingState = clone(state2);
+          const workingState = clone2(state2);
           const rngSnapshot = snapshotRng(rng);
           let result;
           try {
@@ -7042,7 +7048,7 @@ select:focus { border-color: var(--amber-line); }
     "../engine/core/modules/stats.js"(exports, module) {
       "use strict";
       var { tierOf } = require_selectors();
-      var { clamp, clone, ladderById, normalizeInt, rankIndex, safeOwnKey, scaleById } = require_utils();
+      var { clamp, clone: clone2, ladderById, normalizeInt, rankIndex, safeOwnKey, scaleById } = require_utils();
       var { scopedEvent } = require_eventSupport();
       function createStatsModule() {
         return {
@@ -7169,7 +7175,7 @@ select:focus { border-color: var(--amber-line); }
           state2.player.level += 1;
           levelUps.push(state2.player.level);
         }
-        return ok({ category: params.category, amount, before, after: clone(state2.player), levelUps, reason: params.reason || "" });
+        return ok({ category: params.category, amount, before, after: clone2(state2.player), levelUps, reason: params.reason || "" });
       }
       module.exports = { createStatsModule };
     }
@@ -7368,7 +7374,7 @@ select:focus { border-color: var(--amber-line); }
       var { createInventoryModule } = require_inventory();
       var { createCombatModule } = require_combat2();
       var {
-        clone,
+        clone: clone2,
         findById,
         findRoom,
         findMenu,
@@ -7390,7 +7396,7 @@ select:focus { border-color: var(--amber-line); }
           }
           return { state: result.state, log: [{ ok: true, event: type, report: result.report }] };
         }
-        const next = clone(state2);
+        const next = clone2(state2);
         const log = [];
         const fail = (reason, detail) => ({ state: state2, log: [{ ok: false, event: type, reason, detail }] });
         const ok = (entry) => {
@@ -7642,31 +7648,31 @@ select:focus { border-color: var(--amber-line); }
   var require_createState = __commonJS({
     "../engine/core/createState.js"(exports, module) {
       "use strict";
-      var { clone, entityList, ladderById, scaleById } = require_utils();
+      var { clone: clone2, entityList, ladderById, scaleById } = require_utils();
       var { normalizePool } = require_pools();
       function createState(schema2, seed) {
-        const initial = clone(schema2.initialState || {});
+        const initial = clone2(schema2.initialState || {});
         const state2 = {
           day: Number(initial.day || 1),
           gold: Number(initial.gold || 0),
-          resources: clone(initial.resources || {}),
-          items: clone(initial.items || {}),
-          facilities: clone(initial.facilities || {}),
-          staff: Array.isArray(initial.staff) ? clone(initial.staff) : [],
-          rooms: clone(initial.rooms || {}),
+          resources: clone2(initial.resources || {}),
+          items: clone2(initial.items || {}),
+          facilities: clone2(initial.facilities || {}),
+          staff: Array.isArray(initial.staff) ? clone2(initial.staff) : [],
+          rooms: clone2(initial.rooms || {}),
           player: normalizePlayer(schema2, initial.player),
           reputation: normalizeReputation(schema2, initial.reputation || {}),
           npcs: normalizeNpcs(schema2, initial.npcs || {}),
           pendingCheckouts: [],
           unpaidWages: Number(initial.unpaidWages || 0),
-          claimedRewards: Array.isArray(initial.claimedRewards) ? clone(initial.claimedRewards) : [],
+          claimedRewards: Array.isArray(initial.claimedRewards) ? clone2(initial.claimedRewards) : [],
           combat: null
         };
         if (seed != null) state2.seed = seed;
         return state2;
       }
       function normalizePlayer(schema2, initialPlayer) {
-        const player = clone(initialPlayer || { level: 1, exp: 0 });
+        const player = clone2(initialPlayer || { level: 1, exp: 0 });
         const defs = Array.isArray(schema2.pools) ? schema2.pools : null;
         const src = player.pools && typeof player.pools === "object" ? player.pools : null;
         if (defs || src) {
@@ -7717,7 +7723,7 @@ select:focus { border-color: var(--amber-line); }
       var { createState } = require_createState();
       var { applyEvent } = require_applyEvent();
       var { createRng } = require_rng();
-      var { clone } = require_utils();
+      var { clone: clone2 } = require_utils();
       var JOURNAL_CONTRACT = "session-journal/0.1";
       function fnv1a(text) {
         let hash = 2166136261;
@@ -7742,14 +7748,14 @@ select:focus { border-color: var(--amber-line); }
         let state2 = createState(schema2, normalizedSeed);
         const rng = createRng(normalizedSeed);
         const events = [];
-        const snapshots = [{ index: 0, state: clone(state2), rng: rng.snapshot() }];
+        const snapshots = [{ index: 0, state: clone2(state2), rng: rng.snapshot() }];
         function append(event) {
           const result = applyEvent(schema2, state2, event, rng);
           const ok = result.log.some((entry) => entry && entry.ok === true);
           if (ok) state2 = result.state;
-          events.push({ index: events.length + 1, event: clone(event), ok });
+          events.push({ index: events.length + 1, event: clone2(event), ok });
           if (events.length % snapshotInterval === 0) {
-            snapshots.push({ index: events.length, state: clone(state2), rng: rng.snapshot() });
+            snapshots.push({ index: events.length, state: clone2(state2), rng: rng.snapshot() });
           }
           return { ok, entries: result.log };
         }
@@ -7765,7 +7771,7 @@ select:focus { border-color: var(--amber-line); }
             if (snapshot.index <= index) base = snapshot;
             else break;
           }
-          let workState = clone(base.state);
+          let workState = clone2(base.state);
           const workRng = createRng(normalizedSeed);
           workRng.restore(base.rng);
           for (let i = base.index; i < index; i += 1) {
@@ -7792,7 +7798,7 @@ select:focus { border-color: var(--amber-line); }
             schemaHash: fnv1a(stableStringify(schema2)),
             seed: normalizedSeed,
             snapshotInterval,
-            events: events.map((entry) => ({ index: entry.index, event: clone(entry.event), ok: entry.ok })),
+            events: events.map((entry) => ({ index: entry.index, event: clone2(entry.event), ok: entry.ok })),
             head: head()
           };
         }
@@ -7803,7 +7809,7 @@ select:focus { border-color: var(--amber-line); }
           get state() {
             return state2;
           },
-          events: () => events.map((entry) => ({ index: entry.index, event: clone(entry.event), ok: entry.ok })),
+          events: () => events.map((entry) => ({ index: entry.index, event: clone2(entry.event), ok: entry.ok })),
           snapshots: () => snapshots.map((snapshot) => ({ index: snapshot.index })),
           append,
           stateAt,
@@ -7836,7 +7842,7 @@ select:focus { border-color: var(--amber-line); }
     "core/session/playSession.js"(exports, module) {
       "use strict";
       var PLAY_SESSION_CONTRACT = "play-session/0.1";
-      function buildPlaySessionExport2({ journal: journal2, messages: messages2, promptRuns: promptRuns2, savedAt, title }) {
+      function buildPlaySessionExport2({ journal: journal2, messages: messages2, promptRuns: promptRuns2, memory, savedAt, title }) {
         if (!journal2 || journal2.contract !== "session-journal/0.1") throw new TypeError("play_session_journal_required");
         return {
           contract: PLAY_SESSION_CONTRACT,
@@ -7844,14 +7850,28 @@ select:focus { border-color: var(--amber-line); }
           savedAt: Number.isFinite(Number(savedAt)) ? Number(savedAt) : 0,
           journal: journal2,
           messages: sanitizeMessages(messages2),
-          promptRuns: sanitizePromptRuns(promptRuns2)
+          promptRuns: sanitizePromptRuns(promptRuns2),
+          ...sanitizeMemory(memory) ? { memory: sanitizeMemory(memory) } : {}
         };
+      }
+      function sanitizeMemory(memory) {
+        if (!memory || typeof memory !== "object" || memory.contract !== "continuity-memory/0.1" || !Array.isArray(memory.records)) return null;
+        if (memory.records.length > 5e4) throw new TypeError("play_session_too_large");
+        return JSON.parse(JSON.stringify({
+          contract: "continuity-memory/0.1",
+          nextId: Number.isInteger(memory.nextId) && memory.nextId > 0 ? memory.nextId : memory.records.length + 1,
+          records: memory.records,
+          nextPatchId: Number.isInteger(memory.nextPatchId) && memory.nextPatchId > 0 ? memory.nextPatchId : Array.isArray(memory.patches) ? memory.patches.length + 1 : 1,
+          patches: Array.isArray(memory.patches) ? memory.patches.slice(0, 5e4) : []
+        }));
       }
       function sanitizeMessages(messages2) {
         if (!Array.isArray(messages2)) return [];
         return messages2.filter((message) => message && typeof message === "object" && ["user", "assistant", "ledger"].includes(message.role)).map((message) => JSON.parse(JSON.stringify({
           role: message.role,
           content: String(message.content == null ? "" : message.content),
+          ...typeof message.id === "string" && message.id.trim() ? { id: message.id.trim().slice(0, 120) } : {},
+          ...typeof message.sceneId === "string" && message.sceneId.trim() ? { sceneId: message.sceneId.trim().slice(0, 120) } : {},
           ...Array.isArray(message.chips) ? { chips: message.chips } : {},
           ...Array.isArray(message.npcIds) ? { npcIds: message.npcIds } : {}
         })));
@@ -7864,8 +7884,29 @@ select:focus { border-color: var(--amber-line); }
           model: String(run.model || ""),
           responseText: String(run.responseText == null ? "" : run.responseText),
           proposedEvents: Array.isArray(run.proposedEvents) ? run.proposedEvents.map((id) => String(id)) : [],
-          appliedOk: Number.isFinite(Number(run.appliedOk)) ? Number(run.appliedOk) : 0
+          appliedOk: Number.isFinite(Number(run.appliedOk)) ? Number(run.appliedOk) : 0,
+          ...Array.isArray(run.proposedMemory) ? { proposedMemory: run.proposedMemory.slice(0, 20).map((item) => ({ kind: String(item && item.kind || ""), text: String(item && item.text || "").slice(0, 500) })) } : {},
+          ...Array.isArray(run.memoryDecisions) ? { memoryDecisions: run.memoryDecisions.slice(0, 20).map((item) => ({ recordId: String(item && item.recordId || ""), status: String(item && item.status || ""), reason: String(item && item.reason || "") })) } : {},
+          ...Array.isArray(run.factRefs) ? { factRefs: run.factRefs.slice(0, 20).map((item) => ({ claim: String(item && item.claim || "").slice(0, 300), refs: Array.isArray(item && item.refs) ? item.refs.slice(0, 12).map(String) : [] })) } : {},
+          ...Array.isArray(run.factRefVerdicts) ? { factRefVerdicts: run.factRefVerdicts.slice(0, 20).map((item) => ({ claim: String(item && item.claim || "").slice(0, 300), refs: Array.isArray(item && item.refs) ? item.refs.slice(0, 12).map(String) : [], ok: item && item.ok === true, invalidRefs: Array.isArray(item && item.invalidRefs) ? item.invalidRefs.slice(0, 12).map(String) : [] })) } : {},
+          ...run.proposedContinuityPatch && typeof run.proposedContinuityPatch === "object" ? { proposedContinuityPatch: sanitizeContinuityPatch(run.proposedContinuityPatch) } : {},
+          ...run.continuityPatchRecord && typeof run.continuityPatchRecord === "object" ? { continuityPatchRecord: sanitizeContinuityPatchRecord(run.continuityPatchRecord) } : {}
         })));
+      }
+      function sanitizeContinuityPatch(value) {
+        return {
+          confirmMemoryIds: Array.isArray(value.confirmMemoryIds) ? value.confirmMemoryIds.slice(0, 20).map(String) : [],
+          resolveMemoryIds: Array.isArray(value.resolveMemoryIds) ? value.resolveMemoryIds.slice(0, 20).map(String) : [],
+          reason: String(value.reason || "").slice(0, 300)
+        };
+      }
+      function sanitizeContinuityPatchRecord(value) {
+        return {
+          id: String(value.id || ""),
+          turn: Number.isInteger(value.turn) ? value.turn : 0,
+          ...sanitizeContinuityPatch(value),
+          status: ["pending", "applied", "rejected"].includes(value.status) ? value.status : "pending"
+        };
       }
       var MAX_IMPORT_CHARS = 30 * 1024 * 1024;
       var MAX_IMPORT_EVENTS = 5e4;
@@ -7893,7 +7934,8 @@ select:focus { border-color: var(--amber-line); }
           savedAt: Number.isFinite(Number(parsed.savedAt)) ? Number(parsed.savedAt) : 0,
           journal: parsed.journal,
           messages: sanitizeMessages(parsed.messages),
-          promptRuns: sanitizePromptRuns(parsed.promptRuns)
+          promptRuns: sanitizePromptRuns(parsed.promptRuns),
+          ...sanitizeMemory(parsed.memory) ? { memory: sanitizeMemory(parsed.memory) } : {}
         };
       }
       module.exports = { PLAY_SESSION_CONTRACT, buildPlaySessionExport: buildPlaySessionExport2, parsePlaySessionImport: parsePlaySessionImport2 };
@@ -7996,17 +8038,17 @@ select:focus { border-color: var(--amber-line); }
     "src/llm/prompt.js"(exports, module) {
       "use strict";
       var { simulateActivation: simulateActivation2 } = require_activate();
-      var { estimateTokens: estimateTokens2 } = require_tokens();
-      var { summarize: summarize3, npcSummary: npcSummary3 } = require_selectors();
+      var { estimateTokens: estimateTokens3 } = require_tokens();
+      var { summarize: summarize3, npcSummary: npcSummary3, availableActions: availableActions2 } = require_selectors();
       var COMMON_PROMPT = `[\uC808\uB300 \uADDC\uCE59]
 1. \uAC8C\uC784 \uC218\uCE58(\uACE8\uB4DC\xB7\uC7AC\uACE0\xB7\uD638\uAC10\uB3C4\xB7\uD3C9\uD310\xB7\uACBD\uD5D8\uCE58)\uB294 \uC678\uBD80 \uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD55C\uB2E4. \uB108\uB294 \uC218\uCE58\uB97C \uCC3D\uC791\uD558\uAC70\uB098 \uACC4\uC0B0\uD558\uC9C0 \uB9C8\uB77C. \uC0C1\uD0DC \uC815\uBCF4\uC5D0 \uC801\uD78C \uAC12\uB9CC \uC0AC\uC2E4\uB85C \uCDE8\uAE09\uD558\uB77C.
 2. \uC11C\uC0AC\uB294 \uD55C\uAD6D\uC5B4\uB85C, \uC7A5\uBA74 \uC911\uC2EC\uC73C\uB85C \uC9E7\uAC8C(300\uC790 \uB0B4\uC678). NPC \uB300\uC0AC\uC640 \uD589\uB3D9 \uC704\uC8FC. \uD50C\uB808\uC774\uC5B4\uC758 \uD589\uB3D9\uC744 \uB300\uC2E0 \uACB0\uC815\uD558\uC9C0 \uB9C8\uB77C.
 3. NPC \uD589\uB3D9\uC740 [NPC \uC0C1\uD0DC]\uC5D0 \uC801\uD78C \uD2F0\uC5B4 \uADDC\uBC94\uC744 \uB530\uB978\uB2E4. \uAE08\uC9C0 \uD589\uB3D9\uC740 \uC808\uB300 \uC4F0\uC9C0 \uB9C8\uB77C.
-4. \uC751\uB2F5\uC758 \uB9E8 \uB05D\uC5D0, \uC774\uBC88 \uC7A5\uBA74\uC5D0\uC11C \uD50C\uB808\uC774\uC5B4\uAC00 \uD55C "\uD589\uB3D9(\uC758\uB3C4)"\uB9CC \uC544\uB798 \uD615\uC2DD\uC758 JSON \uCF54\uB4DC\uBE14\uB85D\uC73C\uB85C \uC81C\uC548\uD558\uB77C. \uC0AC\uAC74\uC774 \uC5C6\uC73C\uBA74 \uBE48 \uBC30\uC5F4.
+4. \uC751\uB2F5\uC758 \uB9E8 \uB05D\uC5D0 JSON \uCF54\uB4DC\uBE14\uB85D \uD558\uB098\uB97C \uB454\uB2E4. \uC774\uBC88 \uC7A5\uBA74\uC5D0\uC11C \uD50C\uB808\uC774\uC5B4\uAC00 \uD55C "\uD589\uB3D9(\uC758\uB3C4)"\uC740 events\uB85C, \uC7A5\uAE30\uC801\uC73C\uB85C \uAE30\uC5B5\uD560 \uD6C4\uBCF4\uB294 memoryCandidates\uB85C \uC81C\uC548\uD55C\uB2E4. \uC5C6\uC73C\uBA74 \uAC01\uAC01 \uBE48 \uBC30\uC5F4.
 5. \u2605\uB108\uB294 \uAE08\uC561\xB7\uC218\uB7C9 \uC774\uC678\uC758 \uC5B4\uB5A4 \uC22B\uC790(\uACE8\uB4DC\xB7\uB370\uBBF8\uC9C0\xB7\uACBD\uD5D8\uCE58\xB7\uBCC0\uB3D9\uB7C9)\uB3C4 \uC0AC\uAC74\uC5D0 \uB123\uC9C0 \uC54A\uB294\uB2E4. \uC544\uB798 \uC0AC\uAC74\uB4E4\uC740 "\uBB34\uC5C7\uC744 \uD588\uB294\uAC00"\uB9CC \uB2F4\uACE0, \uACB0\uACFC \uC218\uCE58\uB294 \uC5D4\uC9C4\uC774 \uC2A4\uD0A4\uB9C8\uC5D0\uC11C \uACC4\uC0B0\uD55C\uB2E4. \uC784\uC758 \uAE08\uC561\uC744 \uC9C0\uC815\uD558\uB294 \uC0AC\uAC74\uC740 \uC874\uC7AC\uD558\uC9C0 \uC54A\uB294\uB2E4.`;
       var EVENT_PROMPT_HEADER = `[\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uC0AC\uAC74 = \uD589\uB3D9(\uC758\uB3C4)\uB9CC. \uC22B\uC790 \uACB0\uACFC\uB294 \uC5D4\uC9C4\uC774 \uACC4\uC0B0]`;
       var SALE_JSON_EXAMPLE = `\`\`\`json
-{"events":[{"id":"sale","params":{"menuName":"\uACE0\uAE30 \uC2A4\uD29C","qty":2}}]}
+{"events":[{"id":"sale","params":{"menuName":"\uACE0\uAE30 \uC2A4\uD29C","qty":2}}],"memoryCandidates":[],"factRefs":[{"claim":"\uACE0\uAE30 \uC2A4\uD29C \uD310\uB9E4\uB97C \uC2DC\uB3C4\uD588\uB2E4","refs":["event:sale"]}]}
 \`\`\``;
       var EVENT_PROMPTS = {
         sale: `- sale {menuName, qty} \u2014 \uBA54\uB274 \uD310\uB9E4 \uC644\uACB0 \uC2DC. (\uC5D4\uC9C4: \uB9E4\uCD9C \uAC00\uC0B0 + \uC2DD\uC790\uC7AC \uCC28\uAC10)`,
@@ -8033,6 +8075,15 @@ select:focus { border-color: var(--amber-line); }
       var NEUTRAL_EVENT_RULES = `- \u2605\uD55C \uD589\uB3D9 = \uC0AC\uAC74 1\uAC1C. \uD55C \uD589\uB3D9\uC5D0 \uC5D4\uC9C4\uC774 \uACC4\uC0B0\uD560 \uACB0\uACFC \uBCC0\uB3D9\uC744 \uB367\uBD99\uC774\uC9C0 \uB9C8\uB77C. \uC720\uC800\uAC00 \uC9C0\uC2DC\uD558\uC9C0 \uC54A\uC740 \uC0AC\uAC74\uC740 \uC808\uB300 \uB9CC\uB4E4\uC9C0 \uB9C8\uB77C.
 - \u2605\uC11C\uC0AC \uBCF8\uBB38\uC5D0 \uC0C1\uD0DC \uBCC0\uACBD \uD0DC\uADF8\uB098 <img> \uD0DC\uADF8\uB97C \uC808\uB300 \uC4F0\uC9C0 \uB9C8\uB77C. \uC0C1\uD0DC \uBCC0\uACBD\uC740 \uC624\uC9C1 \uB9E8 \uB05D\uC758 JSON \uC0AC\uAC74\uC73C\uB85C\uB9CC \uD45C\uD604\uD55C\uB2E4.`;
       var EVENT_RULES_FOOTER = `- \uD655\uC2E0\uC774 \uC5C6\uC73C\uBA74 \uC0AC\uAC74\uC744 \uB0B4\uC9C0 \uB9C8\uB77C. \uBE48 \uBC30\uC5F4\uC774 \uC548\uC804\uD558\uB2E4.`;
+      var MEMORY_PROMPT_APPENDIX = `[\uAE30\uC5B5 \uD6C4\uBCF4 \u2014 \uC0AC\uC2E4\uC744 \uC9C1\uC811 \uD655\uC815\uD558\uB294 \uD1B5\uB85C\uAC00 \uC544\uB2D8]
+- JSON \uCD5C\uC0C1\uC704\uC5D0 memoryCandidates \uBC30\uC5F4\uACFC factRefs \uBC30\uC5F4\uC744 \uB454\uB2E4. \uC5C6\uC73C\uBA74 \uBE48 \uBC30\uC5F4\uC774\uB2E4.
+- memoryCandidates \uD56D\uBAA9: {kind:"promise"|"secret"|"relation"|"episode", text, entities:[npcId...], evidenceQuote?, eventIds?, knowledgeScope?}.
+- evidenceQuote\uB294 \uC774\uBC88 \uC0AC\uC6A9\uC790 \uBA54\uC2DC\uC9C0\uC5D0 \uC2E4\uC81C\uB85C \uC5F0\uC18D\uD574\uC11C \uC874\uC7AC\uD558\uB294 \uC815\uD655\uD55C \uC6D0\uBB38\uB9CC \uBCF5\uC0AC\uD55C\uB2E4. \uB9CC\uB4E4\uC5B4\uB0B4\uAC70\uB098 \uACE0\uCCD0 \uC4F0\uC9C0 \uB9C8\uB77C.
+- eventIds\uB294 \uAC19\uC740 JSON\uC758 events \uC911 \uC774 \uAE30\uC5B5\uC744 \uB4B7\uBC1B\uCE68\uD558\uB294 \uC0AC\uAC74 id\uB9CC \uC4F4\uB2E4. \uC5D4\uC9C4\uC774 \uC2E4\uD328\uD55C \uC0AC\uAC74\uC740 \uAE30\uC5B5\uC73C\uB85C \uC2B9\uC778\uB418\uC9C0 \uC54A\uB294\uB2E4.
+- NPC\uAC00 \uC77C\uBC29\uC801\uC73C\uB85C \uC81C\uC548\uD588\uAC70\uB098 \uC0DD\uAC01\uB9CC \uD55C \uC77C\uC744 \uC57D\uC18D\xB7\uD569\uC758\uB85C \uBC14\uAFB8\uC9C0 \uB9C8\uB77C. \uD655\uC2E0\uC774 \uC5C6\uC73C\uBA74 \uD6C4\uBCF4\uB97C \uB0B4\uC9C0 \uB9C8\uB77C.
+- factRefs \uD56D\uBAA9: {claim, refs:["state", "user-message", "event:\uC0AC\uAC74id"]}. \uC11C\uC0AC\uC758 \uC218\uCE58\xB7\uC0C1\uD0DC\xB7\uC644\uACB0 \uC0AC\uAC74 \uC8FC\uC7A5\uC774 \uBB34\uC5C7\uC744 \uADFC\uAC70\uB85C \uD588\uB294\uC9C0 \uD45C\uC2DC\uD55C\uB2E4.
+- \uC774\uC804\uC5D0 \uC81C\uC2DC\uB41C \uAE30\uC5B5 ID\uC758 \uD655\uC815\xB7\uD574\uACB0\uC744 \uC81C\uC548\uD560 \uB54C\uB9CC continuityPatch:{confirmMemoryIds:[],resolveMemoryIds:[],reason}\uB97C \uC4F4\uB2E4. \uC774 \uC81C\uC548\uB3C4 \uC0AC\uC6A9\uC790 \uC2B9\uC778 \uC804\uC5D0\uB294 \uC801\uC6A9\uB418\uC9C0 \uC54A\uB294\uB2E4.
+- \uAE30\uC5B5 \uD6C4\uBCF4\uB294 \uC5D4\uC9C4 \uB610\uB294 \uC0AC\uC6A9\uC790\uC758 \uAC80\uD1A0\uB97C \uD1B5\uACFC\uD558\uAE30 \uC804\uAE4C\uC9C0 \uC0AC\uC2E4\uB85C \uC7AC\uC0AC\uC6A9\uB418\uC9C0 \uC54A\uB294\uB2E4.`;
       var REWARD_PROMPT_APPENDIX = `
 
 [reward event]
@@ -8064,6 +8115,7 @@ select:focus { border-color: var(--amber-line); }
           sections.push(EVENT_PROMPT_HEADER + "\n" + events.join("\n"));
         }
         sections.push(EVENT_RULES_HEADER + "\n" + (isInnLike(schema2) ? INN_EVENT_RULES : NEUTRAL_EVENT_RULES) + "\n" + EVENT_RULES_FOOTER);
+        sections.push(MEMORY_PROMPT_APPENDIX);
         if (hasGoldRewards(schema2)) sections.push(REWARD_PROMPT_APPENDIX.trim());
         if (isCombatCapable(schema2)) sections.push(COMBAT_PROMPT_APPENDIX.trim());
         return sections.join("\n\n");
@@ -8124,7 +8176,18 @@ select:focus { border-color: var(--amber-line); }
         return `[\uC5D4\uC9C4 \uD310\uC815 \u2014 \uC9C1\uC804 \uD134 \uC0AC\uAC74 \uCC98\uB9AC \uACB0\uACFC]
 ${lines.join("\n")}`;
       }
-      function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput, lastVerdicts, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges }) {
+      function availableActionText(schema2, state2) {
+        const descriptor = availableActions2(schema2, state2);
+        if (!descriptor || !descriptor.active || !Array.isArray(descriptor.actions)) return "";
+        return descriptor.actions.map((action) => {
+          if (action.type === "attack") return `attack \u2192 ${(action.targets || []).map((target) => target.id).join(", ") || "\uB300\uC0C1 \uC5C6\uC74C"}`;
+          if (action.type === "skill") return `skill:${action.skill} (${action.affordable ? "\uC0AC\uC6A9 \uAC00\uB2A5" : `${action.pool} \uBD80\uC871`})`;
+          if (action.type === "item") return `item:${action.itemId} (\uBCF4\uC720 ${action.count})`;
+          if (action.type === "flee") return `flee (\uC5D4\uC9C4 \uD655\uB960 ${action.rate}%)`;
+          return String(action.type || "");
+        }).filter(Boolean).join("\n");
+      }
+      function buildPrompt2({ schema: schema2, state: state2, lore, recentMessages, userInput, lastVerdicts, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges, groundedMemory, currentMessageId }) {
         const combatCapable = isCombatCapable(schema2);
         const stateText = summarize3(schema2, state2);
         const npcIds = relatedNpcIds(schema2, state2, recentMessages, userInput);
@@ -8142,14 +8205,21 @@ ${lines.join("\n")}`;
         const verdictText = formatEngineVerdicts(lastVerdicts);
         const changesText = formatRecentChanges(recentChanges);
         const speakerText = speakerCatalogText(speakerCatalog2, npcIds);
+        const actionText = availableActionText(schema2, state2);
         const context = [
           "[\uC0C1\uD0DC]",
           stateText,
           "",
+          actionText ? `[\uD604\uC7AC \uC5D4\uC9C4\uC774 \uD5C8\uC6A9\uD55C \uC2E4\uC81C \uD589\uB3D9 \u2014 \uC774 \uBAA9\uB85D \uBC16\uC758 \uC804\uD22C \uD589\uB3D9\uC740 \uC81C\uC548\uD558\uC9C0 \uB9C8\uB77C]
+${actionText}` : "",
           verdictText,
           verdictText ? "" : "",
           changesText,
           changesText ? "" : "",
+          currentMessageId ? `[\uD604\uC7AC \uC0AC\uC6A9\uC790 \uBA54\uC2DC\uC9C0 \uADFC\uAC70 ID]
+${currentMessageId}` : "",
+          groundedMemory ? `[\uADFC\uAC70\uAC00 \uD655\uC778\uB41C \uAD00\uB828 \uAE30\uC5B5 \u2014 \uB300\uAD04\uD638 \uC548 source\uB97C \uADFC\uAC70\uB85C\uB9CC \uC0AC\uC6A9. \uBAA9\uB85D\uC5D0 \uC5C6\uB294 \uACFC\uAC70 \uC0AC\uAC74\uC744 \uB9CC\uB4E4\uC5B4\uB0B4\uC9C0 \uB9C8\uB77C. scope:user\uB294 \uD50C\uB808\uC774\uC5B4/\uB0B4\uB808\uC774\uD130\uB9CC \uC544\uB294 \uC815\uBCF4\uB77C NPC \uB300\uC0AC\uB85C \uB204\uC124\uD558\uC9C0 \uB9C8\uB77C. NPC\uB294 scope:public \uB610\uB294 \uC790\uC2E0\uC758 scope:entity:<npcId>\uB9CC \uB9D0\uD560 \uC218 \uC788\uB2E4]
+${groundedMemory}` : "",
           npcText ? "[NPC \uC0C1\uD0DC]\n" + npcText + "\n" : "",
           repCats ? "[\uD3C9\uD310 \uCE74\uD14C\uACE0\uB9AC]\n" + repCats + "\n" : "",
           expCats ? "[\uACBD\uD5D8\uCE58 \uCE74\uD14C\uACE0\uB9AC]\n" + expCats + "\n" : "",
@@ -8171,21 +8241,23 @@ ${lines.join("\n")}`;
         ].filter((part) => part !== "").join("\n");
         const messages2 = conversationMessages([...(recentMessages || []).slice(-8), { role: "user", content: context }]);
         const injectedParts = {
-          state: estimateTokens2(stateText),
-          npc: estimateTokens2(npcText),
-          repCats: estimateTokens2(repCats),
-          expCats: estimateTokens2(expCats),
-          npcList: estimateTokens2(npcList),
-          speakers: estimateTokens2(speakerText),
-          menuList: estimateTokens2(menuList),
-          roomList: estimateTokens2(roomList),
-          facilityList: estimateTokens2(facilityList),
-          items: estimateTokens2(itemList),
-          lore: estimateTokens2(loreText || "")
+          state: estimateTokens3(stateText),
+          npc: estimateTokens3(npcText),
+          repCats: estimateTokens3(repCats),
+          expCats: estimateTokens3(expCats),
+          npcList: estimateTokens3(npcList),
+          speakers: estimateTokens3(speakerText),
+          menuList: estimateTokens3(menuList),
+          roomList: estimateTokens3(roomList),
+          facilityList: estimateTokens3(facilityList),
+          items: estimateTokens3(itemList),
+          lore: estimateTokens3(loreText || ""),
+          groundedMemory: estimateTokens3(groundedMemory || ""),
+          actions: estimateTokens3(actionText)
         };
-        if (questList) injectedParts.quests = estimateTokens2(questList);
-        if (verdictText) injectedParts.verdicts = estimateTokens2(verdictText);
-        if (combatCapable) injectedParts.skills = estimateTokens2(skillList);
+        if (questList) injectedParts.quests = estimateTokens3(questList);
+        if (verdictText) injectedParts.verdicts = estimateTokens3(verdictText);
+        if (combatCapable) injectedParts.skills = estimateTokens3(skillList);
         const injectedTokens = Object.values(injectedParts).reduce((sum, value) => sum + value, 0);
         return {
           system: buildSystemPrompt(schema2, state2),
@@ -8193,7 +8265,7 @@ ${lines.join("\n")}`;
           injectedTokens,
           injectedParts,
           relatedNpcIds: npcIds,
-          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, speakers: speakerText, items: itemList, ...questList ? { quests: questList } : {}, lore: loreText }
+          injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, speakers: speakerText, items: itemList, ...questList ? { quests: questList } : {}, lore: loreText, groundedMemory: groundedMemory || "", actions: actionText }
         };
       }
       function buildNarrationPrompt2({ schema: schema2, state: state2, results, flavorText, recentMessages, emotions: emotions2, speakerCatalog: speakerCatalog2, recentChanges, decisionContext, eventType }) {
@@ -8229,7 +8301,7 @@ ${speakerText}` : "",
         ].filter(Boolean).join("\n");
         const messages2 = conversationMessages([...(recentMessages || []).slice(-4), { role: "user", content: context }]);
         const injectedState = combatActive ? combatLine : managementLines;
-        const injectedParts = { state: estimateTokens2(injectedState), results: estimateTokens2(resultText), flavor: estimateTokens2(flavorText || ""), npcList: estimateTokens2(npcList), speakers: estimateTokens2(speakerText) };
+        const injectedParts = { state: estimateTokens3(injectedState), results: estimateTokens3(resultText), flavor: estimateTokens3(flavorText || ""), npcList: estimateTokens3(npcList), speakers: estimateTokens3(speakerText) };
         return {
           system: buildSystemPrompt(schema2, state2).split("\n\n[\uC808\uB300 \uADDC\uCE59]")[0] + `
 
@@ -8266,6 +8338,12 @@ ${speakerText}` : "",
         let emotion;
         let speakers;
         let speakersProvided = false;
+        let memoryCandidates = [];
+        let memoryCandidatesProvided = false;
+        let factRefs = [];
+        let factRefsProvided = false;
+        let continuityPatch;
+        let continuityPatchProvided = false;
         let jsonBlock = null;
         let removeBlock = null;
         if (blocks.length) {
@@ -8278,6 +8356,18 @@ ${speakerText}` : "",
             if (Array.isArray(parsed.speakers)) {
               speakers = parsed.speakers;
               speakersProvided = true;
+            }
+            if (Array.isArray(parsed.memoryCandidates)) {
+              memoryCandidates = parsed.memoryCandidates;
+              memoryCandidatesProvided = true;
+            }
+            if (Array.isArray(parsed.factRefs)) {
+              factRefs = parsed.factRefs;
+              factRefsProvided = true;
+            }
+            if (parsed.continuityPatch && typeof parsed.continuityPatch === "object") {
+              continuityPatch = parsed.continuityPatch;
+              continuityPatchProvided = true;
             }
           } catch (_) {
             events = [];
@@ -8292,6 +8382,18 @@ ${speakerText}` : "",
             if (Array.isArray(terminal.parsed.speakers)) {
               speakers = terminal.parsed.speakers;
               speakersProvided = true;
+            }
+            if (Array.isArray(terminal.parsed.memoryCandidates)) {
+              memoryCandidates = terminal.parsed.memoryCandidates;
+              memoryCandidatesProvided = true;
+            }
+            if (Array.isArray(terminal.parsed.factRefs)) {
+              factRefs = terminal.parsed.factRefs;
+              factRefsProvided = true;
+            }
+            if (terminal.parsed.continuityPatch && typeof terminal.parsed.continuityPatch === "object") {
+              continuityPatch = terminal.parsed.continuityPatch;
+              continuityPatchProvided = true;
             }
           }
         }
@@ -8308,7 +8410,72 @@ ${speakerText}` : "",
           if (validSpeakers.length === 3) break;
         }
         const rawNarrative = jsonBlock ? source.slice(0, source.lastIndexOf(removeBlock)).trim() : source.trim();
-        return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...emotion !== void 0 ? { emotion } : {}, ...speakersProvided ? { speakers: validSpeakers } : {} };
+        const validMemoryCandidates = sanitizeMemoryCandidates(memoryCandidates);
+        const validFactRefs = sanitizeFactRefs(factRefs);
+        return {
+          narrative: stripRisuTags(rawNarrative),
+          events: validEvents,
+          dropped,
+          ...emotion !== void 0 ? { emotion } : {},
+          ...speakersProvided ? { speakers: validSpeakers } : {},
+          ...memoryCandidatesProvided ? { memoryCandidates: validMemoryCandidates } : {},
+          ...factRefsProvided ? { factRefs: validFactRefs } : {},
+          ...continuityPatchProvided ? { continuityPatch: sanitizeContinuityPatch(continuityPatch) } : {}
+        };
+      }
+      function shortString(value, max) {
+        return typeof value === "string" ? value.trim().slice(0, max) : "";
+      }
+      function stringList(value, maxItems = 8, maxChars = 100) {
+        if (!Array.isArray(value)) return [];
+        const out = [];
+        const seen = /* @__PURE__ */ new Set();
+        for (const item of value) {
+          const text = shortString(item, maxChars);
+          if (!text || seen.has(text)) continue;
+          seen.add(text);
+          out.push(text);
+          if (out.length >= maxItems) break;
+        }
+        return out;
+      }
+      function sanitizeMemoryCandidates(value) {
+        const allowedKinds = /* @__PURE__ */ new Set(["promise", "secret", "relation", "episode"]);
+        const out = [];
+        for (const item of (Array.isArray(value) ? value : []).slice(0, 12)) {
+          if (!item || typeof item !== "object") continue;
+          const text = shortString(item.text, 500);
+          if (!text) continue;
+          const kind = allowedKinds.has(item.kind) ? item.kind : "episode";
+          const scope = shortString(item.knowledgeScope, 100);
+          out.push({
+            kind,
+            text,
+            entities: stringList(item.entities),
+            ...shortString(item.evidenceQuote, 300) ? { evidenceQuote: shortString(item.evidenceQuote, 300) } : {},
+            ...stringList(item.eventIds).length ? { eventIds: stringList(item.eventIds) } : {},
+            ...scope === "public" || scope === "user" || /^entity:[A-Za-z0-9_.:-]+$/.test(scope) ? { knowledgeScope: scope } : {}
+          });
+        }
+        return out;
+      }
+      function sanitizeFactRefs(value) {
+        const out = [];
+        for (const item of (Array.isArray(value) ? value : []).slice(0, 20)) {
+          if (!item || typeof item !== "object") continue;
+          const claim = shortString(item.claim, 300);
+          const refs = stringList(item.refs, 12, 120);
+          if (claim && refs.length) out.push({ claim, refs });
+        }
+        return out;
+      }
+      function sanitizeContinuityPatch(value) {
+        if (!value || typeof value !== "object") return { confirmMemoryIds: [], resolveMemoryIds: [], reason: "" };
+        return {
+          confirmMemoryIds: stringList(value.confirmMemoryIds, 20, 120),
+          resolveMemoryIds: stringList(value.resolveMemoryIds, 20, 120),
+          reason: shortString(value.reason, 300)
+        };
       }
       function terminalJson(source) {
         const starts = [];
@@ -8317,7 +8484,7 @@ ${speakerText}` : "",
           const raw = source.slice(starts[i]).trim();
           try {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === "object" && (Array.isArray(parsed.events) || typeof parsed.emotion === "string" || Array.isArray(parsed.speakers))) return { raw, json: raw, parsed };
+            if (parsed && typeof parsed === "object" && (Array.isArray(parsed.events) || typeof parsed.emotion === "string" || Array.isArray(parsed.speakers) || Array.isArray(parsed.memoryCandidates) || Array.isArray(parsed.factRefs) || parsed.continuityPatch && typeof parsed.continuityPatch === "object")) return { raw, json: raw, parsed };
           } catch (_) {
           }
         }
@@ -9053,7 +9220,7 @@ skills\uC5D0\uB294 \uB8F0\uBD81\uC5D0 \uC774\uB984\uACFC \uCF54\uC2A4\uD2B8\xB7\
         }
       }
       function mockCompilerOutput2() {
-        const schema2 = clone(canonicalSchema);
+        const schema2 = clone2(canonicalSchema);
         schema2.meta = Object.assign({}, schema2.meta, {
           id: "mock-compiler-yongsa-inn",
           title: String(schema2.meta && schema2.meta.title || "Mock schema") + " mock"
@@ -9141,7 +9308,7 @@ ${row3.content}`;
       function entity(schema2, type) {
         return (schema2.entities || []).find((entry) => entry.type === type);
       }
-      function clone(value) {
+      function clone2(value) {
         return JSON.parse(JSON.stringify(value));
       }
       module.exports = { SYSTEM_PROMPT, buildCompilerInput: buildCompilerInput2, analyzeCompilerCoverage, parseCompilerOutput: parseCompilerOutput2, mockCompilerOutput: mockCompilerOutput2, formatMinedRules };
@@ -10015,7 +10182,7 @@ ${entry.content || ""}`
       var NPC_ALIASES = { name: "nameKo" };
       function validateSchema2(obj) {
         const issues = [];
-        const schema2 = clone(obj || {});
+        const schema2 = clone2(obj || {});
         normalizeAliases(schema2, issues);
         normalizeFacilityIds(schema2, issues);
         normalizeMenuTrade(schema2, issues);
@@ -10846,7 +11013,7 @@ ${entry.content || ""}`
             for (const field4 of required) {
               if (field4 in instance) continue;
               if (field4 in optionalDefaults) {
-                instance[field4] = clone(optionalDefaults[field4]);
+                instance[field4] = clone2(optionalDefaults[field4]);
                 continue;
               }
               error(issues, `${itemPath}.${field4}`, `Missing required field ${field4}.`);
@@ -10955,7 +11122,7 @@ ${entry.content || ""}`
             encounterChance = /던전|토벌|현상|호위|구출|dungeon|bounty|subjugat|escort|rescue/i.test(label) ? 35 : /채집|정보|gather|intel/i.test(label) ? 15 : 25;
             warn(issues, `${path}.encounterChance`, `Default encounter chance ${encounterChance} assigned (combat schema with encounter pool).`);
           }
-          normalized.push({ id, name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable), encounterChance, ...isObject(raw.requires) ? { requires: clone(raw.requires) } : {} });
+          normalized.push({ id, name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id, check, rewardTier, repeatable: Boolean(raw.repeatable), encounterChance, ...isObject(raw.requires) ? { requires: clone2(raw.requires) } : {} });
         });
         schema2.quests = normalized;
       }
@@ -11160,7 +11327,7 @@ ${entry.content || ""}`
       function warn(issues, path, msg) {
         issues.push({ level: "warn", path, msg });
       }
-      function clone(value) {
+      function clone2(value) {
         return JSON.parse(JSON.stringify(value));
       }
       module.exports = { validateSchema: validateSchema2 };
@@ -11817,6 +11984,533 @@ ${Array.from(extras).join(" ")}` : text;
     return mime.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "svg"].includes(ext);
   }
 
+  // core/memory/groundedLexical.ts
+  var WORD_RE = /[\p{L}\p{N}]+/gu;
+  function normalize(value) {
+    return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
+  }
+  function words(value) {
+    return normalize(value).match(WORD_RE) ?? [];
+  }
+  function grams(value, size = 2) {
+    const compact = normalize(value).replace(/[^\p{L}\p{N}]/gu, "");
+    const out = /* @__PURE__ */ new Set();
+    for (let i = 0; i <= compact.length - size; i += 1) out.add(compact.slice(i, i + size));
+    return out;
+  }
+  function overlapRatio(query, document2) {
+    if (!query.size) return 0;
+    let matched = 0;
+    for (const token of query) if (document2.has(token)) matched += 1;
+    return matched / query.size;
+  }
+  function buildGroundedLexicalIndex(records) {
+    return {
+      records: records.map((record) => {
+        const anchors = [...record.canonicalAnchors ?? [], ...record.entities].map(normalize).filter(Boolean);
+        const searchable = [record.text, ...anchors, record.sceneId ?? "", record.sourceLocator?.sceneId ?? ""].join(" ");
+        return {
+          record,
+          normalizedText: normalize(searchable),
+          wordSet: new Set(words(searchable)),
+          bigrams: grams(searchable),
+          anchors
+        };
+      })
+    };
+  }
+  function searchGroundedLexical(index, query, k) {
+    const normalizedQuery = normalize(query);
+    const queryWords = new Set(words(query));
+    const queryBigrams = grams(query);
+    return index.records.map((item) => {
+      const wordCoverage = overlapRatio(queryWords, item.wordSet);
+      const gramCoverage = overlapRatio(queryBigrams, item.bigrams);
+      const exactAnchor = item.anchors.some((anchor) => anchor.length >= 2 && normalizedQuery.includes(anchor));
+      const exactPhrase = normalizedQuery.length >= 4 && item.normalizedText.includes(normalizedQuery);
+      const score = Math.min(1, wordCoverage * 0.55 + gramCoverage * 0.3 + (exactAnchor ? 0.1 : 0) + (exactPhrase ? 0.05 : 0));
+      return { recordId: item.record.id, score, evidenceScore: score };
+    }).filter((hit) => hit.score > 0).sort((a, b) => b.score - a.score || a.recordId.localeCompare(b.recordId)).slice(0, Math.max(0, k));
+  }
+  function createGroundedLexicalSearch(records) {
+    const index = buildGroundedLexicalIndex(records);
+    return (query, k) => searchGroundedLexical(index, query, k);
+  }
+
+  // core/memory/abstention.ts
+  var DEFAULT_ABSTENTION = {
+    gate: "soft",
+    minConfidence: 0.15,
+    calibrated: false
+  };
+  function decideAbstention(hits, config = DEFAULT_ABSTENTION) {
+    if (config.gate === "off") return { abstain: false, confidence: hits[0] ? hits[0].evidenceScore ?? hits[0].score : 0, reason: "gate-off" };
+    if (!hits.length) return { abstain: true, confidence: 0, reason: "no-hits" };
+    const top = hits[0].evidenceScore ?? hits[0].score ?? 0;
+    const second = hits[1] ? hits[1].evidenceScore ?? hits[1].score ?? 0 : 0;
+    const margin = top - second;
+    const confidence = top;
+    if (config.gate === "soft") {
+      if (confidence < config.minConfidence) return { abstain: true, confidence, reason: "below-min-confidence" };
+      return { abstain: false, confidence, reason: "ok" };
+    }
+    if (confidence < config.minConfidence) return { abstain: true, confidence, reason: "below-min-confidence" };
+    if (margin < config.minConfidence * 0.5) return { abstain: true, confidence, reason: "ambiguous-margin" };
+    return { abstain: false, confidence, reason: "ok" };
+  }
+
+  // core/memory/groundedPlanner.ts
+  var AUTHORITATIVE_KINDS = /* @__PURE__ */ new Set(["engine-fact", "relation", "event"]);
+  var DEFAULT_VIEWER_SCOPES = ["public"];
+  function estimateTokens(text) {
+    return Math.ceil((text || "").length / 4);
+  }
+  function scopeAllowed(record, viewerScopes) {
+    const scope = record.knowledgeScope || "public";
+    if (viewerScopes.includes(scope)) return true;
+    return false;
+  }
+  function knowledgeAllowed(record, viewerScopes, viewerEntityIds) {
+    if (!scopeAllowed(record, viewerScopes)) return false;
+    const knowledge = record.knowledge;
+    if (!knowledge) return true;
+    if (knowledge.state === "forgotten" || knowledge.state === "hidden") return false;
+    if (knowledge.deniedToEntityIds?.some((id) => viewerEntityIds.includes(id))) return false;
+    if (knowledge.privacy === "public" || knowledge.type === "public-fact") return true;
+    const allowed = /* @__PURE__ */ new Set([...knowledge.visibleToEntityIds ?? [], ...knowledge.holderEntityIds ?? []]);
+    if (!allowed.size) return knowledge.privacy == null;
+    return viewerEntityIds.some((id) => allowed.has(id));
+  }
+  function queryModeOf(query, requested) {
+    if (requested && requested !== "auto") return requested;
+    return /(?:그때|예전|과거|이전|당시|옛날|기억|전에|used to|previously|back then|history)/iu.test(query) ? "past" : "current";
+  }
+  function sceneAllowed(record, sceneId, mode) {
+    if (!sceneId || mode === "past") return true;
+    if (record.lifecycle?.timeScope !== "current") return true;
+    const recordScene = record.sceneId ?? record.sourceLocator?.sceneId;
+    return !recordScene || recordScene === sceneId;
+  }
+  function uncertain(record) {
+    return record.knowledge?.truth === "contested" || record.knowledge?.truth === "unknown" || record.knowledge?.state === "suspected" || record.knowledge?.state === "uncertain" || record.knowledge?.state === "misunderstood" || record.knowledge?.type === "rumor" || record.knowledge?.type === "inferred";
+  }
+  function hitOf(record, extra) {
+    return {
+      recordId: record.id,
+      score: 0,
+      selectedBecause: [],
+      sourceMessageIds: record.sourceMessageIds.slice(),
+      sourceEventIndexes: record.sourceEventIndexes.slice(),
+      ...extra
+    };
+  }
+  function aliasMatches(query, alias) {
+    const q = query.toLowerCase();
+    const a = String(alias).toLowerCase();
+    if (!a) return false;
+    const isLatin = /^[a-z0-9]+$/.test(a);
+    if (!isLatin) return q.includes(a);
+    let from = 0;
+    for (; ; ) {
+      const idx = q.indexOf(a, from);
+      if (idx < 0) return false;
+      const before = idx > 0 ? q[idx - 1] : "";
+      const after = idx + a.length < q.length ? q[idx + a.length] : "";
+      if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true;
+      from = idx + 1;
+    }
+  }
+  function referencedEntities(query, aliases) {
+    const found = /* @__PURE__ */ new Set();
+    for (const [id, names] of Object.entries(aliases)) {
+      for (const name of names) if (aliasMatches(query, name)) {
+        found.add(id);
+        break;
+      }
+    }
+    return found;
+  }
+  async function planGroundedHybrid(records, query, deps, config) {
+    const atTurn = config.atTurn;
+    const viewerScopes = config.viewerScopes ?? DEFAULT_VIEWER_SCOPES;
+    const viewerEntityIds = config.viewerEntityIds ?? viewerScopes.filter((scope) => scope.startsWith("entity:")).map((scope) => scope.slice("entity:".length));
+    const aliases = config.entityAliases ?? {};
+    const includeSuperseded = config.includeSuperseded === true;
+    const topK = config.topK ?? 20;
+    const budgetTokens = config.budgetTokens ?? 2e3;
+    const abstentionCfg = config.abstention ?? DEFAULT_ABSTENTION;
+    const evidenceFloor = config.semanticEvidenceFloor ?? 0.05;
+    const queryMode = queryModeOf(query, config.queryMode ?? "auto");
+    const byId = new Map(records.map((r) => [r.id, r]));
+    function injectable(r) {
+      if (r.createdTurn > atTurn) return false;
+      const isPast = r.validToTurn != null && r.validToTurn < atTurn;
+      if (r.status !== "approved" && !(includeSuperseded && queryMode === "past" && r.status === "superseded")) return false;
+      if (isPast && !(includeSuperseded && queryMode === "past")) return false;
+      if (!knowledgeAllowed(r, viewerScopes, viewerEntityIds)) return false;
+      if (!sceneAllowed(r, config.sceneId, queryMode)) return false;
+      return true;
+    }
+    const currentFacts = records.filter((r) => r.validFromTurn <= atTurn && (r.validToTurn == null || r.validToTurn >= atTurn)).filter((r) => (r.status === "approved" || r.status === "superseded") && AUTHORITATIVE_KINDS.has(r.kind)).filter((r) => knowledgeAllowed(r, viewerScopes, viewerEntityIds) && sceneAllowed(r, config.sceneId, "current")).filter((r) => !uncertain(r) && r.knowledge?.truth !== "false").map((r) => hitOf(r, { selectedBecause: ["authoritative-current"] }));
+    const refEntities = referencedEntities(query, aliases);
+    const lex = deps.lexicalSearch(query, topK * 3).filter((s) => byId.has(s.recordId) && injectable(byId.get(s.recordId)));
+    let sem = [];
+    let semanticUsed = false;
+    if (deps.semanticSearch) {
+      sem = (await deps.semanticSearch(query, topK * 3)).filter((s) => byId.has(s.recordId) && injectable(byId.get(s.recordId)));
+      semanticUsed = true;
+    }
+    const score = /* @__PURE__ */ new Map();
+    const evidence = /* @__PURE__ */ new Map();
+    const because = /* @__PURE__ */ new Map();
+    const bump = (id, s, tag, evidenceValue) => {
+      score.set(id, (score.get(id) || 0) + s);
+      if (evidenceValue != null) evidence.set(id, Math.max(evidence.get(id) ?? 0, evidenceValue));
+      const list = because.get(id) || [];
+      if (!list.includes(tag)) list.push(tag);
+      because.set(id, list);
+    };
+    lex.forEach((s) => {
+      const ev = Math.max(0, Math.min(1, s.evidenceScore ?? s.score));
+      bump(s.recordId, ev * 0.65, "lexical", ev);
+    });
+    sem.forEach((s) => {
+      const ev = Math.max(0, Math.min(1, s.evidenceScore ?? s.score));
+      if (ev >= evidenceFloor) bump(s.recordId, ev * 0.35, "semantic", ev);
+    });
+    if (refEntities.size) {
+      for (const id of score.keys()) {
+        const rec = byId.get(id);
+        const recEnts = new Set(rec.entities);
+        const hasRef = [...refEntities].some((e) => recEnts.has(e));
+        const hasOtherRef = [...recEnts].some((e) => !refEntities.has(e) && Object.prototype.hasOwnProperty.call(aliases, e));
+        if (hasRef) bump(id, 0.1, "entity-match");
+        else if (hasOtherRef && recEnts.size > 0) bump(id, -0.15, "other-entity");
+      }
+    }
+    for (const id of score.keys()) {
+      const rec = byId.get(id);
+      if (rec.importance > 0.5) bump(id, 0.02 * rec.importance, "important");
+      if (uncertain(rec)) bump(id, 0, "requires-uncertain-language");
+    }
+    const ranked = [...score.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([id, s]) => hitOf(byId.get(id), {
+      score: Math.max(0, Math.min(1, s)),
+      evidenceScore: evidence.get(id) ?? 0,
+      selectedBecause: because.get(id) || []
+    }));
+    const factIds = new Set(currentFacts.map((h) => h.recordId));
+    const perKindQuota = config.perKindQuota ?? {};
+    const kindUsed = {};
+    const hits = [];
+    let tokens = 0;
+    for (const hit of ranked) {
+      if (hits.length >= topK) break;
+      if (factIds.has(hit.recordId)) continue;
+      const rec = byId.get(hit.recordId);
+      const quota = perKindQuota[rec.kind];
+      if (quota != null && (kindUsed[rec.kind] || 0) >= quota) continue;
+      const t = estimateTokens(rec.text);
+      if (tokens + t > budgetTokens && hits.length > 0) break;
+      hits.push(hit);
+      tokens += t;
+      kindUsed[rec.kind] = (kindUsed[rec.kind] || 0) + 1;
+    }
+    const decision = decideAbstention(hits, abstentionCfg);
+    return {
+      hits: decision.abstain ? [] : hits,
+      currentFacts,
+      abstained: decision.abstain,
+      confidence: decision.confidence,
+      reason: `${decision.reason}${semanticUsed ? "" : "|lexical-only"}`
+    };
+  }
+
+  // core/memory/continuityStore.ts
+  var CONTINUITY_MEMORY_CONTRACT = "continuity-memory/0.1";
+  var ALLOWED_KINDS = /* @__PURE__ */ new Set([
+    "engine-fact",
+    "event",
+    "promise",
+    "secret",
+    "relation",
+    "episode",
+    "summary"
+  ]);
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+  function cleanString(value, max = 500) {
+    return typeof value === "string" ? value.trim().slice(0, max) : "";
+  }
+  function cleanStrings(value, maxItems = 12, maxChars = 120) {
+    if (!Array.isArray(value)) return [];
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const item of value) {
+      const text = cleanString(item, maxChars);
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      out.push(text);
+      if (out.length >= maxItems) break;
+    }
+    return out;
+  }
+  function scopeOf(candidate) {
+    const scope = cleanString(candidate.knowledgeScope, 100);
+    if (scope === "public" || scope === "user" || /^entity:[A-Za-z0-9_.:-]+$/.test(scope)) return scope;
+    if (candidate.kind === "secret" || candidate.knowledge?.privacy === "secret" || candidate.knowledge?.privacy === "private") return "user";
+    return "public";
+  }
+  function knowledgeOf(candidate, scope) {
+    const source = candidate.knowledge;
+    if (!source || typeof source !== "object") {
+      if (scope === "public") return void 0;
+      const entityId = scope.startsWith("entity:") ? scope.slice(7) : "user";
+      return { privacy: scope === "user" ? "private" : "shared", holderEntityIds: [entityId], visibleToEntityIds: [entityId] };
+    }
+    const allowedType = ["experienced", "witnessed", "heard", "inferred", "rumor", "private-thought", "public-fact"];
+    const allowedState = ["known", "suspected", "uncertain", "misunderstood", "forgotten", "hidden"];
+    const allowedPrivacy = ["public", "shared", "private", "secret", "internal"];
+    const allowedTruth = ["true", "false", "contested", "unknown"];
+    return {
+      ...allowedType.includes(String(source.type)) ? { type: source.type } : {},
+      ...allowedState.includes(String(source.state)) ? { state: source.state } : {},
+      ...allowedPrivacy.includes(String(source.privacy)) ? { privacy: source.privacy } : {},
+      ...allowedTruth.includes(String(source.truth)) ? { truth: source.truth } : {},
+      visibleToEntityIds: cleanStrings(source.visibleToEntityIds),
+      deniedToEntityIds: cleanStrings(source.deniedToEntityIds),
+      holderEntityIds: cleanStrings(source.holderEntityIds),
+      inferredByEntityIds: cleanStrings(source.inferredByEntityIds)
+    };
+  }
+  function lifecycleOf(candidate) {
+    const source = candidate.lifecycle;
+    if (!source || typeof source !== "object") return void 0;
+    const states = ["active", "resolved", "dormant", "superseded", "no-longer-true"];
+    const scopes = ["current", "past", "unknown"];
+    return {
+      ...states.includes(String(source.state)) ? { state: source.state } : {},
+      ...scopes.includes(String(source.timeScope)) ? { timeScope: source.timeScope } : {}
+    };
+  }
+  function statusAt(record, turn) {
+    return { ...record, status: "approved", validFromTurn: Math.min(record.validFromTurn, turn) };
+  }
+  function createContinuityMemoryStore(initial) {
+    let nextId = initial?.nextId && Number.isInteger(initial.nextId) && initial.nextId > 0 ? initial.nextId : 1;
+    let nextPatchId = initial?.nextPatchId && Number.isInteger(initial.nextPatchId) && initial.nextPatchId > 0 ? initial.nextPatchId : 1;
+    let records = Array.isArray(initial?.records) ? clone(initial.records) : [];
+    let patches = Array.isArray(initial?.patches) ? clone(initial.patches) : [];
+    function ingestTurn(input2) {
+      const decisions = [];
+      const turn = Number(input2.turn);
+      if (!Number.isInteger(turn) || turn < 0) return [{ recordId: "", status: "rejected", reason: "invalid" }];
+      const successfulEvents = (input2.events ?? []).filter((event) => event && event.ok && Number.isInteger(event.index));
+      const userText = String(input2.userMessage?.content ?? "");
+      for (const raw of (input2.candidates ?? []).slice(0, 12)) {
+        if (!raw || typeof raw !== "object") continue;
+        const candidateText = cleanString(raw.text);
+        const evidenceQuote = cleanString(raw.evidenceQuote, 300);
+        const kind = ALLOWED_KINDS.has(raw.kind) ? raw.kind : "episode";
+        const requestedEventIds = new Set(cleanStrings(raw.eventIds, 8, 100));
+        const matchedEvents = successfulEvents.filter((event) => requestedEventIds.has(event.id));
+        const quoteVerified = evidenceQuote.length >= 4 && userText.includes(evidenceQuote);
+        const approved = quoteVerified || matchedEvents.length > 0;
+        const storedText = matchedEvents.length ? matchedEvents.map((event) => cleanString(event.summary)).filter(Boolean).join(" / ") : quoteVerified ? evidenceQuote : candidateText;
+        if (!storedText) {
+          decisions.push({ recordId: "", status: "rejected", reason: "invalid" });
+          continue;
+        }
+        const normalized = storedText.normalize("NFKC").toLocaleLowerCase();
+        const duplicate = records.find((record2) => record2.text.normalize("NFKC").toLocaleLowerCase() === normalized && record2.status !== "rejected");
+        if (duplicate) {
+          decisions.push({ recordId: duplicate.id, status: duplicate.status, reason: "duplicate" });
+          continue;
+        }
+        const id = `memory-${String(nextId).padStart(6, "0")}`;
+        nextId += 1;
+        const sourceMessageIds = cleanStrings([
+          ...quoteVerified && input2.userMessage?.id ? [input2.userMessage.id] : [],
+          ...input2.assistantMessage?.id ? [input2.assistantMessage.id] : []
+        ]);
+        const scope = scopeOf(raw);
+        const record = {
+          id,
+          // 사건·관계 서사는 "근거 있는 기억"이지 모든 후속 프롬프트에 상시 주입할 현재
+          // 엔진 상태가 아니다. 현재 사실은 engine state가 따로 소유하므로 episode로 보관한다.
+          kind: ["event", "relation", "engine-fact"].includes(kind) ? "episode" : kind,
+          text: storedText,
+          sourceMessageIds,
+          sourceEventIndexes: matchedEvents.map((event) => event.index),
+          entities: cleanStrings(raw.entities),
+          createdTurn: turn,
+          validFromTurn: turn,
+          validToTurn: null,
+          supersedes: [],
+          importance: Math.max(0, Math.min(1, Number.isFinite(Number(raw.importance)) ? Number(raw.importance) : 0.5)),
+          knowledgeScope: scope,
+          status: approved ? "approved" : "candidate",
+          canonicalAnchors: cleanStrings([raw.canonicalKey, ...raw.entities ?? []]),
+          ...input2.sceneId ? { sceneId: cleanString(input2.sceneId, 120), sourceLocator: { sceneId: cleanString(input2.sceneId, 120) } } : {},
+          ...knowledgeOf(raw, scope) ? { knowledge: knowledgeOf(raw, scope) } : {},
+          ...lifecycleOf(raw) ? { lifecycle: lifecycleOf(raw) } : {}
+        };
+        records.push(record);
+        decisions.push({ recordId: id, status: record.status, reason: matchedEvents.length ? "engine-event" : quoteVerified ? "user-quote" : "needs-review" });
+      }
+      return decisions;
+    }
+    function approve(recordId, turn) {
+      const index = records.findIndex((record) => record.id === recordId);
+      if (index < 0) throw new RangeError(`unknown_memory:${recordId}`);
+      if (records[index].status === "rejected") throw new RangeError(`rejected_memory:${recordId}`);
+      records[index] = statusAt(records[index], turn);
+      return clone(records[index]);
+    }
+    function reject(recordId) {
+      const index = records.findIndex((record) => record.id === recordId);
+      if (index < 0) throw new RangeError(`unknown_memory:${recordId}`);
+      records[index] = { ...records[index], status: "rejected" };
+      return clone(records[index]);
+    }
+    async function retrieve(query, config) {
+      const snapshot = clone(records);
+      const plan = await planGroundedHybrid(snapshot, query, { lexicalSearch: createGroundedLexicalSearch(snapshot) }, {
+        atTurn: config.atTurn,
+        sceneId: config.sceneId,
+        viewerScopes: config.viewerScopes ?? ["public", "user"],
+        viewerEntityIds: config.viewerEntityIds ?? ["user"],
+        entityAliases: config.entityAliases,
+        topK: config.topK ?? 8,
+        abstention: { gate: "soft", minConfidence: config.minConfidence ?? 0.28, calibrated: false }
+      });
+      return { plan, records: snapshot };
+    }
+    function list(status) {
+      return clone(status ? records.filter((record) => record.status === status) : records);
+    }
+    function reconcileSources(input2) {
+      const messages2 = new Set(cleanStrings(input2.messageIds, 5e4, 120));
+      const events = new Set((Array.isArray(input2.eventIndexes) ? input2.eventIndexes : []).filter(Number.isInteger));
+      const removed = [];
+      records = records.map((record) => {
+        const hadSources = record.sourceMessageIds.length > 0 || record.sourceEventIndexes.length > 0;
+        const hasLiveSource = record.sourceMessageIds.some((id) => messages2.has(id)) || record.sourceEventIndexes.some((index) => events.has(index));
+        if (!hadSources || hasLiveSource || record.status === "rejected" || record.status === "superseded") return record;
+        removed.push(record.id);
+        return {
+          ...record,
+          status: "superseded",
+          validToTurn: Math.max(record.validFromTurn, Number.isInteger(input2.atTurn) ? input2.atTurn : record.validFromTurn),
+          lifecycle: { ...record.lifecycle ?? {}, state: "superseded", timeScope: "past" }
+        };
+      });
+      return removed;
+    }
+    function proposePatch(input2, turn) {
+      const confirmMemoryIds = cleanStrings(input2?.confirmMemoryIds, 20, 120).filter((id) => records.some((record) => record.id === id));
+      const resolveMemoryIds = cleanStrings(input2?.resolveMemoryIds, 20, 120).filter((id) => records.some((record) => record.id === id));
+      if (!confirmMemoryIds.length && !resolveMemoryIds.length) return null;
+      const patch = {
+        id: `continuity-patch-${String(nextPatchId).padStart(6, "0")}`,
+        turn: Number.isInteger(turn) ? turn : 0,
+        confirmMemoryIds,
+        resolveMemoryIds,
+        reason: cleanString(input2?.reason, 300),
+        status: "pending"
+      };
+      nextPatchId += 1;
+      patches.push(patch);
+      return clone(patch);
+    }
+    function applyPatch(patchId, turn) {
+      const patchIndex = patches.findIndex((patch2) => patch2.id === patchId);
+      if (patchIndex < 0) throw new RangeError(`unknown_continuity_patch:${patchId}`);
+      if (patches[patchIndex].status !== "pending") throw new RangeError(`continuity_patch_not_pending:${patchId}`);
+      const patch = patches[patchIndex];
+      for (const id of patch.confirmMemoryIds) {
+        const index = records.findIndex((record) => record.id === id);
+        if (index >= 0 && records[index].status === "candidate") records[index] = statusAt(records[index], turn);
+      }
+      for (const id of patch.resolveMemoryIds) {
+        const index = records.findIndex((record) => record.id === id);
+        if (index < 0 || records[index].status === "rejected") continue;
+        records[index] = {
+          ...records[index],
+          status: "superseded",
+          validToTurn: Math.max(records[index].validFromTurn, turn),
+          lifecycle: { ...records[index].lifecycle ?? {}, state: "resolved", timeScope: "past" }
+        };
+      }
+      patches[patchIndex] = { ...patch, status: "applied" };
+      return clone(patches[patchIndex]);
+    }
+    function rejectPatch(patchId) {
+      const index = patches.findIndex((patch) => patch.id === patchId);
+      if (index < 0) throw new RangeError(`unknown_continuity_patch:${patchId}`);
+      if (patches[index].status !== "pending") throw new RangeError(`continuity_patch_not_pending:${patchId}`);
+      patches[index] = { ...patches[index], status: "rejected" };
+      return clone(patches[index]);
+    }
+    function listPatches(status) {
+      return clone(status ? patches.filter((patch) => patch.status === status) : patches);
+    }
+    function toJSON() {
+      return { contract: CONTINUITY_MEMORY_CONTRACT, nextId, records: clone(records), nextPatchId, patches: clone(patches) };
+    }
+    return { ingestTurn, approve, reject, retrieve, list, reconcileSources, proposePatch, applyPatch, rejectPatch, listPatches, toJSON };
+  }
+  function restoreContinuityMemoryStore(payload) {
+    if (!payload || typeof payload !== "object" || payload.contract !== CONTINUITY_MEMORY_CONTRACT) {
+      throw new TypeError("continuity_memory_contract_mismatch");
+    }
+    const parsed = payload;
+    if (!Array.isArray(parsed.records)) throw new TypeError("continuity_memory_records_required");
+    if (parsed.records.length > 5e4) throw new TypeError("continuity_memory_too_large");
+    for (const record of parsed.records) {
+      if (!record || typeof record !== "object" || typeof record.id !== "string" || !record.id.trim() || typeof record.text !== "string" || !ALLOWED_KINDS.has(record.kind) || !["candidate", "approved", "rejected", "superseded"].includes(record.status) || !Array.isArray(record.sourceMessageIds) || !Array.isArray(record.sourceEventIndexes) || !Array.isArray(record.entities) || !Number.isInteger(record.createdTurn) || !Number.isInteger(record.validFromTurn)) {
+        throw new TypeError("continuity_memory_record_invalid");
+      }
+    }
+    if (parsed.patches != null && !Array.isArray(parsed.patches)) throw new TypeError("continuity_memory_patches_invalid");
+    for (const patch of parsed.patches ?? []) {
+      if (!patch || typeof patch.id !== "string" || !Array.isArray(patch.confirmMemoryIds) || !Array.isArray(patch.resolveMemoryIds) || !["pending", "applied", "rejected"].includes(patch.status)) throw new TypeError("continuity_memory_patch_invalid");
+    }
+    return createContinuityMemoryStore(parsed);
+  }
+  function formatGroundedMemory(plan, records) {
+    const byId = new Map(records.map((record) => [record.id, record]));
+    const ordered = [...plan.currentFacts, ...plan.hits];
+    const seen = /* @__PURE__ */ new Set();
+    const lines = [];
+    for (const hit of ordered) {
+      if (seen.has(hit.recordId)) continue;
+      seen.add(hit.recordId);
+      const record = byId.get(hit.recordId);
+      if (!record || record.status !== "approved") continue;
+      const sources = [
+        ...record.sourceMessageIds.map((id) => `message:${id}`),
+        ...record.sourceEventIndexes.map((index) => `event:${index}`)
+      ];
+      const uncertain2 = hit.selectedBecause.includes("requires-uncertain-language") ? " \xB7 \uBD88\uD655\uC2E4\uD55C \uC815\uBCF4\uB85C\uB9CC \uD45C\uD604" : "";
+      lines.push(`- [${record.id} \xB7 scope:${record.knowledgeScope}${sources.length ? ` \xB7 ${sources.join(",")}` : ""}${uncertain2}] ${record.text}`);
+    }
+    return lines.join("\n");
+  }
+  function validateFactReferences(input2, context) {
+    const successfulEventIds = new Set((context.events ?? []).filter((event) => event.ok).map((event) => event.id));
+    return (input2 ?? []).slice(0, 20).map((item) => {
+      const refs = cleanStrings(item?.refs, 12, 120);
+      const invalidRefs = refs.filter((ref) => {
+        if (ref === "state") return !context.hasState;
+        if (ref === "user-message") return !context.userMessageId;
+        if (ref.startsWith("event:")) return !successfulEventIds.has(ref.slice("event:".length));
+        return true;
+      });
+      return { claim: cleanString(item?.claim, 300), refs, ok: !!cleanString(item?.claim, 300) && refs.length > 0 && invalidRefs.length === 0, invalidRefs };
+    });
+  }
+
   // src/engineSession.js
   var defaultSchema = require_yongsa_inn_v0();
   var { getRegisteredEventIds } = require_applyEvent();
@@ -11829,6 +12523,7 @@ ${Array.from(extras).join(" ")}` : text;
   var logs = [];
   var eventCount = 0;
   var promptRuns = [];
+  var continuityMemory = createContinuityMemoryStore();
   function getEventTypes() {
     return getRegisteredEventIds();
   }
@@ -11874,6 +12569,7 @@ ${Array.from(extras).join(" ")}` : text;
     logs = [];
     eventCount = 0;
     promptRuns = [];
+    continuityMemory = createContinuityMemoryStore();
     sessionEpoch += 1;
     return engineState;
   }
@@ -11881,7 +12577,7 @@ ${Array.from(extras).join(" ")}` : text;
     const { entries } = journal.append(event);
     engineState = journal.state;
     eventCount += 1;
-    const item = { event, entries, index: logs.length + 1 };
+    const item = { event, entries, index: eventCount };
     logs.unshift(item);
     return item;
   }
@@ -11889,11 +12585,42 @@ ${Array.from(extras).join(" ")}` : text;
     promptRuns.push(run);
     if (promptRuns.length > 500) promptRuns.splice(0, promptRuns.length - 500);
   }
+  function ingestMemoryTurn(input2) {
+    return continuityMemory.ingestTurn(input2);
+  }
+  async function retrieveGroundedMemory(query, config) {
+    const result = await continuityMemory.retrieve(query, config);
+    return { ...result, text: formatGroundedMemory(result.plan, result.records) };
+  }
+  function getMemoryRecords(status) {
+    return continuityMemory.list(status);
+  }
+  function approveMemory(recordId, turn) {
+    return continuityMemory.approve(recordId, turn);
+  }
+  function rejectMemory(recordId) {
+    return continuityMemory.reject(recordId);
+  }
+  function proposeContinuityPatch(patch, turn) {
+    return continuityMemory.proposePatch(patch, turn);
+  }
+  function getContinuityPatches(status) {
+    return continuityMemory.listPatches(status);
+  }
+  function applyContinuityPatch(patchId, turn) {
+    return continuityMemory.applyPatch(patchId, turn);
+  }
+  function rejectContinuityPatch(patchId) {
+    return continuityMemory.rejectPatch(patchId);
+  }
+  function validateMemoryFactRefs(factRefs, context) {
+    return validateFactReferences(factRefs, context);
+  }
   function hashPromptPayload(value) {
     return stateHash(value);
   }
   function exportPlaySession({ messages: messages2, savedAt, title } = {}) {
-    return buildPlaySessionExport({ journal: journal.toJSON(), messages: messages2, promptRuns, savedAt, title });
+    return buildPlaySessionExport({ journal: journal.toJSON(), messages: messages2, promptRuns, memory: continuityMemory.toJSON(), savedAt, title });
   }
   function importPlaySession(payload) {
     const restored = restoreSessionJournal(activeSchema, payload.journal);
@@ -11903,6 +12630,12 @@ ${Array.from(extras).join(" ")}` : text;
     logs = [];
     eventCount = journal.length;
     promptRuns = Array.isArray(payload.promptRuns) ? payload.promptRuns.slice() : [];
+    continuityMemory = payload.memory ? restoreContinuityMemoryStore(payload.memory) : createContinuityMemoryStore();
+    continuityMemory.reconcileSources({
+      messageIds: (payload.messages || []).map((message) => message && message.id).filter(Boolean),
+      eventIndexes: (payload.journal && payload.journal.events || []).map((record) => record && record.index).filter(Number.isInteger),
+      atTurn: (payload.messages || []).filter((message) => message && message.role === "user").length
+    });
     sessionEpoch += 1;
     return engineState;
   }
@@ -12455,9 +13188,33 @@ ${Array.from(extras).join(" ")}` : text;
     return `${Number(value || 0).toLocaleString("ko-KR")}\uC6D0`;
   }
 
+  // core/memory/narrativeVerifier.ts
+  function numericTokens(text) {
+    return Array.from(String(text || "").matchAll(/\d[\d,]*(?:\.\d+)?/g)).map((match) => match[0].replace(/,/g, ""));
+  }
+  function sentences(text) {
+    return String(text || "").split(/(?<=[.!?。！？]|다\.|요\.)\s+|\n+/u).map((part) => part.trim()).filter(Boolean);
+  }
+  function verifyNarrative(input2) {
+    const narrative = String(input2.narrative || "").trim();
+    const fallback = String(input2.fallback || "\uC5D4\uC9C4 \uD310\uC815 \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+    if (input2.hasFailedProposedEvent) {
+      return { text: fallback, issues: [{ code: "failed-event-claim" }] };
+    }
+    const allowed = new Set(numericTokens((input2.evidenceTexts || []).join("\n")));
+    const issues = [];
+    const kept = sentences(narrative).filter((sentence) => {
+      const unsupported = numericTokens(sentence).filter((token) => !allowed.has(token));
+      if (!unsupported.length) return true;
+      issues.push({ code: "unsupported-number", detail: unsupported.join(",") });
+      return false;
+    });
+    return { text: kept.join("\n").trim() || (issues.length ? fallback : narrative), issues };
+  }
+
   // src/playView.js
   var { summarize: summarize2, npcSummary: npcSummary2, availableActions, availableManagement, roomStatus: roomStatus2, staffMax: staffMax2 } = require_selectors();
-  var { estimateTokens, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
+  var { estimateTokens: estimateTokens2, estimateLorebookTokens: estimateLorebookTokens2 } = require_tokens();
   var { buildPrompt, buildNarrationPrompt, parseAssistantResponse } = require_prompt();
   var { resolveSpeaker, resolveSpeakerList } = require_speakerResolver();
   var { PROVIDERS, callProvider } = require_providers();
@@ -12483,6 +13240,8 @@ ${Array.from(extras).join(" ")}` : text;
   var lodgingSelectionDay = null;
   var ledgerDeltas = [];
   var purchaseDraft = {};
+  var messageSerial = 0;
+  var conversationTurn = 0;
   function primaryCharacter(parsed, lore, groups = buildNpcClusters(parsed, lore).groups) {
     const name = String(parsed && parsed.name || "\uC2DC\uBBAC\uBD07");
     const exact = groups.find((group2) => group2.charId.toLowerCase() === name.toLowerCase());
@@ -12538,6 +13297,8 @@ ${Array.from(extras).join(" ")}` : text;
       lodgingSelectionDay = null;
       ledgerDeltas = [];
       purchaseDraft = {};
+      messageSerial = 0;
+      conversationTurn = 0;
       stage = [];
       detachSheetKeyHandler();
       npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
@@ -12963,8 +13724,15 @@ ${Array.from(extras).join(" ")}` : text;
   function promptNpcIds(prompt) {
     return prompt && Array.isArray(prompt.relatedNpcIds) && prompt.relatedNpcIds.length ? [...prompt.relatedNpcIds] : void 0;
   }
+  function nextMessageId() {
+    messageSerial += 1;
+    return `message-${getSessionEpoch()}-${String(messageSerial).padStart(6, "0")}`;
+  }
+  function userMessage(content) {
+    return { id: nextMessageId(), role: "user", content: String(content || ""), sceneId: currentSceneId() };
+  }
   function assistantMessage(content, chips, prompt = lastPrompt, npcIdsOverride) {
-    const message = { role: "assistant", content, chips };
+    const message = { id: nextMessageId(), role: "assistant", content, chips, sceneId: currentSceneId() };
     const npcIds = npcIdsOverride === void 0 ? promptNpcIds(prompt) : npcIdsOverride;
     if (npcIds && npcIds.length) message.npcIds = npcIds;
     return message;
@@ -12973,6 +13741,45 @@ ${Array.from(extras).join(" ")}` : text;
     const schema2 = getSchema(), state2 = getEngineState();
     if (!schema2 || !state2) return "\uC0C8\uB85C\uC6B4 \uC7A5\uBA74";
     return summarize2(schema2, state2).split("\n")[0] || "\uC0C8\uB85C\uC6B4 \uC7A5\uBA74";
+  }
+  function currentSceneId() {
+    const schema2 = getSchema() || {};
+    const state2 = getEngineState() || {};
+    const location = state2.currentLocation || state2.location || state2.player && state2.player.location;
+    const value = location && typeof location === "object" ? location.id || location.name : location;
+    return String(value || `${schema2.meta && schema2.meta.id || "simulation"}:default`).slice(0, 120);
+  }
+  function entityAliases() {
+    const out = {};
+    for (const block of getSchema() && getSchema().entities || []) if (block.type === "npc") {
+      for (const npc of block.instances || []) out[npc.id] = [npc.id, npc.nameKo, npc.nameEn, ...npc.aliases || []].filter(Boolean);
+    }
+    return out;
+  }
+  async function groundedFor(query, turn) {
+    return retrieveGroundedMemory(query, {
+      atTurn: turn,
+      sceneId: currentSceneId(),
+      viewerScopes: ["public", "user"],
+      viewerEntityIds: ["user"],
+      entityAliases: entityAliases(),
+      topK: 8
+    });
+  }
+  function verifiedNarrative(parsed, prompt, evidenceEvents, chips, options = {}) {
+    const evidenceTexts = [
+      ...Object.values(prompt && prompt.injectedText || {}).map(String),
+      ...(evidenceEvents || []).map((event) => String(event.summary || "")),
+      String(options.userText || "")
+    ];
+    const result = verifyNarrative({
+      narrative: parsed && parsed.narrative || "",
+      evidenceTexts,
+      hasFailedProposedEvent: options.blocked === true || (evidenceEvents || []).some((event) => !event.ok),
+      fallback: options.fallback || "\uC694\uCCAD\uD55C \uD589\uB3D9\uC740 \uC5D4\uC9C4 \uC870\uAC74\uC744 \uCDA9\uC871\uD558\uC9C0 \uBABB\uD574 \uC131\uB9BD\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."
+    });
+    if (result.issues.some((issue) => issue.code === "unsupported-number")) chips.push({ ok: false, kind: "system", text: "\uADFC\uAC70 \uC5C6\uB294 \uC218\uCE58\uAC00 \uD3EC\uD568\uB41C \uC11C\uC0AC \uBB38\uC7A5\uC744 \uC228\uACBC\uC2B5\uB2C8\uB2E4" });
+    return result.text;
   }
   function emotions() {
     return character && character.group ? Array.from(character.group.emotions.keys()) : [];
@@ -12990,13 +13797,19 @@ ${Array.from(extras).join(" ")}` : text;
   function cardKeyOf(ctx) {
     return `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : "no-card"}#${getSessionEpoch()}`;
   }
-  function promptRunOf(prompt, raw, parsed, appliedOk = 0) {
+  function promptRunOf(prompt, raw, parsed, appliedOk = 0, memoryDecisions = [], factRefVerdicts = [], continuityPatchRecord = null) {
     return {
       promptHash: hashPromptPayload({ system: prompt.system, messages: prompt.messages }),
       model: settings.model || settings.provider,
       responseText: String(raw == null ? "" : raw),
       proposedEvents: (parsed && parsed.events || []).map((event) => event.id),
-      appliedOk
+      appliedOk,
+      proposedMemory: (parsed && parsed.memoryCandidates || []).map((candidate) => ({ kind: candidate.kind, text: candidate.text })),
+      memoryDecisions: memoryDecisions.map((decision) => ({ recordId: decision.recordId, status: decision.status, reason: decision.reason })),
+      factRefs: parsed && parsed.factRefs || [],
+      factRefVerdicts,
+      ...parsed && parsed.continuityPatch ? { proposedContinuityPatch: parsed.continuityPatch } : {},
+      ...continuityPatchRecord ? { continuityPatchRecord } : {}
     };
   }
   function applyEmotion(value) {
@@ -13011,8 +13824,71 @@ ${Array.from(extras).join(" ")}` : text;
     const side = el2("aside", "play-side-panel");
     const hud = renderCombatHud();
     if (hud) side.append(hud);
-    side.append(renderLedgerSection(render2), renderSettings(ctx, render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
+    side.append(renderLedgerSection(render2), renderMemorySection(render2), renderSettings(ctx, render2), renderStateBox(ctx, render2), renderTokenBox(ctx));
     return side;
+  }
+  function renderMemorySection(render2) {
+    const section = titled("\uC5F0\uC18D\uC131 \uAE30\uC5B5");
+    const all = getMemoryRecords();
+    const pending = all.filter((record) => record.status === "candidate");
+    const approved = all.filter((record) => record.status === "approved");
+    const pendingPatches = getContinuityPatches("pending");
+    const summary = el2("p", "memory-summary");
+    summary.textContent = `\uD655\uC815 ${approved.length} \xB7 \uAE30\uC5B5 \uD6C4\uBCF4 ${pending.length} \xB7 \uC0C1\uD0DC \uBCC0\uACBD ${pendingPatches.length}`;
+    section.append(summary);
+    if (!pending.length && !pendingPatches.length) {
+      const empty = el2("p", "muted");
+      empty.textContent = "\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uD6C4\uBCF4\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
+      section.append(empty);
+      return section;
+    }
+    if (pending.length) {
+      const list = el2("div", "memory-review-list");
+      for (const record of pending.slice(0, 8)) {
+        const card = el2("article", "memory-review-card");
+        const text = el2("p");
+        text.textContent = record.text;
+        const meta = el2("small");
+        meta.textContent = `${record.kind} \xB7 ${record.knowledgeScope} \xB7 ${record.sceneId || "\uC7A5\uBA74 \uBBF8\uC9C0\uC815"}`;
+        const actions = el2("div", "memory-review-actions");
+        const accept = button2("\uAE30\uC5B5 \uC2B9\uC778", "secondary");
+        accept.addEventListener("click", () => {
+          approveMemory(record.id, conversationTurn);
+          render2();
+        });
+        const reject = button2("\uBC84\uB9AC\uAE30", "ghost");
+        reject.addEventListener("click", () => {
+          rejectMemory(record.id);
+          render2();
+        });
+        actions.append(accept, reject);
+        card.append(text, meta, actions);
+        list.append(card);
+      }
+      section.append(list);
+    }
+    for (const patch of pendingPatches.slice(0, 5)) {
+      const card = el2("article", "memory-review-card");
+      const text = el2("p");
+      text.textContent = `\uD655\uC815 \uC81C\uC548 ${patch.confirmMemoryIds.join(", ") || "\uC5C6\uC74C"} \xB7 \uD574\uACB0 \uC81C\uC548 ${patch.resolveMemoryIds.join(", ") || "\uC5C6\uC74C"}`;
+      const meta = el2("small");
+      meta.textContent = patch.reason || "\uC774\uC720 \uBBF8\uC81C\uC2DC";
+      const actions = el2("div", "memory-review-actions");
+      const accept = button2("\uC0C1\uD0DC \uBCC0\uACBD \uC2B9\uC778", "secondary");
+      accept.addEventListener("click", () => {
+        applyContinuityPatch(patch.id, conversationTurn);
+        render2();
+      });
+      const reject = button2("\uAC70\uC808", "ghost");
+      reject.addEventListener("click", () => {
+        rejectContinuityPatch(patch.id);
+        render2();
+      });
+      actions.append(accept, reject);
+      card.append(text, meta, actions);
+      section.append(card);
+    }
+    return section;
   }
   function renderCombatHud() {
     const state2 = getEngineState();
@@ -13372,12 +14248,12 @@ ${Array.from(extras).join(" ")}` : text;
     const resultTexts = [];
     const recentForNarration = messages.slice(-4);
     const recentChanges = ledgerDeltas.slice();
-    if (flavorText) messages.push({ role: "user", content: flavorText });
+    if (flavorText) messages.push(userMessage(flavorText));
     input2.value = "";
     render2();
     const result = runEvent(event);
     appendEventChips(event.id, result.entries, chips, resultTexts);
-    const pending = { role: "assistant", content: "", chips };
+    const pending = { id: nextMessageId(), role: "assistant", content: "", chips, sceneId: currentSceneId() };
     try {
       const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
       lastPrompt = prompt;
@@ -13388,7 +14264,7 @@ ${Array.from(extras).join(" ")}` : text;
       pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
-      pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+      pending.content = verifiedNarrative(parsed, prompt, [], chips, { fallback: "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4." }) || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } catch (_) {
       chips.push({ ok: false, kind: "system", text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
       pending.content = "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -13407,7 +14283,7 @@ ${Array.from(extras).join(" ")}` : text;
     const resultTexts = [];
     const recentForNarration = messages.slice(-4);
     const recentChanges = ledgerDeltas.slice();
-    if (flavorText) messages.push({ role: "user", content: flavorText });
+    if (flavorText) messages.push(userMessage(flavorText));
     input2.value = "";
     render2();
     for (const item of items) {
@@ -13419,7 +14295,7 @@ ${Array.from(extras).join(" ")}` : text;
         resultTexts.push(text);
       } else appendEventChips(item.event.id, entries, chips, resultTexts);
     }
-    const pending = { role: "assistant", content: "", chips };
+    const pending = { id: nextMessageId(), role: "assistant", content: "", chips, sceneId: currentSceneId() };
     try {
       const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: "lodging_batch" });
       lastPrompt = prompt;
@@ -13430,7 +14306,7 @@ ${Array.from(extras).join(" ")}` : text;
       pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
-      pending.content = parsed.narrative || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+      pending.content = verifiedNarrative(parsed, prompt, [], chips, { fallback: "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4." }) || "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } catch (_) {
       chips.push({ ok: false, kind: "system", text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
       pending.content = "\uAD00\uB9AC \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -13569,7 +14445,12 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       try {
         const payload = parsePlaySessionImport(await file.text());
         importPlaySession(payload);
-        messages = payload.messages;
+        messageSerial = 0;
+        messages = payload.messages.map((message) => {
+          messageSerial += 1;
+          return message.id ? message : { ...message, id: `message-${getSessionEpoch()}-${String(messageSerial).padStart(6, "0")}` };
+        });
+        conversationTurn = messages.filter((message) => message.role === "user").length;
         stage = [];
         lastPrompt = null;
         fastCombatLog = [];
@@ -13733,7 +14614,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   function renderTokenBox(ctx) {
     const section = titled("\uD1A0\uD070 \uBBF8\uD130");
     const schema2 = getSchema();
-    const current = lastPrompt ? lastPrompt.injectedTokens : estimateTokens(summarize2(schema2, getEngineState()));
+    const current = lastPrompt ? lastPrompt.injectedTokens : estimateTokens2(summarize2(schema2, getEngineState()));
     const baseline = ctx.lore ? estimateLorebookTokens2(ctx.lore.entries).constant || BASELINE_REF : BASELINE_REF;
     section.append(tokenGauge(current, baseline));
     if (lastPrompt) {
@@ -13788,8 +14669,8 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
     const combatAfter = getEngineState().combat;
     const fastCombatEnded = event.id === "end_encounter" || event.id === "combat_action" && combatAfter && combatAfter.fled;
     const recentForNarration = messages.slice(-4);
-    if (flavorText) messages.push({ role: "user", content: flavorText });
-    const pending = { role: "assistant", content: "", chips };
+    if (flavorText) messages.push(userMessage(flavorText));
+    const pending = { id: nextMessageId(), role: "assistant", content: "", chips, sceneId: currentSceneId() };
     messages.push(pending);
     input2.value = "";
     if (event.id === "use_item") {
@@ -13820,7 +14701,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       pending.npcIds = applySpeakers(parsed);
       const ignored = parsed.events.length + parsed.dropped;
       if (ignored) chips.push({ ok: false, kind: "system", text: `\uC11C\uC0AC\uD654 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
-      pending.content = parsed.narrative || "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+      pending.content = verifiedNarrative(parsed, prompt, [], chips, { fallback: "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4." }) || "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     } catch (_) {
       chips.push({ ok: false, kind: "system", text: "\uC11C\uC0AC\uD654 API \uC624\uB958 \xB7 \uC5D4\uC9C4 \uACB0\uACFC \uC720\uC9C0" });
       pending.content = "\uC804\uD22C \uACB0\uACFC\uAC00 \uBC18\uC601\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
@@ -13854,30 +14735,49 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   async function startCombat(ctx, render2) {
     if (busy) return;
     busy = true;
+    conversationTurn += 1;
+    const turn = conversationTurn;
     render2();
     const recentChanges = ledgerDeltas.slice();
     try {
       const instruction = "\uC774\uBC88 \uC7A5\uBA74\uC5D0 \uC5B4\uC6B8\uB9AC\uB294 \uC801 \uBA85\uBD80\uB85C start_encounter \uC0AC\uAC74 \uD558\uB098\uB9CC JSON\uC73C\uB85C \uB0B4\uB77C. \uC11C\uC0AC\uB294 1~2\uBB38\uC7A5\uB9CC \uD5C8\uC6A9\uD55C\uB2E4.";
-      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
+      const grounded = await groundedFor(instruction, turn);
+      const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
-      recordPromptRun(promptRunOf(prompt, raw, parsed));
       applyEmotion(parsed.emotion);
       const speakerIds = applySpeakers(parsed);
       const event = parsed.events.find((item) => item.id === "start_encounter");
+      let assistantRow;
+      const evidenceEvents = [];
+      let appliedOk = 0;
       if (!event) {
-        messages.push(assistantMessage(parsed.narrative || "", [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }], prompt, speakerIds));
+        const chips = [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }];
+        assistantRow = assistantMessage(verifiedNarrative(parsed, prompt, [], chips, { blocked: true, fallback: "\uC804\uD22C\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4." }), chips, prompt, speakerIds);
       } else {
         const result = runEvent(event);
         const entry = result.entries[0] || { ok: false, reason: "empty_log" };
+        appliedOk = entry.ok ? 1 : 0;
         if (entry.ok) fastCombatLog = [];
         const ignored = parsed.events.length - 1 + parsed.dropped;
         const item = summarizeEventItem("start_encounter", entry, formatMoney2);
         const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
         if (ignored > 0) chips.push({ ok: false, kind: "system", text: `\uB2E4\uB978 \uC0AC\uAC74 ${ignored}\uAC1C \uBB34\uC2DC\uB428` });
-        messages.push(assistantMessage(parsed.narrative, chips, prompt, speakerIds));
+        evidenceEvents.push({ id: event.id, index: result.index, ok: !!entry.ok, summary: summarizeEvent(event.id, entry, formatMoney2) });
+        const content = verifiedNarrative(parsed, prompt, evidenceEvents, chips, { fallback: "\uC804\uD22C\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4." });
+        assistantRow = assistantMessage(content, chips, prompt, speakerIds);
       }
+      const memoryDecisions = ingestMemoryTurn({ turn, sceneId: currentSceneId(), assistantMessage: { id: assistantRow.id, content: assistantRow.content }, candidates: parsed.memoryCandidates || [], events: evidenceEvents });
+      const pendingCount = memoryDecisions.filter((decision) => decision.status === "candidate").length;
+      if (pendingCount) assistantRow.chips.push({ ok: true, kind: "info", text: `\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uD6C4\uBCF4 ${pendingCount}\uAC74` });
+      const factRefVerdicts = validateMemoryFactRefs(parsed.factRefs || [], { hasState: true, events: evidenceEvents });
+      const invalidFactRefs = factRefVerdicts.filter((verdict) => !verdict.ok).length;
+      if (invalidFactRefs) assistantRow.chips.push({ ok: false, kind: "system", text: `\uADFC\uAC70\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC740 \uC11C\uC0AC \uC8FC\uC7A5 ${invalidFactRefs}\uAC74` });
+      const continuityPatchRecord = parsed.continuityPatch ? proposeContinuityPatch(parsed.continuityPatch, turn) : null;
+      if (continuityPatchRecord) assistantRow.chips.push({ ok: true, kind: "info", text: "\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uC0C1\uD0DC \uBCC0\uACBD 1\uAC74" });
+      recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk, memoryDecisions, factRefVerdicts, continuityPatchRecord));
+      messages.push(assistantRow);
     } catch (_) {
       messages.push(assistantMessage("", [{ ok: false, kind: "system", text: "\uC801 \uC815\uBCF4\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" }]));
     } finally {
@@ -13889,11 +14789,14 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   async function openCannedScene(instruction, ctx, render2) {
     if (busy) return;
     busy = true;
+    conversationTurn += 1;
+    const turn = conversationTurn;
     render2();
     const recentChanges = ledgerDeltas.slice();
     try {
       const schema2 = getSchema();
-      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
+      const grounded = await groundedFor(instruction, turn);
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
@@ -13904,6 +14807,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
       if (blocked.length) chips.push({ ok: false, kind: "system", text: `\uBC84\uD2BC \uC804\uC6A9 \uC0AC\uAC74 ${blocked.length}\uAC1C \uBB34\uC2DC\uB428` });
       let appliedOk = 0;
+      const evidenceEvents = [];
       for (const event of parsed.events) {
         if (buttonOnlyEvents.has(event.id)) continue;
         const result = runEvent(event);
@@ -13911,9 +14815,20 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
         if (first.ok) appliedOk += 1;
         const item = summarizeEventItem(event.id, first, formatMoney2);
         chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
+        evidenceEvents.push({ id: event.id, index: result.index, ok: result.entries.some((entry) => entry && entry.ok), summary: result.entries.map((entry) => summarizeEvent(event.id, entry, formatMoney2)).join(" / ") });
       }
-      recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
-      messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
+      const safeNarrative = verifiedNarrative(parsed, prompt, evidenceEvents, chips, { blocked: blocked.length > 0 });
+      const assistantRow = assistantMessage(safeNarrative || "\uC7A5\uBA74\uC774 \uC774\uC5B4\uC9D1\uB2C8\uB2E4.", chips, prompt, speakerIds);
+      const memoryDecisions = ingestMemoryTurn({ turn, sceneId: currentSceneId(), assistantMessage: { id: assistantRow.id, content: assistantRow.content }, candidates: parsed.memoryCandidates || [], events: evidenceEvents });
+      const pendingCount = memoryDecisions.filter((decision) => decision.status === "candidate").length;
+      if (pendingCount) chips.push({ ok: true, kind: "info", text: `\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uD6C4\uBCF4 ${pendingCount}\uAC74` });
+      const factRefVerdicts = validateMemoryFactRefs(parsed.factRefs || [], { hasState: true, events: evidenceEvents });
+      const invalidFactRefs = factRefVerdicts.filter((verdict) => !verdict.ok).length;
+      if (invalidFactRefs) chips.push({ ok: false, kind: "system", text: `\uADFC\uAC70\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC740 \uC11C\uC0AC \uC8FC\uC7A5 ${invalidFactRefs}\uAC74` });
+      const continuityPatchRecord = parsed.continuityPatch ? proposeContinuityPatch(parsed.continuityPatch, turn) : null;
+      if (continuityPatchRecord) chips.push({ ok: true, kind: "info", text: "\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uC0C1\uD0DC \uBCC0\uACBD 1\uAC74" });
+      recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk, memoryDecisions, factRefVerdicts, continuityPatchRecord));
+      messages.push(assistantRow);
     } catch (err) {
       messages.push(assistantMessage(safeError(err), [{ ok: false, kind: "system", text: "API \uC624\uB958" }]));
     } finally {
@@ -13925,13 +14840,17 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
   async function submitTurn(text, ctx, render2) {
     if (busy) return;
     busy = true;
-    messages.push({ role: "user", content: text });
+    conversationTurn += 1;
+    const turn = conversationTurn;
+    const userRow = userMessage(text);
+    messages.push(userRow);
     render2();
     const recentChanges = ledgerDeltas.slice();
     try {
       const schema2 = getSchema();
       const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === "assistant");
-      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
+      const grounded = await groundedFor(text, turn);
+      const prompt = buildPrompt({ schema: schema2, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text, currentMessageId: userRow.id });
       lastPrompt = prompt;
       const raw = await callProvider(providerConfig(settings), prompt);
       const parsed = parseAssistantResponse(raw);
@@ -13942,6 +14861,7 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
       const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
       if (blocked.length) chips.push({ ok: false, kind: "system", text: `\uBC84\uD2BC \uC804\uC6A9 \uC0AC\uAC74 ${blocked.length}\uAC1C \uBB34\uC2DC\uB428` });
       let appliedOk = 0;
+      const evidenceEvents = [];
       for (const event of parsed.events) {
         if (buttonOnlyEvents.has(event.id)) continue;
         const result = runEvent(event);
@@ -13949,12 +14869,35 @@ ${entry.requests.map((request) => `${request.name} \xB7 ${request.party}\uBA85 \
         if (first.ok) appliedOk += 1;
         const item = summarizeEventItem(event.id, first, formatMoney2);
         chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
+        evidenceEvents.push({
+          id: event.id,
+          index: result.index,
+          ok: result.entries.some((entry) => entry && entry.ok),
+          summary: result.entries.map((entry) => summarizeEvent(event.id, entry, formatMoney2)).join(" / ")
+        });
         if (first.ok && (event.id === "start_encounter" || event.id === "end_encounter")) fastCombatLog = [];
       }
-      recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
       const combatNow = getEngineState().combat;
       if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
-      messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
+      const safeNarrative = verifiedNarrative(parsed, prompt, evidenceEvents, chips, { blocked: blocked.length > 0, userText: text });
+      const assistantRow = assistantMessage(safeNarrative || "\uC7A5\uBA74\uC774 \uC774\uC5B4\uC9D1\uB2C8\uB2E4.", chips, prompt, speakerIds);
+      const memoryDecisions = ingestMemoryTurn({
+        turn,
+        sceneId: currentSceneId(),
+        userMessage: { id: userRow.id, content: userRow.content },
+        assistantMessage: { id: assistantRow.id, content: assistantRow.content },
+        candidates: parsed.memoryCandidates || [],
+        events: evidenceEvents
+      });
+      const pendingCount = memoryDecisions.filter((decision) => decision.status === "candidate").length;
+      if (pendingCount) chips.push({ ok: true, kind: "info", text: `\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uD6C4\uBCF4 ${pendingCount}\uAC74` });
+      const factRefVerdicts = validateMemoryFactRefs(parsed.factRefs || [], { hasState: true, userMessageId: userRow.id, events: evidenceEvents });
+      const invalidFactRefs = factRefVerdicts.filter((verdict) => !verdict.ok).length;
+      if (invalidFactRefs) chips.push({ ok: false, kind: "system", text: `\uADFC\uAC70\uAC00 \uD655\uC778\uB418\uC9C0 \uC54A\uC740 \uC11C\uC0AC \uC8FC\uC7A5 ${invalidFactRefs}\uAC74` });
+      const continuityPatchRecord = parsed.continuityPatch ? proposeContinuityPatch(parsed.continuityPatch, turn) : null;
+      if (continuityPatchRecord) chips.push({ ok: true, kind: "info", text: "\uAC80\uD1A0\uD560 \uAE30\uC5B5 \uC0C1\uD0DC \uBCC0\uACBD 1\uAC74" });
+      recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk, memoryDecisions, factRefVerdicts, continuityPatchRecord));
+      messages.push(assistantRow);
     } catch (err) {
       messages.push(assistantMessage(safeError(err), [{ ok: false, kind: "system", text: "API \uC624\uB958" }]));
     } finally {

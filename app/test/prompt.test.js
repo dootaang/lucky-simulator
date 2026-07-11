@@ -128,6 +128,62 @@ test('parseAssistantResponse accepts and removes terminal unfenced event JSON', 
   assert.equal(parsed.emotion, 'default');
 });
 
+test('parseAssistantResponse sanitizes memory candidates and fact references', () => {
+  const parsed = parseAssistantResponse('기억할 장면\n```json\n' + JSON.stringify({
+    events: [],
+    memoryCandidates: [
+      { kind: 'promise', text: '  다음 보름달에 만나기로 했다  ', entities: ['silvia', 'silvia'], evidenceQuote: '다음 보름달에 만나자', eventIds: ['scale_delta'], knowledgeScope: 'user', ignored: '<script>' },
+      { kind: 'invalid', text: '검토할 사건', knowledgeScope: 'entity:silvia' },
+      { text: '' },
+    ],
+    factRefs: [
+      { claim: '호감도가 변했다', refs: ['event:scale_delta', 'state'] },
+      { claim: '', refs: ['state'] },
+    ],
+    continuityPatch: { confirmMemoryIds: ['memory-1', 'memory-1'], resolveMemoryIds: ['memory-2'], reason: '약속을 이행함', ignored: true },
+  }) + '\n```');
+  assert.deepEqual(parsed.memoryCandidates, [
+    { kind: 'promise', text: '다음 보름달에 만나기로 했다', entities: ['silvia'], evidenceQuote: '다음 보름달에 만나자', eventIds: ['scale_delta'], knowledgeScope: 'user' },
+    { kind: 'episode', text: '검토할 사건', entities: [], knowledgeScope: 'entity:silvia' },
+  ]);
+  assert.deepEqual(parsed.factRefs, [{ claim: '호감도가 변했다', refs: ['event:scale_delta', 'state'] }]);
+  assert.deepEqual(parsed.continuityPatch, { confirmMemoryIds: ['memory-1'], resolveMemoryIds: ['memory-2'], reason: '약속을 이행함' });
+  assert.equal(parsed.narrative, '기억할 장면');
+});
+
+test('buildPrompt separates grounded memory and exposes the current message evidence id', () => {
+  const prompt = buildPrompt({
+    schema: innSchema,
+    state: createState(innSchema),
+    recentMessages: [],
+    userInput: '지난 약속을 확인한다',
+    currentMessageId: 'message-000042',
+    groundedMemory: '- [memory-1 · message:message-000001] 다음 보름달에 만나자',
+  });
+  const context = prompt.messages.at(-1).content;
+  assert.match(prompt.system, /memoryCandidates/);
+  assert.match(prompt.system, /evidenceQuote/);
+  assert.match(context, /\[현재 사용자 메시지 근거 ID\]\nmessage-000042/);
+  assert.match(context, /\[근거가 확인된 관련 기억/);
+  assert.match(context, /scope:user.*NPC 대사로 누설하지 마라/);
+  assert.equal(prompt.injectedText.groundedMemory.includes('memory-1'), true);
+  assert.ok(prompt.injectedParts.groundedMemory > 0);
+});
+
+test('buildPrompt exposes only engine-selected combat actions and targets', () => {
+  const state = createState(hunterSchema);
+  state.combat = {
+    active: true, cleared: false, fled: false,
+    enemies: [{ id: 'e1', name: '고블린', hp: { cur: 10, max: 10 }, dead: false }],
+  };
+  const prompt = buildPrompt({ schema: hunterSchema, state, recentMessages: [], userInput: '싸운다' });
+  const context = prompt.messages.at(-1).content;
+  assert.match(context, /\[현재 엔진이 허용한 실제 행동/);
+  assert.match(context, /attack → e1/);
+  assert.match(context, /defend/);
+  assert.equal(prompt.injectedText.actions.includes('e1'), true);
+});
+
 test('decision narration forbids invented choices and time travel', () => {
   const prompt = buildNarrationPrompt({ schema: innSchema, state: createState(innSchema), results: ['사건 발생'], eventType: 'traffic_wave', decisionContext: '실제 선택지: 붙잡는다 / 지킨다', recentMessages: [] });
   assert.match(prompt.system, /대응 방법을 제안·열거/);

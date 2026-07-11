@@ -1,17 +1,17 @@
 const { simulateActivation } = require('../../core/lorebook/activate.js');
 const { estimateTokens } = require('../../core/lorebook/tokens.js');
-const { summarize, npcSummary } = require('../../../engine/core/selectors.js');
+const { summarize, npcSummary, availableActions } = require('../../../engine/core/selectors.js');
 
 const COMMON_PROMPT = `[절대 규칙]
 1. 게임 수치(골드·재고·호감도·평판·경험치)는 외부 엔진이 계산한다. 너는 수치를 창작하거나 계산하지 마라. 상태 정보에 적힌 값만 사실로 취급하라.
 2. 서사는 한국어로, 장면 중심으로 짧게(300자 내외). NPC 대사와 행동 위주. 플레이어의 행동을 대신 결정하지 마라.
 3. NPC 행동은 [NPC 상태]에 적힌 티어 규범을 따른다. 금지 행동은 절대 쓰지 마라.
-4. 응답의 맨 끝에, 이번 장면에서 플레이어가 한 "행동(의도)"만 아래 형식의 JSON 코드블록으로 제안하라. 사건이 없으면 빈 배열.
+4. 응답의 맨 끝에 JSON 코드블록 하나를 둔다. 이번 장면에서 플레이어가 한 "행동(의도)"은 events로, 장기적으로 기억할 후보는 memoryCandidates로 제안한다. 없으면 각각 빈 배열.
 5. ★너는 금액·수량 이외의 어떤 숫자(골드·데미지·경험치·변동량)도 사건에 넣지 않는다. 아래 사건들은 "무엇을 했는가"만 담고, 결과 수치는 엔진이 스키마에서 계산한다. 임의 금액을 지정하는 사건은 존재하지 않는다.`;
 
 const EVENT_PROMPT_HEADER = `[사용 가능한 사건 = 행동(의도)만. 숫자 결과는 엔진이 계산]`;
 const SALE_JSON_EXAMPLE = `\`\`\`json
-{"events":[{"id":"sale","params":{"menuName":"고기 스튜","qty":2}}]}
+{"events":[{"id":"sale","params":{"menuName":"고기 스튜","qty":2}}],"memoryCandidates":[],"factRefs":[{"claim":"고기 스튜 판매를 시도했다","refs":["event:sale"]}]}
 \`\`\``;
 const EVENT_PROMPTS = {
   sale: `- sale {menuName, qty} — 메뉴 판매 완결 시. (엔진: 매출 가산 + 식자재 차감)`,
@@ -39,6 +39,16 @@ const INN_EVENT_RULES = `- ★한 행동 = 사건 1개. purchase 한 건에 gold
 const NEUTRAL_EVENT_RULES = `- ★한 행동 = 사건 1개. 한 행동에 엔진이 계산할 결과 변동을 덧붙이지 마라. 유저가 지시하지 않은 사건은 절대 만들지 마라.
 - ★서사 본문에 상태 변경 태그나 <img> 태그를 절대 쓰지 마라. 상태 변경은 오직 맨 끝의 JSON 사건으로만 표현한다.`;
 const EVENT_RULES_FOOTER = `- 확신이 없으면 사건을 내지 마라. 빈 배열이 안전하다.`;
+
+const MEMORY_PROMPT_APPENDIX = `[기억 후보 — 사실을 직접 확정하는 통로가 아님]
+- JSON 최상위에 memoryCandidates 배열과 factRefs 배열을 둔다. 없으면 빈 배열이다.
+- memoryCandidates 항목: {kind:"promise"|"secret"|"relation"|"episode", text, entities:[npcId...], evidenceQuote?, eventIds?, knowledgeScope?}.
+- evidenceQuote는 이번 사용자 메시지에 실제로 연속해서 존재하는 정확한 원문만 복사한다. 만들어내거나 고쳐 쓰지 마라.
+- eventIds는 같은 JSON의 events 중 이 기억을 뒷받침하는 사건 id만 쓴다. 엔진이 실패한 사건은 기억으로 승인되지 않는다.
+- NPC가 일방적으로 제안했거나 생각만 한 일을 약속·합의로 바꾸지 마라. 확신이 없으면 후보를 내지 마라.
+- factRefs 항목: {claim, refs:["state", "user-message", "event:사건id"]}. 서사의 수치·상태·완결 사건 주장이 무엇을 근거로 했는지 표시한다.
+- 이전에 제시된 기억 ID의 확정·해결을 제안할 때만 continuityPatch:{confirmMemoryIds:[],resolveMemoryIds:[],reason}를 쓴다. 이 제안도 사용자 승인 전에는 적용되지 않는다.
+- 기억 후보는 엔진 또는 사용자의 검토를 통과하기 전까지 사실로 재사용되지 않는다.`;
 
 const REWARD_PROMPT_APPENDIX = `
 
@@ -75,6 +85,7 @@ function buildSystemPrompt(schema = {}, state) {
     sections.push(EVENT_PROMPT_HEADER + '\n' + events.join('\n'));
   }
   sections.push(EVENT_RULES_HEADER + '\n' + (isInnLike(schema) ? INN_EVENT_RULES : NEUTRAL_EVENT_RULES) + '\n' + EVENT_RULES_FOOTER);
+  sections.push(MEMORY_PROMPT_APPENDIX);
   if (hasGoldRewards(schema)) sections.push(REWARD_PROMPT_APPENDIX.trim());
   if (isCombatCapable(schema)) sections.push(COMBAT_PROMPT_APPENDIX.trim());
   return sections.join('\n\n');
@@ -146,7 +157,19 @@ function formatEngineVerdicts(chips) {
   return `[엔진 판정 — 직전 턴 사건 처리 결과]\n${lines.join('\n')}`;
 }
 
-function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions, speakerCatalog, recentChanges }) {
+function availableActionText(schema, state) {
+  const descriptor = availableActions(schema, state);
+  if (!descriptor || !descriptor.active || !Array.isArray(descriptor.actions)) return '';
+  return descriptor.actions.map((action) => {
+    if (action.type === 'attack') return `attack → ${(action.targets || []).map((target) => target.id).join(', ') || '대상 없음'}`;
+    if (action.type === 'skill') return `skill:${action.skill} (${action.affordable ? '사용 가능' : `${action.pool} 부족`})`;
+    if (action.type === 'item') return `item:${action.itemId} (보유 ${action.count})`;
+    if (action.type === 'flee') return `flee (엔진 확률 ${action.rate}%)`;
+    return String(action.type || '');
+  }).filter(Boolean).join('\n');
+}
+
+function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdicts, emotions, speakerCatalog, recentChanges, groundedMemory, currentMessageId }) {
   const combatCapable = isCombatCapable(schema);
   const stateText = summarize(schema, state);
   const npcIds = relatedNpcIds(schema, state, recentMessages, userInput);
@@ -164,15 +187,19 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
   const verdictText = formatEngineVerdicts(lastVerdicts);
   const changesText = formatRecentChanges(recentChanges);
   const speakerText = speakerCatalogText(speakerCatalog, npcIds);
+  const actionText = availableActionText(schema, state);
 
   const context = [
     '[상태]',
     stateText,
     '',
+    actionText ? `[현재 엔진이 허용한 실제 행동 — 이 목록 밖의 전투 행동은 제안하지 마라]\n${actionText}` : '',
     verdictText,
     verdictText ? '' : '',
     changesText,
     changesText ? '' : '',
+    currentMessageId ? `[현재 사용자 메시지 근거 ID]\n${currentMessageId}` : '',
+    groundedMemory ? `[근거가 확인된 관련 기억 — 대괄호 안 source를 근거로만 사용. 목록에 없는 과거 사건을 만들어내지 마라. scope:user는 플레이어/내레이터만 아는 정보라 NPC 대사로 누설하지 마라. NPC는 scope:public 또는 자신의 scope:entity:<npcId>만 말할 수 있다]\n${groundedMemory}` : '',
     npcText ? '[NPC 상태]\n' + npcText + '\n' : '',
     repCats ? '[평판 카테고리]\n' + repCats + '\n' : '',
     expCats ? '[경험치 카테고리]\n' + expCats + '\n' : '',
@@ -208,6 +235,8 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     facilityList: estimateTokens(facilityList),
     items: estimateTokens(itemList),
     lore: estimateTokens(loreText || ''),
+    groundedMemory: estimateTokens(groundedMemory || ''),
+    actions: estimateTokens(actionText),
   };
   if (questList) injectedParts.quests = estimateTokens(questList);
   if (verdictText) injectedParts.verdicts = estimateTokens(verdictText);
@@ -220,7 +249,7 @@ function buildPrompt({ schema, state, lore, recentMessages, userInput, lastVerdi
     injectedTokens,
     injectedParts,
     relatedNpcIds: npcIds,
-    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, speakers: speakerText, items: itemList, ...(questList ? { quests: questList } : {}), lore: loreText },
+    injectedText: { state: stateText, verdicts: verdictText, npc: npcText, repCats, npcList, speakers: speakerText, items: itemList, ...(questList ? { quests: questList } : {}), lore: loreText, groundedMemory: groundedMemory || '', actions: actionText },
   };
 }
 
@@ -295,6 +324,12 @@ function parseAssistantResponse(text) {
   let emotion;
   let speakers;
   let speakersProvided = false;
+  let memoryCandidates = [];
+  let memoryCandidatesProvided = false;
+  let factRefs = [];
+  let factRefsProvided = false;
+  let continuityPatch;
+  let continuityPatchProvided = false;
   let jsonBlock = null;
   let removeBlock = null;
   if (blocks.length) {
@@ -305,6 +340,9 @@ function parseAssistantResponse(text) {
       events = Array.isArray(parsed.events) ? parsed.events : [];
       if (typeof parsed.emotion === 'string') emotion = parsed.emotion;
       if (Array.isArray(parsed.speakers)) { speakers = parsed.speakers; speakersProvided = true; }
+      if (Array.isArray(parsed.memoryCandidates)) { memoryCandidates = parsed.memoryCandidates; memoryCandidatesProvided = true; }
+      if (Array.isArray(parsed.factRefs)) { factRefs = parsed.factRefs; factRefsProvided = true; }
+      if (parsed.continuityPatch && typeof parsed.continuityPatch === 'object') { continuityPatch = parsed.continuityPatch; continuityPatchProvided = true; }
     } catch (_) {
       events = [];
     }
@@ -316,6 +354,9 @@ function parseAssistantResponse(text) {
       events = Array.isArray(terminal.parsed.events) ? terminal.parsed.events : [];
       if (typeof terminal.parsed.emotion === 'string') emotion = terminal.parsed.emotion;
       if (Array.isArray(terminal.parsed.speakers)) { speakers = terminal.parsed.speakers; speakersProvided = true; }
+      if (Array.isArray(terminal.parsed.memoryCandidates)) { memoryCandidates = terminal.parsed.memoryCandidates; memoryCandidatesProvided = true; }
+      if (Array.isArray(terminal.parsed.factRefs)) { factRefs = terminal.parsed.factRefs; factRefsProvided = true; }
+      if (terminal.parsed.continuityPatch && typeof terminal.parsed.continuityPatch === 'object') { continuityPatch = terminal.parsed.continuityPatch; continuityPatchProvided = true; }
     }
   }
   const validEvents = events.filter((event) => event && typeof event.id === 'string' && event.id.trim());
@@ -333,7 +374,76 @@ function parseAssistantResponse(text) {
   const rawNarrative = jsonBlock
     ? source.slice(0, source.lastIndexOf(removeBlock)).trim()
     : source.trim();
-  return { narrative: stripRisuTags(rawNarrative), events: validEvents, dropped, ...(emotion !== undefined ? { emotion } : {}), ...(speakersProvided ? { speakers: validSpeakers } : {}) };
+  const validMemoryCandidates = sanitizeMemoryCandidates(memoryCandidates);
+  const validFactRefs = sanitizeFactRefs(factRefs);
+  return {
+    narrative: stripRisuTags(rawNarrative),
+    events: validEvents,
+    dropped,
+    ...(emotion !== undefined ? { emotion } : {}),
+    ...(speakersProvided ? { speakers: validSpeakers } : {}),
+    ...(memoryCandidatesProvided ? { memoryCandidates: validMemoryCandidates } : {}),
+    ...(factRefsProvided ? { factRefs: validFactRefs } : {}),
+    ...(continuityPatchProvided ? { continuityPatch: sanitizeContinuityPatch(continuityPatch) } : {}),
+  };
+}
+
+function shortString(value, max) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function stringList(value, maxItems = 8, maxChars = 100) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of value) {
+    const text = shortString(item, maxChars);
+    if (!text || seen.has(text)) continue;
+    seen.add(text); out.push(text);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+function sanitizeMemoryCandidates(value) {
+  const allowedKinds = new Set(['promise', 'secret', 'relation', 'episode']);
+  const out = [];
+  for (const item of (Array.isArray(value) ? value : []).slice(0, 12)) {
+    if (!item || typeof item !== 'object') continue;
+    const text = shortString(item.text, 500);
+    if (!text) continue;
+    const kind = allowedKinds.has(item.kind) ? item.kind : 'episode';
+    const scope = shortString(item.knowledgeScope, 100);
+    out.push({
+      kind,
+      text,
+      entities: stringList(item.entities),
+      ...(shortString(item.evidenceQuote, 300) ? { evidenceQuote: shortString(item.evidenceQuote, 300) } : {}),
+      ...(stringList(item.eventIds).length ? { eventIds: stringList(item.eventIds) } : {}),
+      ...(scope === 'public' || scope === 'user' || /^entity:[A-Za-z0-9_.:-]+$/.test(scope) ? { knowledgeScope: scope } : {}),
+    });
+  }
+  return out;
+}
+
+function sanitizeFactRefs(value) {
+  const out = [];
+  for (const item of (Array.isArray(value) ? value : []).slice(0, 20)) {
+    if (!item || typeof item !== 'object') continue;
+    const claim = shortString(item.claim, 300);
+    const refs = stringList(item.refs, 12, 120);
+    if (claim && refs.length) out.push({ claim, refs });
+  }
+  return out;
+}
+
+function sanitizeContinuityPatch(value) {
+  if (!value || typeof value !== 'object') return { confirmMemoryIds: [], resolveMemoryIds: [], reason: '' };
+  return {
+    confirmMemoryIds: stringList(value.confirmMemoryIds, 20, 120),
+    resolveMemoryIds: stringList(value.resolveMemoryIds, 20, 120),
+    reason: shortString(value.reason, 300),
+  };
 }
 
 function terminalJson(source) {
@@ -343,7 +453,7 @@ function terminalJson(source) {
     const raw = source.slice(starts[i]).trim();
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && (Array.isArray(parsed.events) || typeof parsed.emotion === 'string' || Array.isArray(parsed.speakers))) return { raw, json: raw, parsed };
+      if (parsed && typeof parsed === 'object' && (Array.isArray(parsed.events) || typeof parsed.emotion === 'string' || Array.isArray(parsed.speakers) || Array.isArray(parsed.memoryCandidates) || Array.isArray(parsed.factRefs) || (parsed.continuityPatch && typeof parsed.continuityPatch === 'object'))) return { raw, json: raw, parsed };
     } catch (_) {}
   }
   return null;

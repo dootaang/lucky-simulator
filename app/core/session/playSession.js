@@ -7,7 +7,7 @@
 
 const PLAY_SESSION_CONTRACT = 'play-session/0.1';
 
-function buildPlaySessionExport({ journal, messages, promptRuns, savedAt, title }) {
+function buildPlaySessionExport({ journal, messages, promptRuns, memory, savedAt, title }) {
   if (!journal || journal.contract !== 'session-journal/0.1') throw new TypeError('play_session_journal_required');
   return {
     contract: PLAY_SESSION_CONTRACT,
@@ -16,7 +16,20 @@ function buildPlaySessionExport({ journal, messages, promptRuns, savedAt, title 
     journal,
     messages: sanitizeMessages(messages),
     promptRuns: sanitizePromptRuns(promptRuns),
+    ...(sanitizeMemory(memory) ? { memory: sanitizeMemory(memory) } : {}),
   };
+}
+
+function sanitizeMemory(memory) {
+  if (!memory || typeof memory !== 'object' || memory.contract !== 'continuity-memory/0.1' || !Array.isArray(memory.records)) return null;
+  if (memory.records.length > 50000) throw new TypeError('play_session_too_large');
+  return JSON.parse(JSON.stringify({
+    contract: 'continuity-memory/0.1',
+    nextId: Number.isInteger(memory.nextId) && memory.nextId > 0 ? memory.nextId : memory.records.length + 1,
+    records: memory.records,
+    nextPatchId: Number.isInteger(memory.nextPatchId) && memory.nextPatchId > 0 ? memory.nextPatchId : (Array.isArray(memory.patches) ? memory.patches.length + 1 : 1),
+    patches: Array.isArray(memory.patches) ? memory.patches.slice(0, 50000) : [],
+  }));
 }
 
 function sanitizeMessages(messages) {
@@ -26,6 +39,8 @@ function sanitizeMessages(messages) {
     .map((message) => JSON.parse(JSON.stringify({
       role: message.role,
       content: String(message.content == null ? '' : message.content),
+      ...(typeof message.id === 'string' && message.id.trim() ? { id: message.id.trim().slice(0, 120) } : {}),
+      ...(typeof message.sceneId === 'string' && message.sceneId.trim() ? { sceneId: message.sceneId.trim().slice(0, 120) } : {}),
       ...(Array.isArray(message.chips) ? { chips: message.chips } : {}),
       ...(Array.isArray(message.npcIds) ? { npcIds: message.npcIds } : {}),
     })));
@@ -42,7 +57,30 @@ function sanitizePromptRuns(promptRuns) {
       responseText: String(run.responseText == null ? '' : run.responseText),
       proposedEvents: Array.isArray(run.proposedEvents) ? run.proposedEvents.map((id) => String(id)) : [],
       appliedOk: Number.isFinite(Number(run.appliedOk)) ? Number(run.appliedOk) : 0,
+      ...(Array.isArray(run.proposedMemory) ? { proposedMemory: run.proposedMemory.slice(0, 20).map((item) => ({ kind: String(item && item.kind || ''), text: String(item && item.text || '').slice(0, 500) })) } : {}),
+      ...(Array.isArray(run.memoryDecisions) ? { memoryDecisions: run.memoryDecisions.slice(0, 20).map((item) => ({ recordId: String(item && item.recordId || ''), status: String(item && item.status || ''), reason: String(item && item.reason || '') })) } : {}),
+      ...(Array.isArray(run.factRefs) ? { factRefs: run.factRefs.slice(0, 20).map((item) => ({ claim: String(item && item.claim || '').slice(0, 300), refs: Array.isArray(item && item.refs) ? item.refs.slice(0, 12).map(String) : [] })) } : {}),
+      ...(Array.isArray(run.factRefVerdicts) ? { factRefVerdicts: run.factRefVerdicts.slice(0, 20).map((item) => ({ claim: String(item && item.claim || '').slice(0, 300), refs: Array.isArray(item && item.refs) ? item.refs.slice(0, 12).map(String) : [], ok: item && item.ok === true, invalidRefs: Array.isArray(item && item.invalidRefs) ? item.invalidRefs.slice(0, 12).map(String) : [] })) } : {}),
+      ...(run.proposedContinuityPatch && typeof run.proposedContinuityPatch === 'object' ? { proposedContinuityPatch: sanitizeContinuityPatch(run.proposedContinuityPatch) } : {}),
+      ...(run.continuityPatchRecord && typeof run.continuityPatchRecord === 'object' ? { continuityPatchRecord: sanitizeContinuityPatchRecord(run.continuityPatchRecord) } : {}),
     })));
+}
+
+function sanitizeContinuityPatch(value) {
+  return {
+    confirmMemoryIds: Array.isArray(value.confirmMemoryIds) ? value.confirmMemoryIds.slice(0, 20).map(String) : [],
+    resolveMemoryIds: Array.isArray(value.resolveMemoryIds) ? value.resolveMemoryIds.slice(0, 20).map(String) : [],
+    reason: String(value.reason || '').slice(0, 300),
+  };
+}
+
+function sanitizeContinuityPatchRecord(value) {
+  return {
+    id: String(value.id || ''),
+    turn: Number.isInteger(value.turn) ? value.turn : 0,
+    ...sanitizeContinuityPatch(value),
+    status: ['pending', 'applied', 'rejected'].includes(value.status) ? value.status : 'pending',
+  };
 }
 
 // 가져오기 1차 검증 — 구조가 맞으면 정제된 페이로드를 돌려준다.
@@ -76,6 +114,7 @@ function parsePlaySessionImport(text) {
     journal: parsed.journal,
     messages: sanitizeMessages(parsed.messages),
     promptRuns: sanitizePromptRuns(parsed.promptRuns),
+    ...(sanitizeMemory(parsed.memory) ? { memory: sanitizeMemory(parsed.memory) } : {}),
   };
 }
 

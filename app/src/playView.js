@@ -5,9 +5,10 @@ const { resolveSpeaker, resolveSpeakerList } = require('./speakerResolver.js');
 const { PROVIDERS, callProvider } = require('./llm/providers.js');
 const { providerConfig, loadSettings, saveSettings, registerCustomOrigin, readKey, keyName, defaultModel } = require('./llm/byokSettings.js');
 const { el, button, field, row, notice, hiddenBase, namedInput, namedTextarea, namedSelect, appendOption, copyFallback: fallbackCopy } = require('./ui/dom.js');
-import { buttonOnlyEvents, exportPlaySession, getEngineState, getSchema, getSessionEpoch, hashPromptPayload, importPlaySession, recordPromptRun, runEvent, summarizeEvent, summarizeEventItem } from './engineSession.js';
+import { applyContinuityPatch, approveMemory, buttonOnlyEvents, exportPlaySession, getContinuityPatches, getEngineState, getMemoryRecords, getSchema, getSessionEpoch, hashPromptPayload, importPlaySession, ingestMemoryTurn, proposeContinuityPatch, recordPromptRun, rejectContinuityPatch, rejectMemory, retrieveGroundedMemory, runEvent, summarizeEvent, summarizeEventItem, validateMemoryFactRefs } from './engineSession.js';
 const { parsePlaySessionImport } = require('../core/session/playSession.js');
 import { buildNpcClusters, preferredEmotion, selectAsset } from './npcGallery.js';
+import { verifyNarrative } from '../core/memory/narrativeVerifier.ts';
 
 let messages = [];
 let busy = false;
@@ -28,6 +29,8 @@ let lodgingSelection = new Set();
 let lodgingSelectionDay = null;
 let ledgerDeltas = [];
 let purchaseDraft = {};
+let messageSerial = 0;
+let conversationTurn = 0;
 
 export function primaryCharacter(parsed, lore, groups = buildNpcClusters(parsed, lore).groups) {
   const name = String((parsed && parsed.name) || '시뮬봇');
@@ -72,6 +75,8 @@ export function renderPlayView(container, ctx) {
     lodgingSelectionDay = null;
     ledgerDeltas = [];
     purchaseDraft = {};
+    messageSerial = 0;
+    conversationTurn = 0;
     stage = [];
     detachSheetKeyHandler();
     npcGroups = buildNpcClusters(ctx.parsed, ctx.lore).groups;
@@ -432,13 +437,54 @@ function renderNpcAvatars(npcIds, ctx) {
   return row;
 }
 function promptNpcIds(prompt) { return prompt && Array.isArray(prompt.relatedNpcIds) && prompt.relatedNpcIds.length ? [...prompt.relatedNpcIds] : undefined; }
+function nextMessageId() { messageSerial += 1; return `message-${getSessionEpoch()}-${String(messageSerial).padStart(6, '0')}`; }
+function userMessage(content) { return { id: nextMessageId(), role: 'user', content: String(content || ''), sceneId: currentSceneId() }; }
 function assistantMessage(content, chips, prompt = lastPrompt, npcIdsOverride) {
-  const message = { role: 'assistant', content, chips };
+  const message = { id: nextMessageId(), role: 'assistant', content, chips, sceneId: currentSceneId() };
   const npcIds = npcIdsOverride === undefined ? promptNpcIds(prompt) : npcIdsOverride;
   if (npcIds && npcIds.length) message.npcIds = npcIds;
   return message;
 }
 function sceneLine() { const schema = getSchema(), state = getEngineState(); if (!schema || !state) return '새로운 장면'; return summarize(schema, state).split('\n')[0] || '새로운 장면'; }
+function currentSceneId() {
+  const schema = getSchema() || {};
+  const state = getEngineState() || {};
+  const location = state.currentLocation || state.location || (state.player && state.player.location);
+  const value = location && typeof location === 'object' ? (location.id || location.name) : location;
+  return String(value || `${schema.meta && schema.meta.id || 'simulation'}:default`).slice(0, 120);
+}
+function entityAliases() {
+  const out = {};
+  for (const block of (getSchema() && getSchema().entities) || []) if (block.type === 'npc') {
+    for (const npc of block.instances || []) out[npc.id] = [npc.id, npc.nameKo, npc.nameEn, ...(npc.aliases || [])].filter(Boolean);
+  }
+  return out;
+}
+async function groundedFor(query, turn) {
+  return retrieveGroundedMemory(query, {
+    atTurn: turn,
+    sceneId: currentSceneId(),
+    viewerScopes: ['public', 'user'],
+    viewerEntityIds: ['user'],
+    entityAliases: entityAliases(),
+    topK: 8,
+  });
+}
+function verifiedNarrative(parsed, prompt, evidenceEvents, chips, options = {}) {
+  const evidenceTexts = [
+    ...Object.values((prompt && prompt.injectedText) || {}).map(String),
+    ...(evidenceEvents || []).map((event) => String(event.summary || '')),
+    String(options.userText || ''),
+  ];
+  const result = verifyNarrative({
+    narrative: (parsed && parsed.narrative) || '',
+    evidenceTexts,
+    hasFailedProposedEvent: options.blocked === true || (evidenceEvents || []).some((event) => !event.ok),
+    fallback: options.fallback || '요청한 행동은 엔진 조건을 충족하지 못해 성립하지 않았습니다.',
+  });
+  if (result.issues.some((issue) => issue.code === 'unsupported-number')) chips.push({ ok: false, kind: 'system', text: '근거 없는 수치가 포함된 서사 문장을 숨겼습니다' });
+  return result.text;
+}
 function emotions() { return character && character.group ? Array.from(character.group.emotions.keys()) : []; }
 function speakerCatalog() {
   return npcGroups.map((group) => {
@@ -449,13 +495,19 @@ function speakerCatalog() {
 function outfitOf(npcId) { const state = getEngineState(); return state && state.npcs && state.npcs[npcId] ? state.npcs[npcId].outfit : undefined; }
 function cardKeyOf(ctx) { return `${ctx.file ? `${ctx.file.name}:${ctx.file.size}` : 'no-card'}#${getSessionEpoch()}`; }
 // 모든 LLM 요청의 재현 기록(BACKLOG P1.5) — 프롬프트 해시·모델·응답·제안/적용 사건을 세션에 남긴다.
-function promptRunOf(prompt, raw, parsed, appliedOk = 0) {
+function promptRunOf(prompt, raw, parsed, appliedOk = 0, memoryDecisions = [], factRefVerdicts = [], continuityPatchRecord = null) {
   return {
     promptHash: hashPromptPayload({ system: prompt.system, messages: prompt.messages }),
     model: settings.model || settings.provider,
     responseText: String(raw == null ? '' : raw),
     proposedEvents: ((parsed && parsed.events) || []).map((event) => event.id),
     appliedOk,
+    proposedMemory: ((parsed && parsed.memoryCandidates) || []).map((candidate) => ({ kind: candidate.kind, text: candidate.text })),
+    memoryDecisions: memoryDecisions.map((decision) => ({ recordId: decision.recordId, status: decision.status, reason: decision.reason })),
+    factRefs: (parsed && parsed.factRefs) || [],
+    factRefVerdicts,
+    ...(parsed && parsed.continuityPatch ? { proposedContinuityPatch: parsed.continuityPatch } : {}),
+    ...(continuityPatchRecord ? { continuityPatchRecord } : {}),
   };
 }
 function applyEmotion(value) { if (!value || !character || !character.group || !character.group.emotions.has(value)) return; const pick = selectAsset(character.group, value, outfitOf(character.group.charId)); if (pick) { character.asset = pick.asset; character.emotion = value; } }
@@ -464,8 +516,51 @@ function renderSide(ctx, render) {
   const side = el('aside', 'play-side-panel');
   const hud = renderCombatHud();
   if (hud) side.append(hud);
-  side.append(renderLedgerSection(render), renderSettings(ctx, render), renderStateBox(ctx, render), renderTokenBox(ctx));
+  side.append(renderLedgerSection(render), renderMemorySection(render), renderSettings(ctx, render), renderStateBox(ctx, render), renderTokenBox(ctx));
   return side;
+}
+
+function renderMemorySection(render) {
+  const section = titled('연속성 기억');
+  const all = getMemoryRecords();
+  const pending = all.filter((record) => record.status === 'candidate');
+  const approved = all.filter((record) => record.status === 'approved');
+  const pendingPatches = getContinuityPatches('pending');
+  const summary = el('p', 'memory-summary');
+  summary.textContent = `확정 ${approved.length} · 기억 후보 ${pending.length} · 상태 변경 ${pendingPatches.length}`;
+  section.append(summary);
+  if (!pending.length && !pendingPatches.length) {
+    const empty = el('p', 'muted'); empty.textContent = '검토할 기억 후보가 없습니다.'; section.append(empty);
+    return section;
+  }
+  if (pending.length) {
+    const list = el('div', 'memory-review-list');
+    for (const record of pending.slice(0, 8)) {
+      const card = el('article', 'memory-review-card');
+      const text = el('p'); text.textContent = record.text;
+      const meta = el('small'); meta.textContent = `${record.kind} · ${record.knowledgeScope} · ${record.sceneId || '장면 미지정'}`;
+      const actions = el('div', 'memory-review-actions');
+      const accept = button('기억 승인', 'secondary');
+      accept.addEventListener('click', () => { approveMemory(record.id, conversationTurn); render(); });
+      const reject = button('버리기', 'ghost');
+      reject.addEventListener('click', () => { rejectMemory(record.id); render(); });
+      actions.append(accept, reject); card.append(text, meta, actions); list.append(card);
+    }
+    section.append(list);
+  }
+  for (const patch of pendingPatches.slice(0, 5)) {
+    const card = el('article', 'memory-review-card');
+    const text = el('p');
+    text.textContent = `확정 제안 ${patch.confirmMemoryIds.join(', ') || '없음'} · 해결 제안 ${patch.resolveMemoryIds.join(', ') || '없음'}`;
+    const meta = el('small'); meta.textContent = patch.reason || '이유 미제시';
+    const actions = el('div', 'memory-review-actions');
+    const accept = button('상태 변경 승인', 'secondary');
+    accept.addEventListener('click', () => { applyContinuityPatch(patch.id, conversationTurn); render(); });
+    const reject = button('거절', 'ghost');
+    reject.addEventListener('click', () => { rejectContinuityPatch(patch.id); render(); });
+    actions.append(accept, reject); card.append(text, meta, actions); section.append(card);
+  }
+  return section;
 }
 
 function renderCombatHud() {
@@ -786,14 +881,14 @@ async function runManagementTurn(event, input, ctx, render) {
   const resultTexts = [];
   const recentForNarration = messages.slice(-4);
   const recentChanges = ledgerDeltas.slice();
-  if (flavorText) messages.push({ role: 'user', content: flavorText });
+  if (flavorText) messages.push(userMessage(flavorText));
   input.value = '';
   // 스포 방지(사용자 피드백): 엔진은 먼저 굴리되, 칩·메시지·상태 패널 공개는 서사 도착과 함께.
   // "생각 중..." 동안 결과(🎲 성공/실패·골드 변동)가 보이지 않는다. (전투 턴은 즉시 표시 유지 — 호평 기능)
   render();
   const result = runEvent(event);
   appendEventChips(event.id, result.entries, chips, resultTexts);
-  const pending = { role: 'assistant', content: '', chips };
+  const pending = { id: nextMessageId(), role: 'assistant', content: '', chips, sceneId: currentSceneId() };
   try {
     const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: event.id, decisionContext: decisionContextFor(event.id, result.entries) });
     lastPrompt = prompt;
@@ -804,7 +899,7 @@ async function runManagementTurn(event, input, ctx, render) {
     pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
-    pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
+    pending.content = verifiedNarrative(parsed, prompt, [], chips, { fallback: '관리 결과가 반영되었습니다.' }) || '관리 결과가 반영되었습니다.';
   } catch (_) {
     chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '관리 결과가 반영되었습니다.';
@@ -824,7 +919,7 @@ async function runManagementBatch(items, input, ctx, render) {
   const resultTexts = [];
   const recentForNarration = messages.slice(-4);
   const recentChanges = ledgerDeltas.slice();
-  if (flavorText) messages.push({ role: 'user', content: flavorText });
+  if (flavorText) messages.push(userMessage(flavorText));
   input.value = '';
   render();
   for (const item of items) {
@@ -835,7 +930,7 @@ async function runManagementBatch(items, input, ctx, render) {
       chips.push({ ok: false, kind: 'system', text }); resultTexts.push(text);
     } else appendEventChips(item.event.id, entries, chips, resultTexts);
   }
-  const pending = { role: 'assistant', content: '', chips };
+  const pending = { id: nextMessageId(), role: 'assistant', content: '', chips, sceneId: currentSceneId() };
   try {
     const prompt = buildNarrationPrompt({ schema: getSchema(), state: getEngineState(), results: resultTexts, flavorText, recentMessages: recentForNarration, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, eventType: 'lodging_batch' });
     lastPrompt = prompt;
@@ -846,7 +941,7 @@ async function runManagementBatch(items, input, ctx, render) {
     pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
-    pending.content = parsed.narrative || '관리 결과가 반영되었습니다.';
+    pending.content = verifiedNarrative(parsed, prompt, [], chips, { fallback: '관리 결과가 반영되었습니다.' }) || '관리 결과가 반영되었습니다.';
   } catch (_) {
     chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '관리 결과가 반영되었습니다.';
@@ -989,7 +1084,12 @@ function renderSettings(ctx, render) {
     try {
       const payload = parsePlaySessionImport(await file.text());
       importPlaySession(payload); // 스키마 지문·해시·판정 검증 — 실패 시 throw, 기존 세션 무손상
-      messages = payload.messages;
+      messageSerial = 0;
+      messages = payload.messages.map((message) => {
+        messageSerial += 1;
+        return message.id ? message : { ...message, id: `message-${getSessionEpoch()}-${String(messageSerial).padStart(6, '0')}` };
+      });
+      conversationTurn = messages.filter((message) => message.role === 'user').length;
       stage = []; lastPrompt = null; fastCombatLog = []; ledgerDeltas = []; purchaseDraft = {};
       lodgingSelection = new Set(); lodgingSelectionDay = null;
       sessionCardKey = cardKeyOf(ctx); // 새 epoch 채택 — 다음 렌더가 복원한 대화를 지우지 않게
@@ -1184,8 +1284,8 @@ async function runCombatTurn(event, input, ctx, render) {
   // 연출 문장을 messages에 넣기 전에 잘라둔다 — 연출(user) 뒤에 서사화 프롬프트의 user 컨텍스트가
   // 붙으면 user→user 연속 롤이 되어 제공자(Vertex/Anthropic)가 거부한다(감사 지적).
   const recentForNarration = messages.slice(-4);
-  if (flavorText) messages.push({ role: 'user', content: flavorText });
-  const pending = { role: 'assistant', content: '', chips };
+  if (flavorText) messages.push(userMessage(flavorText));
+  const pending = { id: nextMessageId(), role: 'assistant', content: '', chips, sceneId: currentSceneId() };
   messages.push(pending);
   input.value = '';
   if (event.id === 'use_item') {
@@ -1217,7 +1317,7 @@ async function runCombatTurn(event, input, ctx, render) {
     pending.npcIds = applySpeakers(parsed);
     const ignored = parsed.events.length + parsed.dropped;
     if (ignored) chips.push({ ok: false, kind: 'system', text: `서사화 사건 ${ignored}개 무시됨` });
-    pending.content = parsed.narrative || '전투 결과가 반영되었습니다.';
+    pending.content = verifiedNarrative(parsed, prompt, [], chips, { fallback: '전투 결과가 반영되었습니다.' }) || '전투 결과가 반영되었습니다.';
   } catch (_) {
     chips.push({ ok: false, kind: 'system', text: '서사화 API 오류 · 엔진 결과 유지' });
     pending.content = '전투 결과가 반영되었습니다.';
@@ -1255,30 +1355,49 @@ function poolSnapshot(state, id) {
 async function startCombat(ctx, render) {
   if (busy) return;
   busy = true;
+  conversationTurn += 1;
+  const turn = conversationTurn;
   render();
   const recentChanges = ledgerDeltas.slice();
   try {
     const instruction = '이번 장면에 어울리는 적 명부로 start_encounter 사건 하나만 JSON으로 내라. 서사는 1~2문장만 허용한다.';
-    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
+    const grounded = await groundedFor(instruction, turn);
+    const prompt = buildPrompt({ schema: getSchema(), state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-4), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
-    recordPromptRun(promptRunOf(prompt, raw, parsed));
     applyEmotion(parsed.emotion);
     const speakerIds = applySpeakers(parsed);
     const event = parsed.events.find((item) => item.id === 'start_encounter');
+    let assistantRow;
+    const evidenceEvents = [];
+    let appliedOk = 0;
     if (!event) {
-      messages.push(assistantMessage(parsed.narrative || '', [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }], prompt, speakerIds));
+      const chips = [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }];
+      assistantRow = assistantMessage(verifiedNarrative(parsed, prompt, [], chips, { blocked: true, fallback: '전투를 시작할 수 없었습니다.' }), chips, prompt, speakerIds);
     } else {
       const result = runEvent(event);
       const entry = result.entries[0] || { ok: false, reason: 'empty_log' };
+      appliedOk = entry.ok ? 1 : 0;
       if (entry.ok) fastCombatLog = []; // 새 전투 시작 = 이전 전투 버퍼 폐기(감사 지적: 세션·전투 간 오염 방지)
       const ignored = parsed.events.length - 1 + parsed.dropped;
       const item = summarizeEventItem('start_encounter', entry, formatMoney);
       const chips = [{ ok: !!entry.ok, text: item.text, kind: item.kind }];
       if (ignored > 0) chips.push({ ok: false, kind: 'system', text: `다른 사건 ${ignored}개 무시됨` });
-      messages.push(assistantMessage(parsed.narrative, chips, prompt, speakerIds));
+      evidenceEvents.push({ id: event.id, index: result.index, ok: !!entry.ok, summary: summarizeEvent(event.id, entry, formatMoney) });
+      const content = verifiedNarrative(parsed, prompt, evidenceEvents, chips, { fallback: '전투를 시작할 수 없었습니다.' });
+      assistantRow = assistantMessage(content, chips, prompt, speakerIds);
     }
+    const memoryDecisions = ingestMemoryTurn({ turn, sceneId: currentSceneId(), assistantMessage: { id: assistantRow.id, content: assistantRow.content }, candidates: parsed.memoryCandidates || [], events: evidenceEvents });
+    const pendingCount = memoryDecisions.filter((decision) => decision.status === 'candidate').length;
+    if (pendingCount) assistantRow.chips.push({ ok: true, kind: 'info', text: `검토할 기억 후보 ${pendingCount}건` });
+    const factRefVerdicts = validateMemoryFactRefs(parsed.factRefs || [], { hasState: true, events: evidenceEvents });
+    const invalidFactRefs = factRefVerdicts.filter((verdict) => !verdict.ok).length;
+    if (invalidFactRefs) assistantRow.chips.push({ ok: false, kind: 'system', text: `근거가 확인되지 않은 서사 주장 ${invalidFactRefs}건` });
+    const continuityPatchRecord = parsed.continuityPatch ? proposeContinuityPatch(parsed.continuityPatch, turn) : null;
+    if (continuityPatchRecord) assistantRow.chips.push({ ok: true, kind: 'info', text: '검토할 기억 상태 변경 1건' });
+    recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk, memoryDecisions, factRefVerdicts, continuityPatchRecord));
+    messages.push(assistantRow);
   } catch (_) {
     messages.push(assistantMessage('', [{ ok: false, kind: 'system', text: '적 정보를 만들지 못했습니다' }]));
   } finally {
@@ -1291,11 +1410,14 @@ async function startCombat(ctx, render) {
 async function openCannedScene(instruction, ctx, render) {
   if (busy) return;
   busy = true;
+  conversationTurn += 1;
+  const turn = conversationTurn;
   render();
   const recentChanges = ledgerDeltas.slice();
   try {
     const schema = getSchema();
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
+    const grounded = await groundedFor(instruction, turn);
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-8), userInput: instruction, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
@@ -1307,6 +1429,7 @@ async function openCannedScene(instruction, ctx, render) {
     const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
     if (blocked.length) chips.push({ ok: false, kind: 'system', text: `버튼 전용 사건 ${blocked.length}개 무시됨` });
     let appliedOk = 0;
+    const evidenceEvents = [];
     for (const event of parsed.events) {
       if (buttonOnlyEvents.has(event.id)) continue;
       const result = runEvent(event);
@@ -1314,9 +1437,20 @@ async function openCannedScene(instruction, ctx, render) {
       if (first.ok) appliedOk += 1;
       const item = summarizeEventItem(event.id, first, formatMoney);
       chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
+      evidenceEvents.push({ id: event.id, index: result.index, ok: result.entries.some((entry) => entry && entry.ok), summary: result.entries.map((entry) => summarizeEvent(event.id, entry, formatMoney)).join(' / ') });
     }
-    recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
-    messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
+    const safeNarrative = verifiedNarrative(parsed, prompt, evidenceEvents, chips, { blocked: blocked.length > 0 });
+    const assistantRow = assistantMessage(safeNarrative || '장면이 이어집니다.', chips, prompt, speakerIds);
+    const memoryDecisions = ingestMemoryTurn({ turn, sceneId: currentSceneId(), assistantMessage: { id: assistantRow.id, content: assistantRow.content }, candidates: parsed.memoryCandidates || [], events: evidenceEvents });
+    const pendingCount = memoryDecisions.filter((decision) => decision.status === 'candidate').length;
+    if (pendingCount) chips.push({ ok: true, kind: 'info', text: `검토할 기억 후보 ${pendingCount}건` });
+    const factRefVerdicts = validateMemoryFactRefs(parsed.factRefs || [], { hasState: true, events: evidenceEvents });
+    const invalidFactRefs = factRefVerdicts.filter((verdict) => !verdict.ok).length;
+    if (invalidFactRefs) chips.push({ ok: false, kind: 'system', text: `근거가 확인되지 않은 서사 주장 ${invalidFactRefs}건` });
+    const continuityPatchRecord = parsed.continuityPatch ? proposeContinuityPatch(parsed.continuityPatch, turn) : null;
+    if (continuityPatchRecord) chips.push({ ok: true, kind: 'info', text: '검토할 기억 상태 변경 1건' });
+    recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk, memoryDecisions, factRefVerdicts, continuityPatchRecord));
+    messages.push(assistantRow);
   } catch (err) {
     messages.push(assistantMessage(safeError(err), [{ ok: false, kind: 'system', text: 'API 오류' }]));
   } finally {
@@ -1329,13 +1463,17 @@ async function openCannedScene(instruction, ctx, render) {
 async function submitTurn(text, ctx, render) {
   if (busy) return;
   busy = true;
-  messages.push({ role: 'user', content: text });
+  conversationTurn += 1;
+  const turn = conversationTurn;
+  const userRow = userMessage(text);
+  messages.push(userRow);
   render();
   const recentChanges = ledgerDeltas.slice();
   try {
     const schema = getSchema();
     const previousAssistant = messages.slice(0, -1).reverse().find((message) => message.role === 'assistant');
-    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges });
+    const grounded = await groundedFor(text, turn);
+    const prompt = buildPrompt({ schema, state: getEngineState(), lore: ctx.lore, recentMessages: messages.slice(-9, -1), userInput: text, lastVerdicts: previousAssistant && previousAssistant.chips, emotions: emotions(), speakerCatalog: speakerCatalog(), recentChanges, groundedMemory: grounded.text, currentMessageId: userRow.id });
     lastPrompt = prompt;
     const raw = await callProvider(providerConfig(settings), prompt);
     const parsed = parseAssistantResponse(raw);
@@ -1347,6 +1485,7 @@ async function submitTurn(text, ctx, render) {
     const blocked = parsed.events.filter((event) => buttonOnlyEvents.has(event.id));
     if (blocked.length) chips.push({ ok: false, kind: 'system', text: `버튼 전용 사건 ${blocked.length}개 무시됨` });
     let appliedOk = 0;
+    const evidenceEvents = [];
     for (const event of parsed.events) {
       if (buttonOnlyEvents.has(event.id)) continue;
       const result = runEvent(event);
@@ -1354,14 +1493,37 @@ async function submitTurn(text, ctx, render) {
       if (first.ok) appliedOk += 1;
       const item = summarizeEventItem(event.id, first, formatMoney);
       chips.push({ ok: !!first.ok, text: item.text, kind: item.kind });
+      evidenceEvents.push({
+        id: event.id,
+        index: result.index,
+        ok: result.entries.some((entry) => entry && entry.ok),
+        summary: result.entries.map((entry) => summarizeEvent(event.id, entry, formatMoney)).join(' / '),
+      });
       // 빠른 전투 버퍼 수명: 자유 텍스트 경로로 전투가 새로 시작되거나 끝나면 버퍼를 비운다
       // (이전 전투 로그가 다음 전투 서사에 섞이는 오염 방지 — 감사 지적).
       if (first.ok && (event.id === 'start_encounter' || event.id === 'end_encounter')) fastCombatLog = [];
     }
-    recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk));
     const combatNow = getEngineState().combat;
     if (fastCombatLog.length && (!combatNow || !combatNow.active)) fastCombatLog = [];
-    messages.push(assistantMessage(parsed.narrative || raw, chips, prompt, speakerIds));
+    const safeNarrative = verifiedNarrative(parsed, prompt, evidenceEvents, chips, { blocked: blocked.length > 0, userText: text });
+    const assistantRow = assistantMessage(safeNarrative || '장면이 이어집니다.', chips, prompt, speakerIds);
+    const memoryDecisions = ingestMemoryTurn({
+      turn,
+      sceneId: currentSceneId(),
+      userMessage: { id: userRow.id, content: userRow.content },
+      assistantMessage: { id: assistantRow.id, content: assistantRow.content },
+      candidates: parsed.memoryCandidates || [],
+      events: evidenceEvents,
+    });
+    const pendingCount = memoryDecisions.filter((decision) => decision.status === 'candidate').length;
+    if (pendingCount) chips.push({ ok: true, kind: 'info', text: `검토할 기억 후보 ${pendingCount}건` });
+    const factRefVerdicts = validateMemoryFactRefs(parsed.factRefs || [], { hasState: true, userMessageId: userRow.id, events: evidenceEvents });
+    const invalidFactRefs = factRefVerdicts.filter((verdict) => !verdict.ok).length;
+    if (invalidFactRefs) chips.push({ ok: false, kind: 'system', text: `근거가 확인되지 않은 서사 주장 ${invalidFactRefs}건` });
+    const continuityPatchRecord = parsed.continuityPatch ? proposeContinuityPatch(parsed.continuityPatch, turn) : null;
+    if (continuityPatchRecord) chips.push({ ok: true, kind: 'info', text: '검토할 기억 상태 변경 1건' });
+    recordPromptRun(promptRunOf(prompt, raw, parsed, appliedOk, memoryDecisions, factRefVerdicts, continuityPatchRecord));
+    messages.push(assistantRow);
   } catch (err) {
     messages.push(assistantMessage(safeError(err), [{ ok: false, kind: 'system', text: 'API 오류' }]));
   } finally {

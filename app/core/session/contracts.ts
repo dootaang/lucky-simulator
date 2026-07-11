@@ -15,8 +15,10 @@ export interface SessionMeta {
 
 export interface ChatMessageRecord {
   index: number;
+  id?: string;
   role: 'user' | 'assistant' | 'ledger';
   content: string;
+  sceneId?: string;
   chips?: unknown[];
   npcIds?: string[];
 }
@@ -38,6 +40,12 @@ export interface PromptRunRecord {
   proposedEvents: Array<{ id: string; params?: Record<string, unknown> }>;
   appliedEventIndexes: number[];
   rejectedReasons?: string[];
+  proposedMemory?: Array<{ kind: string; text: string }>;
+  memoryDecisions?: Array<{ recordId: string; status: string; reason: string }>;
+  factRefs?: Array<{ claim: string; refs: string[] }>;
+  factRefVerdicts?: Array<{ claim: string; refs: string[]; ok: boolean; invalidRefs: string[] }>;
+  proposedContinuityPatch?: { confirmMemoryIds: string[]; resolveMemoryIds: string[]; reason: string };
+  continuityPatchRecord?: { id: string; turn: number; confirmMemoryIds: string[]; resolveMemoryIds: string[]; reason: string; status: string };
 }
 
 export interface SnapshotRecord {
