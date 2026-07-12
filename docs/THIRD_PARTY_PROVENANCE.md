@@ -26,6 +26,7 @@
 | 2026-07-12 | `src/ts/persona.ts` — persona 규격 | `packages/risu/src/index.ts` | 파일 규격 상호운용 재구현 | UI/DB 결합은 가져오지 않음 |
 | 2026-07-12 | Risu preset·prompt 구조 | `packages/risu/src/index.ts` | 파일 규격 상호운용 재구현 | 알 수 없는 원본 필드를 보존 |
 | 2026-07-12 | `src/ts/process/scripts.ts`, `src/ts/cbs.ts`, `src/ts/process/modules.ts` | `packages/risu/src/lore.ts` | 안전 부분집합 재구현 | 읽기 전용·결정론 경로만 허용하고 실행형 부작용은 차단 |
+| 2026-07-12 | `src/ts/process/request/openAI/requests.ts`, `src/ts/process/request/anthropic.ts`, `src/ts/process/request/google.ts` | `packages/session/src/providers/` | 요청 계약 의미 재현(코드 복사 아님) | 프로바이더별 역할·헤더·응답 변환을 우리 `ModelProvider` 계약으로 재구현 |
 
 `msgpackr` 1.11.5(MIT)는 Risu preset의 MessagePack 상호운용에 사용한다.
 
