@@ -32,6 +32,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@simbot/card':
+        specifier: workspace:*
+        version: link:../../packages/card
       '@simbot/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -77,6 +80,19 @@ importers:
         version: 3.2.7(@types/node@24.13.3)(tsx@4.23.0)
 
   engine: {}
+
+  packages/card:
+    dependencies:
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@24.13.3)(tsx@4.23.0)
 
   packages/contracts:
     dependencies:
