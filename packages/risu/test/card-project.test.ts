@@ -1,0 +1,9 @@
+import { describe,expect,it } from 'vitest';
+import { cardToRuntimeProject } from '../src/card-project.ts';
+
+function parsed(description:string):Parameters<typeof cardToRuntimeProject>[0]&{card:{data:Record<string,unknown>}}{return{name:'용사여관',card:{data:{name:'용사여관',description,first_mes:'어서 오세요.',personality:'친절함',scenario:'여관 경영',system_prompt:'규칙',post_history_instructions:'일관성',character_book:{entries:[{content:'[ysp_sex::silvia]'}]}}}};}
+
+describe('card runtime profile',()=>{
+  it('creates the inn full-sim profile and reports all compatibility grades',()=>{const result=cardToRuntimeProject(parsed('[ysp_gold::100] [ysp_affinity::silvia::2]'));expect(result.project.projectId).toBe('card:용사여관');expect(result.project.moduleIds).toEqual(['genre.inn']);expect(result.passport).toEqual({mode:'full-sim',cardName:'용사여관',grades:{exact:['gold_delta'],approx:['scale_delta'],preserved:['사교/관계']}});expect(result.card).toMatchObject({name:'용사여관',description:expect.stringContaining('ysp_gold'),systemPrompt:'규칙'});expect(result.firstMessage).toBe('어서 오세요.');});
+  it('keeps a tag-free card in chat mode without runtime modules',()=>{const value=parsed('평범한 대화 카드');(value.card.data as Record<string,unknown>).character_book={entries:[]};const result=cardToRuntimeProject(value);expect(result.passport.mode).toBe('chat');expect(result.passport.grades).toEqual({exact:[],approx:[],preserved:[]});expect(result.project.moduleIds).toEqual([]);expect(result.project.schema.initialState).toEqual({day:1});});
+});
