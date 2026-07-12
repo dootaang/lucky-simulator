@@ -29,6 +29,10 @@
 | 2026-07-12 | `src/ts/process/request/openAI/requests.ts`, `src/ts/process/request/anthropic.ts`, `src/ts/process/request/google.ts` | `packages/session/src/providers/` | 요청 계약 의미 재현(코드 복사 아님) | 프로바이더별 역할·헤더·응답 변환을 우리 `ModelProvider` 계약으로 재구현 |
 | 2026-07-12 | `src/ts/process/prompt.ts` (`PromptItem`, `tokenizePreset`), `src/ts/process/index.svelte.ts` (promptTemplate 조립), `src/ts/parser/parser.svelte.ts` (기본 치환 문법), `src/lib/Setting/Pages/PromptSettings.svelte`, `src/lib/UI/PromptDataItem.svelte`, `src/lib/Setting/botpreset.svelte`, `src/ts/storage/database.svelte.ts` (`botPreset`, import/export) | `packages/risu/src/{contracts,compiler,presets,preset-import}.ts`, `apps/web/src/player/{PromptPanel,preset-library}.ts` | 계약·UI 문법 의미 재현 | 프롬프트 순서·innerFormat·depth·range·프리셋 전환/보존을 우리 세션·저장소 계약으로 재구현 |
 
+| 2026-07-12 | `src/lib/Setting/Pages/PersonaSettings.svelte`, `src/lib/Setting/Pages/listedPersona.svelte`, `src/ts/storage/database.svelte.ts` (`personas`, `selectedPersona`, `personaPrompt`) | `apps/web/src/player/{PersonaPanel,persona-library}.ts`, `packages/session/src/index.ts` | 데이터 계약·UX 문법 부분 재구현 | 전역 페르소나 보관함, 카드별 연결, 런타임 전환을 독립 저장소와 세션 API로 구현 |
+| 2026-07-12 | `src/lib/SideBars/SideChatList.svelte`, `src/ts/storage/database.svelte.ts` (`firstMessage`, `alternateGreetings`) | `packages/risu/src/card-project.ts`, `packages/session/src/index.ts`, `apps/web/src/player/MessageList.svelte` | 동작 문법 부분 재구현 | 첫 인사를 실제 assistant 메시지로 시드하고 대체 인사를 첫 턴 전에만 전환 |
+| 2026-07-12 | `src/ts/process/request/openAI/requests.ts`, `src/ts/process/request/anthropic.ts`, `src/ts/process/request/google.ts`, `src/ts/storage/database.svelte.ts` (generation parameters) | `packages/session/src/providers/`, `apps/web/src/player/PlayerPage.svelte` | 요청 계약 부분 재구현 | 제공자별 지원 파라미터만 전달하고 빈 값은 제공자 기본값으로 보존, maxContext 근사 예산 추가 |
+
 `msgpackr` 1.11.5(MIT)는 Risu preset의 MessagePack 상호운용에 사용한다.
 
 ### 명시적으로 가져오지 않은 것

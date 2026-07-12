@@ -21,6 +21,7 @@ export interface CardRuntimeProfile {
     postHistoryInstructions: string;
   };
   firstMessage: string;
+  greetings: string[];
 }
 
 export function cardToRuntimeProject(parsed: ParsedCard): CardRuntimeProfile {
@@ -47,7 +48,8 @@ export function cardToRuntimeProject(parsed: ParsedCard): CardRuntimeProfile {
     project,
     passport:{mode:hasTags?'full-sim':'chat',grades,cardName},
     card:{name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario),systemPrompt:text(data.system_prompt),postHistoryInstructions:text(data.post_history_instructions)},
-    firstMessage:text(data.first_mes)
+    firstMessage:text(data.first_mes),
+    greetings:[text(data.first_mes),...(Array.isArray(data.alternate_greetings)?data.alternate_greetings.map(text):[])].filter(Boolean)
   };
 }
 

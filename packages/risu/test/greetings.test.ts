@@ -1,0 +1,2 @@
+import{describe,expect,it}from'vitest';import{cardToRuntimeProject}from'../src/card-project.ts';
+describe('alternate greetings',()=>{it('keeps first_mes at index zero and appends non-empty alternates',()=>{const parsed={name:'Card',card:{data:{name:'Card',first_mes:'First',alternate_greetings:['Second','']}}} as Parameters<typeof cardToRuntimeProject>[0];expect(cardToRuntimeProject(parsed).greetings).toEqual(['First','Second']);});});

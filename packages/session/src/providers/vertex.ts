@@ -12,7 +12,7 @@ const TOKEN_URI='https://oauth2.googleapis.com/token';
 const SCOPE='https://www.googleapis.com/auth/cloud-platform';
 const cache=new Map<string,{accessToken:string;expiresAt:number}>();
 
-export interface VertexOptions{apiKey:string;model:string;location?:string;temperature?:number;maxTokens?:number;fetch?:typeof globalThis.fetch;}
+export interface VertexOptions{apiKey:string;model:string;location?:string;temperature?:number;maxTokens?:number;topP?:number;topK?:number;seed?:number;fetch?:typeof globalThis.fetch;}
 interface ServiceAccount{client_email:string;private_key:string;project_id:string;token_uri:string;}
 
 // 토큰·개인키·URL은 어떤 경로로도 노출하지 않는다(레거시 sanitizeReason 이관).
@@ -70,7 +70,7 @@ export function createVertexProvider(options:VertexOptions):ModelProvider{
     const {system,contents}=googlePromptParts(prompt.messages);
     const location=(options.location??'global').trim()||'global';
     const host=location==='global'?'https://aiplatform.googleapis.com':`https://${location}-aiplatform.googleapis.com`;
-    const generationConfig:Record<string,unknown>={temperature:options.temperature??.8,...(options.maxTokens?{maxOutputTokens:options.maxTokens}:{})};
+    const generationConfig:Record<string,unknown>={...(options.temperature===undefined?{}:{temperature:options.temperature}),...(options.maxTokens===undefined?{}:{maxOutputTokens:options.maxTokens}),...(options.topP===undefined?{}:{topP:options.topP}),...(options.topK===undefined?{}:{topK:options.topK}),...(options.seed===undefined?{}:{seed:options.seed})};
     if(format==='json')generationConfig.responseMimeType='application/json';
     const body=JSON.stringify({contents,...(system?{systemInstruction:{parts:[{text:system}]}}:{}),generationConfig});
     const call=async(refresh:boolean)=>{

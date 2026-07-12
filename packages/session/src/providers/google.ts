@@ -1,12 +1,12 @@
 import type { ModelProvider } from '../index.ts';
 import { jsonText,maskSecrets } from './openai.ts';
-export interface GoogleOptions{apiKey:string;model:string;endpoint?:string;temperature?:number;maxTokens?:number;fetch?:typeof globalThis.fetch;}
+export interface GoogleOptions{apiKey:string;model:string;endpoint?:string;temperature?:number;maxTokens?:number;topP?:number;topK?:number;seed?:number;fetch?:typeof globalThis.fetch;}
 function promptParts(messages:Array<{role:string;content:string}>){const system=messages.filter(m=>m.role==='system').map(m=>m.content).join('\n\n'),contents=messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));return{system,contents};}
 export function createGoogleProvider(options:GoogleOptions):ModelProvider{
   const request=options.fetch??globalThis.fetch;
   return{async complete({prompt,signal,format='json'}){
     const {system,contents}=promptParts(prompt.messages),base=(options.endpoint??'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/,''),url=`${base}/models/${encodeURIComponent(options.model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`;
-    const generationConfig:Record<string,unknown>={temperature:options.temperature??.8,...(options.maxTokens?{maxOutputTokens:options.maxTokens}:{})};if(format==='json')generationConfig.responseMimeType='application/json';
+    const generationConfig:Record<string,unknown>={...(options.temperature===undefined?{}:{temperature:options.temperature}),...(options.maxTokens===undefined?{}:{maxOutputTokens:options.maxTokens}),...(options.topP===undefined?{}:{topP:options.topP}),...(options.topK===undefined?{}:{topK:options.topK}),...(options.seed===undefined?{}:{seed:options.seed})};if(format==='json')generationConfig.responseMimeType='application/json';
     let response:Response;try{response=await request(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents,...(system?{systemInstruction:{parts:[{text:system}]}}:{}),generationConfig}),...(signal?{signal}:{})});}catch(error){throw new Error(`model_network:${maskSecrets(error instanceof Error?error.message:String(error),options.apiKey)}`);}
     if(!response.ok)throw new Error(`model_http_${response.status}:${maskSecrets(await response.text().catch(()=>''),options.apiKey).slice(0,300)}`);
     const body=await response.json()as {promptFeedback?:{blockReason?:string};candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>};if(body.promptFeedback?.blockReason)throw new Error(`model_blocked:${maskSecrets(body.promptFeedback.blockReason,options.apiKey)}`);

@@ -2,12 +2,12 @@
   import type { PlaySession, ChatMessage, SessionSnapshot } from '@simbot/session';
   import { alternateForward } from './card-library';
   import { toFactLine } from './FactReceipt.svelte';
-  let {session,version,firstMessage='',cardName,model,portraitFor,onchange,onerror=()=>{}}:{session:PlaySession;version:number;firstMessage?:string;cardName:string;model:string;portraitFor:(id:string,emotion?:string)=>string|null;onchange:()=>void;onerror?:(message:string)=>void}=$props();
+  let {session,version,greetings=[],cardName,model,portraitFor,onchange,onerror=()=>{}}:{session:PlaySession;version:number;greetings?:string[];cardName:string;model:string;portraitFor:(id:string,emotion?:string)=>string|null;onchange:()=>void;onerror?:(message:string)=>void}=$props();
   // 스냅샷은 반드시 $state.raw — $state Proxy를 restore에 넘기면 내부 structuredClone이 DataCloneError로 죽는다.
-  let editing=$state<string|null>(null),draft=$state(''),busy=$state(false),alternateIndex=$state(0),latest=$state.raw<SessionSnapshot|null>(null),lastSessionId=$state('');
+  let editing=$state<string|null>(null),draft=$state(''),busy=$state(false),alternateIndex=$state(0),greetingIndex=$state(0),latest=$state.raw<SessionSnapshot|null>(null),lastSessionId=$state('');
   // 대안 탐색 상태는 세션에 종속 — 세션이 바뀌면 무조건 그 세션의 종단점으로 리셋, 대안이 사라지면 클램프하고
   // latest를 버린다. (같은 카드의 다른 채팅은 projectId가 같아 stale latest가 무결성 검사를 통과해 버릴 수 있음)
-  $effect(()=>{void version;if(lastSessionId!==session.id){lastSessionId=session.id;alternateIndex=session.alternateCount;latest=null;return;}const max=session.alternateCount;if(alternateIndex>max||latest&&latest.id!==session.id){alternateIndex=Math.min(alternateIndex,max);latest=null;}});
+  $effect(()=>{void version;if(lastSessionId!==session.id){lastSessionId=session.id;alternateIndex=session.alternateCount;greetingIndex=Math.max(0,greetings.indexOf(session.messages[0]?.content??''));latest=null;return;}const max=session.alternateCount;if(alternateIndex>max||latest&&latest.id!==session.id){alternateIndex=Math.min(alternateIndex,max);latest=null;}});
   const guard=(work:()=>Promise<void>)=>work().catch((e)=>onerror(e instanceof Error?e.message:String(e)));
   // 세션이 메시지를 append하는 즉시 다시 그린다 — 리스처럼 내 입력이 응답을 기다리지 않고 바로 올라간다.
   let live=$state(0);
@@ -21,15 +21,15 @@
   async function remove(message:ChatMessage,cascade=false){menuFor=null;const ask=cascade?'이 메시지 이후를 전부 삭제할까요?':'이 메시지를 삭제할까요?';if(!confirm(ask))return;await session.removeMessage(message.id,cascade);onchange();}
   async function left(){if(alternateIndex<=0)return;busy=true;try{if(alternateIndex===session.alternateCount)latest=session.snapshot();alternateIndex-=1;await session.showAlternate(alternateIndex);onchange();}finally{busy=false;}}
   async function right(){busy=true;try{const action=alternateForward(alternateIndex,session.alternateCount);if(action.kind==='show'){alternateIndex=action.index;if(action.index===session.alternateCount&&latest){session.restore(latest);await session.save();}else await session.showAlternate(action.index);}else{await session.reroll();alternateIndex=session.alternateCount;latest=session.snapshot();}onchange();}finally{busy=false;}}
+  async function greeting(delta:number){greetingIndex=(greetingIndex+delta+greetings.length)%greetings.length;await session.replaceGreeting(greetings[greetingIndex]!);onchange();}
 </script>
 <div class="list">
-  {#if !messages.length&&firstMessage}<article class="message assistant"><div class="avatar">{#if portraitFor(cardName)}<img src={portraitFor(cardName)!} alt=""/>{:else}{cardName.slice(0,1)}{/if}</div><div class="body"><div class="head"><strong>{cardName}</strong><span>첫 메시지</span></div><div class="text">{firstMessage}</div></div></article>{/if}
   {#each messages as message,index (message.id)}
     <article class="message" class:user={message.role==='user'} class:assistant={message.role==='assistant'}>
       <div class="avatar">{#if portraitFor(message.role==='assistant'?cardName:'user')}<img src={portraitFor(message.role==='assistant'?cardName:'user')!} alt=""/>{:else}{name(message).slice(0,1)}{/if}</div>
       <div class="body"><div class="head"><strong>{name(message)}</strong><span>{message.role==='assistant'?'default':''}</span><div class="tools"><button title="편집" onclick={()=>{editing=message.id;draft=message.content;}}>✎</button><button title="복사" onclick={()=>navigator.clipboard.writeText(message.content)}>⧉</button><button title="삭제" onclick={()=>void guard(()=>remove(message))}>🗑</button><button title="더보기" aria-expanded={menuFor===message.id} onclick={()=>menuFor=menuFor===message.id?null:message.id}>⋯</button>{#if menuFor===message.id}<div class="menu" role="menu"><button role="menuitem" onclick={()=>void guard(()=>remove(message,true))}>이 메시지 이후 전부 삭제</button><button role="menuitem" class="soon" disabled title="다음 슬라이스에서 연결">브랜치 · 비활성 · 북마크 (준비 중)</button></div>{/if}</div></div>
         {#if editing===message.id}<textarea bind:value={draft} onblur={()=>void save(message)} onkeydown={(e)=>{if(e.key==='Enter'&&e.ctrlKey)void save(message);}}></textarea>{:else}<div class="text">{message.content}</div>{/if}
-        {#if message.role==='assistant'}<div class="meta"><span class="model">🤖 {model}</span>{#if index===messages.length-1}<span class="swipe"><button disabled={busy||alternateIndex===0} onclick={()=>void guard(left)}>←</button><b>{alternateIndex+1}/{session.alternateCount+1}</b><button disabled={busy||session.checkpointDepth===0} onclick={()=>void guard(right)}>→</button></span>{/if}</div>{/if}
+        {#if message.role==='assistant'}<div class="meta"><span class="model">🤖 {model}</span>{#if messages.length===1&&greetings.length>1}<span class="swipe"><button onclick={()=>void guard(()=>greeting(-1))}>←</button><b>{greetingIndex+1}/{greetings.length}</b><button onclick={()=>void guard(()=>greeting(1))}>→</button></span>{:else if index===messages.length-1}<span class="swipe"><button disabled={busy||alternateIndex===0} onclick={()=>void guard(left)}>←</button><b>{alternateIndex+1}/{session.alternateCount+1}</b><button disabled={busy||session.checkpointDepth===0} onclick={()=>void guard(right)}>→</button></span>{/if}</div>{/if}
         {#if message.role==='assistant'&&index===messages.length-1&&facts.length}<div class="chips">{#each facts as fact}<span class:rejected={fact.rejected}>{fact.icon} {fact.label} {fact.delta??''}</span>{/each}</div>{/if}
       </div>
     </article>
