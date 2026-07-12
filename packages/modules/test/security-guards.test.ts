@@ -23,6 +23,14 @@ describe('security guards (migration parity)',()=>{
     expect(result.log[0]?.ok).toBe(false);
   });
 
+  it('buy_item(옛 파리티 복원)은 골드로 소지품을 구매해 items에 적재한다',()=>{
+    const registry=createInnRegistry(),rng=createRng(1);
+    const buyable:RuntimeRecord={entities:[{type:'menuItem',instances:[{name:'포션',trade:'buy',price:5000}]}]};
+    const result=registry.dispatch(buyable,initial(),{id:'buy_item',params:{menuName:'포션',qty:2}},rng);
+    expect(result.log[0]).toMatchObject({ok:true,menuName:'포션',qty:2,goldDelta:-10000,owned:2});
+    expect((result.state.items as RuntimeRecord)['포션']).toBe(2);
+  });
+
   it('전투 중에는 sale·purchase·purchase_batch가 in_combat으로 거부된다',()=>{
     const registry=createInnRegistry(),rng=createRng(1);
     const state:RuntimeRecord={...initial(),combat:{active:true}};
