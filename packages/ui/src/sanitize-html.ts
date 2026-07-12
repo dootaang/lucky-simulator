@@ -6,6 +6,9 @@ function safeUrl(value:string,kind:'image'|'link'){
   const trimmed=value.trim();
   try{
     const url=new URL(trimmed,'https://local.invalid');
+    // 상대경로(스킴 없음)는 허용하지 않는다 — 모델이 <img src="에셋이름">을 쓰면 우리 오리진으로
+    // 404 요청이 나가고 깨진 이미지가 뜬다. 에셋 이름은 표시 전에 URL로 해석돼야 한다.
+    if(!/^[a-z][a-z0-9+.-]*:/i.test(trimmed))return'';
     if(kind==='link')return url.protocol==='https:'||url.protocol==='http:'?trimmed:'';
     return url.protocol==='blob:'||url.protocol==='https:'||url.protocol==='data:'&&/^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i.test(trimmed)?trimmed:'';
   }catch{return'';}

@@ -5,3 +5,27 @@ describe('card asset macros',()=>{
   it('renders the confirmed image forms and preserves unsupported or unknown macros with warnings',()=>{expect(resolveAssetMacros('{{img::YSP default.png}}',[asset]).content).toContain('<img src="data:image/png;base64,AQID"');for(const source of ['{{video::YSP default.png}}','{{invented::YSP default.png}}']){const result=resolveAssetMacros(source,[asset]);expect(result.content).toBe(source);expect(result.warnings[0]?.code).toBe('unsupported_asset_macro');}});
   it('never puts blob or data URLs into compiled prompts',()=>{const preset=defaultCardPreset();preset.blocks=[{id:'main',type:'plain',name:'main',enabled:true,role:'system',text:'asset={{raw::YSP default.png}}',source:null}];const result=compilePrompt({preset,card:{name:'Card'},assets:[asset]});expect(result.messages[0]?.content).toBe('asset=YSP default.png');expect(JSON.stringify(result)).not.toMatch(/blob:|data:/);expect(compactAssetMacrosForPrompt('{{raw::x}}').content).toBe('x');});
 });
+
+describe('맨 이름 에셋 — 모델이 매크로 없이 <img src="이름">을 쓸 때',()=>{
+  const assets=[{name:'YSP_default',type:'image',mime:'image/png',bytes:new Uint8Array([1,2,3])},
+                {name:'silvia_smile',type:'image',mime:'image/png',bytes:new Uint8Array([4,5,6])}];
+  it('카드 에셋 이름을 data URL로 해석한다',()=>{
+    const out=resolveAssetMacros('<div class="rp-image-wrap"><img src="YSP_default" class="rp-image-card"></div>',assets);
+    expect(out.content).toContain('src="data:image/png;base64,');
+    expect(out.content).toContain('rp-image-card'); // 카드가 준 클래스는 보존
+    expect(out.warnings).toEqual([]);
+  });
+  it('대소문자 차이를 흡수한다',()=>{
+    expect(resolveAssetMacros('<img src="SILVIA_SMILE">',assets).content).toContain('data:image/png;base64,');
+  });
+  it('없는 에셋은 깨진 아이콘 대신 이미지를 제거하고 경고한다',()=>{
+    const out=resolveAssetMacros('<img src="nope_missing"> 본문은 남는다',assets);
+    expect(out.content).not.toContain('<img');
+    expect(out.content).toContain('본문은 남는다');
+    expect(out.warnings[0]).toMatchObject({code:'asset_missing',name:'nope_missing'});
+  });
+  it('이미 URL인 src는 건드리지 않는다',()=>{
+    const url='<img src="data:image/png;base64,AQID">';
+    expect(resolveAssetMacros(url,assets).content).toBe(url);
+  });
+});
