@@ -5,6 +5,7 @@
 ## 현재 구조
 
 - `apps/web` — Svelte 5 플레이어와 편집기
+- `apps/desktop` — 같은 웹 제품을 감싸는 선택형 Tauri 2 셸
 - `packages/kernel` — 결정론적 RNG, 상태 생성, 모듈 레지스트리
 - `packages/modules` — 공통 RPG·전투·헌터·여관 장르 규칙
 - `packages/card` — JSON·PNG·CharX·Risum 카드 파서
@@ -20,10 +21,13 @@
 ```bash
 pnpm install
 pnpm check
+pnpm test:e2e
 pnpm dev
 ```
 
 프로덕션 산출물은 `apps/web/dist`에 생성됩니다. `pnpm deploy`는 이 디렉터리를 Firebase Hosting에 배포합니다.
+
+데스크톱 번들은 Rust stable과 Tauri 운영체제 의존성을 설치한 환경에서 `pnpm --filter @simbot/desktop bundle`로 생성합니다. 웹과 데스크톱은 별도 엔진이나 화면을 만들지 않고 같은 산출물을 사용합니다.
 
 ## 안전 원칙
 

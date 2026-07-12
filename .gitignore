@@ -1,6 +1,8 @@
 node_modules/
 .pnpm-store/
 /apps/web/dist/
+/apps/web/test-results/
+/apps/web/playwright-report/
 .firebase/
 firebase-debug.log
 *.charx
