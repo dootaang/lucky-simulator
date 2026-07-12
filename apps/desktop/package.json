@@ -1,0 +1,13 @@
+{
+  "name": "@simbot/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "bundle": "tauri build",
+    "typecheck": "node -e \"JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')); console.log('tauri config ok')\""
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4"
+  }
+}
