@@ -1,0 +1,3 @@
+<script lang="ts">let {label,cur,max,percentage}:{label:string;cur:number;max:number;percentage:number}=$props();let width=$derived(`${Math.max(0,Math.min(100,percentage))}%`);</script>
+<div class="gauge"><div class="head"><span>{label}</span><span>{cur}/{max}</span></div><div class="track" role="meter" aria-label={label} aria-valuemin="0" aria-valuemax={max} aria-valuenow={cur}><div class="fill" style:width={width}></div></div></div>
+<style>.gauge{display:grid;gap:var(--space-2)}.head{display:flex;justify-content:space-between;gap:var(--space-3);font-variant-numeric:tabular-nums}.track{height:.65rem;overflow:hidden;border-radius:999px;background:var(--color-inset)}.fill{height:100%;border-radius:inherit;background:var(--color-accent)}</style>

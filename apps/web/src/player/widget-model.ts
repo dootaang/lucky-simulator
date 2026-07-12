@@ -1,0 +1,15 @@
+export interface StructuredEntry { key: string; value: string; }
+export interface GaugeModel { kind: 'gauge'; label: string; cur: number; max: number; percentage: number; }
+export interface StatStripModel { kind: 'stat-strip'; entries: StructuredEntry[]; }
+export interface EntityCardModel { kind: 'entity-card'; name: string; stats: StructuredEntry[]; portrait?: string; }
+export interface StructuredModel { kind: 'structured'; entries: StructuredEntry[]; }
+export type WidgetValueModel = GaugeModel | StatStripModel | EntityCardModel | StructuredModel;
+function record(value: unknown): Record<string, unknown> | null { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null; }
+function scalar(value: unknown): boolean { return value === null || ['string', 'number', 'boolean'].includes(typeof value); }
+function text(value: unknown): string { if(value==null)return '—';if(scalar(value))return String(value);if(Array.isArray(value))return value.map((item)=>scalar(item)?text(item):item&&typeof item==='object'?'[항목]':String(item)).join(', ');return Object.entries(value as Record<string,unknown>).map(([key,item])=>`${key}: ${scalar(item)?text(item):Array.isArray(item)?`[${item.length}개]`:'[항목]'}`).join(' · '); }
+export function isPool(value: unknown): value is { cur: number; max: number } { const item=record(value);return Boolean(item&&Number.isFinite(Number(item.cur))&&Number.isFinite(Number(item.max))); }
+export function toGauge(value:{cur:number;max:number},label='상태'):GaugeModel { const cur=Number(value.cur),max=Number(value.max),percentage=max>0?Math.max(0,Math.min(100,Math.round(cur/max*100))):0;return{kind:'gauge',label,cur,max,percentage}; }
+export function toStatStrip(value:Record<string,unknown>):StructuredEntry[]{return Object.entries(value).map(([key,item])=>({key,value:text(item)}));}
+export function toEntityCard(value:unknown):EntityCardModel|null { const item=record(value);if(!item||!(typeof item.name==='string'||typeof item.label==='string'))return null;const name=String(item.name??item.label),portrait=typeof item.portrait==='string'?item.portrait:typeof item.src==='string'?item.src:undefined,statsSource=record(item.stats),stats=toStatStrip(statsSource??Object.fromEntries(Object.entries(item).filter(([key,entry])=>!['name','label','portrait','src','id'].includes(key)&&scalar(entry))));return{kind:'entity-card',name,stats,...(portrait?{portrait}:{})}; }
+export function structuredEntries(value:unknown):StructuredEntry[]{const item=record(value);if(item)return toStatStrip(item);if(Array.isArray(value))return value.map((entry,index)=>({key:String(index+1),value:text(entry)}));return[{key:'값',value:text(value)}];}
+export function classifyWidgetValue(value:unknown,label='상태'):WidgetValueModel {if(isPool(value))return toGauge(value,label);const entity=toEntityCard(value);if(entity)return entity;const item=record(value);if(item&&Object.values(item).every(scalar))return{kind:'stat-strip',entries:toStatStrip(item)};return{kind:'structured',entries:structuredEntries(value)};}
