@@ -1,0 +1,21 @@
+import type { SessionRepository } from '@simbot/persistence';
+
+export interface ChatMeta { chatId:string; name:string; turn:number; updatedAt:number; }
+export interface ChatIndex { contract:'simbot-chat-index/0.1'; projectId:string; chats:ChatMeta[]; activeChatId:string|null; }
+
+// UI는 채팅을 전환할 때 `${projectId}:chat:${chatId}` id로 새 PlaySession을 만들고 저장 snapshot을 restore한다.
+export class ChatStore {
+  readonly #repository:SessionRepository<ChatIndex>;
+  readonly #projectId:string;
+  constructor(repository:SessionRepository<ChatIndex>,projectId:string){this.#repository=repository;this.#projectId=projectId;}
+  async list():Promise<ChatIndex>{const stored=await this.#repository.get(this.#indexId());if(!stored)return this.#empty();const value=stored.payload;if(value.contract!=='simbot-chat-index/0.1'||value.projectId!==this.#projectId)throw new Error('chat_index_incompatible');return structuredClone(value);}
+  async create(name?:string):Promise<ChatMeta>{const index=await this.list(),chatId=crypto.randomUUID(),now=Date.now(),meta={chatId,name:name?.trim()||`${index.chats.length+1}회차`,turn:0,updatedAt:now};index.chats.push(meta);index.activeChatId=chatId;await this.#save(index);return structuredClone(meta);}
+  async rename(chatId:string,name:string){const value=name.trim();if(!value)throw new Error('chat_name_empty');const index=await this.list(),chat=this.#required(index,chatId);chat.name=value;chat.updatedAt=Date.now();await this.#save(index);}
+  async remove(chatId:string){const index=await this.list(),position=index.chats.findIndex((chat)=>chat.chatId===chatId);if(position<0)throw new Error(`chat_not_found:${chatId}`);index.chats.splice(position,1);if(index.activeChatId===chatId)index.activeChatId=index.chats[0]?.chatId??null;await this.#repository.delete(`${this.#projectId}:chat:${chatId}`);await this.#save(index);}
+  async setActive(chatId:string){const index=await this.list();this.#required(index,chatId);index.activeChatId=chatId;await this.#save(index);}
+  async touch(chatId:string,turn:number){const index=await this.list(),chat=this.#required(index,chatId);chat.turn=Math.max(0,Math.trunc(turn));chat.updatedAt=Date.now();await this.#save(index);}
+  #required(index:ChatIndex,chatId:string){const chat=index.chats.find((entry)=>entry.chatId===chatId);if(!chat)throw new Error(`chat_not_found:${chatId}`);return chat;}
+  #empty():ChatIndex{return{contract:'simbot-chat-index/0.1',projectId:this.#projectId,chats:[],activeChatId:null};}
+  #indexId(){return`${this.#projectId}:chatindex`;}
+  async #save(index:ChatIndex){await this.#repository.put({id:this.#indexId(),schemaHash:this.#projectId,title:'Chat index',updatedAt:Date.now(),payload:structuredClone(index)});}
+}
