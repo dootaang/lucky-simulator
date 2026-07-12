@@ -35,12 +35,18 @@ importers:
       '@simbot/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@simbot/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
       '@simbot/risu':
         specifier: workspace:*
         version: link:../../packages/risu
       '@simbot/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@simbot/session':
+        specifier: workspace:*
+        version: link:../../packages/session
       '@simbot/simpack':
         specifier: workspace:*
         version: link:../../packages/simpack

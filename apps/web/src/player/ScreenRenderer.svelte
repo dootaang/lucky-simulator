@@ -2,8 +2,10 @@
   import Button from '@simbot/ui/Button.svelte';
   import Panel from '@simbot/ui/Panel.svelte';
   import { evaluateCondition, resolveValue, type ProjectRuntime } from '@simbot/runtime';
+  import type { PlaySession } from '@simbot/session';
+  import ChatPanel from './ChatPanel.svelte';
 
-  let { runtime, version }: { runtime: ProjectRuntime; version: number } = $props();
+  let { runtime, version, session = null }: { runtime: ProjectRuntime; version: number; session?: PlaySession|null } = $props();
   let active = $state('');
   let selection = $state<Record<string, unknown>>({});
   let lastLog = $state<unknown[]>([]);
@@ -32,7 +34,7 @@
           {#if evaluateCondition(widget.visibleWhen, context)}
             <Panel title={widget.title ? String(widget.title) : undefined}>
               {#if widget.widget === 'chat'}
-                <div class="chat"><p>엔진이 사실을 관리하고 LLM은 이 영역의 서사를 작성합니다.</p>{#if lastLog.length}<pre>{JSON.stringify(lastLog, null, 2)}</pre>{/if}</div>
+                {#if session}<ChatPanel {session} onchange={()=>revision+=1}/>{:else}<div class="chat"><p>플레이 세션을 준비하고 있습니다.</p>{#if lastLog.length}<pre>{JSON.stringify(lastLog, null, 2)}</pre>{/if}</div>{/if}
               {:else if widget.widget === 'action-group' || widget.widget === 'decision-card'}
                 <div class="actions">{#each asList(widget.actions) as action}<Button disabled={action.enabled === false} onclick={() => act(action)}>{String(action.label ?? action.id)}</Button>{/each}</div>
               {:else if ['card-list', 'map-nodes', 'inventory-grid', 'quest-board'].includes(String(widget.widget))}
