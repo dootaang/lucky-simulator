@@ -1,0 +1,12 @@
+import { describe,expect,it } from 'vitest';
+import { createRng,type RuntimeRecord } from '@simbot/kernel';
+import { createInnRegistry } from '../src/index.ts';
+
+const schema:RuntimeRecord={staffing:{facility:'quarter',capacityByLevel:{'1':1,'2':3}},questBoard:{facility:'tavern',unlockLevel:2},quests:[{id:'herbs'}],entities:[{type:'facility',instances:[{id:'quarter',maxLevel:2,upgradeCosts:{'2':750000}},{id:'tavern',maxLevel:2,upgradeCosts:{'2':500000}}]},{type:'npc',instances:[{id:'silvia'}]},{type:'room',instances:[{no:'101',capacity:1,requiresRoomLevel:1,pricePerNight:30000}]},{type:'menuItem',instances:[{name:'stew',category:'food',price:5000}]}]};
+const initial=():RuntimeRecord=>({gold:1_000_000,facilities:{quarter:1,tavern:1,room:1,kitchen:1},staff:[],rooms:{},resources:{food:2},items:{},npcs:{silvia:{}},player:{pools:{hp:{cur:10,max:10}}},combat:null});
+
+describe('inn genre module',()=>{
+  it('uses the configured staff quarters and supports wage changes',()=>{const registry=createInnRegistry(),rng=createRng(1);let state=initial();let result=registry.dispatch(schema,state,{id:'hire',params:{npcId:'silvia',dailyWage:5000}},rng);expect(result.log[0]).toMatchObject({ok:true,dailyWage:5000});state=result.state;result=registry.dispatch(schema,state,{id:'set_wage',params:{npcId:'silvia',dailyWage:10000}},rng);expect(result.log[0]).toMatchObject({ok:true,before:5000,dailyWage:10000});expect((result.state.staff as RuntimeRecord[])[0]).toMatchObject({npcId:'silvia',dailyWage:10000});});
+  it('keeps the quest board hidden until the configured tavern upgrade',()=>{const registry=createInnRegistry(),rng=createRng(2);let state=initial();expect(registry.select('inn/quests',schema,state)).toEqual([]);state=registry.dispatch(schema,state,{id:'upgrade',params:{facility:'tavern'}},rng).state;expect(registry.select('inn/quests',schema,state)).toEqual([{id:'herbs'}]);});
+  it('prevents free sales and preserves room capacity',()=>{const registry=createInnRegistry(),rng=createRng(3);let state=initial();state=registry.dispatch(schema,state,{id:'sale',params:{menuName:'stew',qty:2}},rng).state;expect(state).toMatchObject({gold:1_010_000,resources:{food:0}});state=registry.dispatch(schema,state,{id:'checkin',params:{roomNo:'101',guestName:'A',stayDays:2}},rng).state;const rejected=registry.dispatch(schema,state,{id:'checkin',params:{roomNo:'101',guestName:'B',stayDays:1}},rng);expect(rejected.log[0]).toMatchObject({ok:false,reason:'room_full'});expect(rejected.state).toEqual(state);});
+});
