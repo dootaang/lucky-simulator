@@ -158,6 +158,31 @@ importers:
         specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.3)(tsx@4.23.0)
 
+  packages/session:
+    dependencies:
+      '@simbot/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@simbot/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@simbot/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      '@simbot/risu':
+        specifier: workspace:*
+        version: link:../risu
+      '@simbot/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@24.13.3)(tsx@4.23.0)
+
   packages/simpack:
     dependencies:
       '@noble/hashes':
