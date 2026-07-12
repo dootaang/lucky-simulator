@@ -27,6 +27,7 @@
 | 2026-07-12 | Risu preset·prompt 구조 | `packages/risu/src/index.ts` | 파일 규격 상호운용 재구현 | 알 수 없는 원본 필드를 보존 |
 | 2026-07-12 | `src/ts/process/scripts.ts`, `src/ts/cbs.ts`, `src/ts/process/modules.ts` | `packages/risu/src/lore.ts` | 안전 부분집합 재구현 | 읽기 전용·결정론 경로만 허용하고 실행형 부작용은 차단 |
 | 2026-07-12 | `src/ts/process/request/openAI/requests.ts`, `src/ts/process/request/anthropic.ts`, `src/ts/process/request/google.ts` | `packages/session/src/providers/` | 요청 계약 의미 재현(코드 복사 아님) | 프로바이더별 역할·헤더·응답 변환을 우리 `ModelProvider` 계약으로 재구현 |
+| 2026-07-12 | `src/ts/process/prompt.ts` (`PromptItem`, `tokenizePreset`), `src/ts/process/index.svelte.ts` (promptTemplate 조립), `src/ts/parser/parser.svelte.ts` (기본 치환 문법), `src/lib/Setting/Pages/PromptSettings.svelte`, `src/lib/UI/PromptDataItem.svelte`, `src/lib/Setting/botpreset.svelte`, `src/ts/storage/database.svelte.ts` (`botPreset`, import/export) | `packages/risu/src/{contracts,compiler,presets,preset-import}.ts`, `apps/web/src/player/{PromptPanel,preset-library}.ts` | 계약·UI 문법 의미 재현 | 프롬프트 순서·innerFormat·depth·range·프리셋 전환/보존을 우리 세션·저장소 계약으로 재구현 |
 
 `msgpackr` 1.11.5(MIT)는 Risu preset의 MessagePack 상호운용에 사용한다.
 

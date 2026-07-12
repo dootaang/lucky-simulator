@@ -1,0 +1,2 @@
+import {describe,expect,it} from 'vitest';import {createMemoryRepository} from '@simbot/persistence';import {defaultCardPreset} from '@simbot/risu';import {PresetLibrary} from './preset-library';
+describe('전역 프리셋 저장소',()=>{it('preset:index와 preset:<id>로 활성 프리셋을 복원한다',async()=>{const library=new PresetLibrary(createMemoryRepository()),preset={...defaultCardPreset(),id:'custom',name:'사용자 프리셋'};await library.save(preset);const result=await library.list();expect(result.index.activeId).toBe('custom');expect(result.presets[0]?.name).toBe('사용자 프리셋');});});
