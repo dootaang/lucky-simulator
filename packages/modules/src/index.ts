@@ -4,6 +4,7 @@ export * from './advanced.ts';
 export * from './hunter.ts';
 export * from './combat.ts';
 export * from './inn.ts';
-import { ModuleRegistry } from '@simbot/kernel'; import { commonModules } from './common.ts'; import { craftingModule,equipmentModule,questsModule,shopModule } from './advanced.ts'; import { hunterModule } from './hunter.ts'; import { combatModule,statsModule } from './combat.ts'; import { innModule } from './inn.ts';
+export * from './inn-traffic.ts';
+import { ModuleRegistry } from '@simbot/kernel'; import { commonModules } from './common.ts'; import { craftingModule,equipmentModule,questsModule,shopModule } from './advanced.ts'; import { hunterModule } from './hunter.ts'; import { combatModule,statsModule } from './combat.ts'; import { innModule } from './inn.ts'; import { innTrafficModule } from './inn-traffic.ts';
 export function createStandardRegistry(){const registry=new ModuleRegistry();registry.register(statsModule());for(const module of commonModules())registry.register(module);for(const module of [equipmentModule(),questsModule(),shopModule(),craftingModule(),hunterModule(),combatModule()])registry.register(module);return registry;}
-export function createInnRegistry(){return createStandardRegistry().register(innModule());}
+export function createInnRegistry(){return createStandardRegistry().register(innModule()).register(innTrafficModule());}
