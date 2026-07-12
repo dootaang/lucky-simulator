@@ -15,6 +15,7 @@
   };
 
   export interface FactLine { key: string; icon: string; label: string; delta: string | null; after: string | null; note: string; rejected: boolean; }
+  export function factIconName(icon:string){return({['🍚']:'food',['🍶']:'drink',['🪵']:'box',['🪙']:'coin',['❤️']:'heart',['⭐']:'star',['🛏️']:'bed',['🚪']:'bed',['🌙']:'moon',['🤝']:'user',['👋']:'user',['⚙️']:'settings',['🚫']:'blocked'}as const)[icon as '🍚']??'settings';}
 
   // 엔진 로그 한 줄 → 사람이 읽는 영수증 한 줄. 알 수 없는 형태도 안전하게 요약한다.
   export function toFactLine(log: Log, index: number): FactLine {
@@ -59,6 +60,7 @@
 </script>
 
 <script lang="ts">
+  import Icon from '@simbot/ui/Icon.svelte';
   let { logs }: { logs: Log[] } = $props();
   let lines = $derived(logs.map((log, i) => toFactLine(log, i)));
   let confirmed = $derived(lines.filter((l) => !l.rejected).length);
@@ -68,13 +70,13 @@
 {#if lines.length}
   <section class="receipt" aria-label="엔진이 확정한 사실">
     <header>
-      <span class="stamp">엔진 확정</span>
+      <span class="stamp"><Icon name="star" size={12}/> 엔진 확정</span>
       <span class="count">{confirmed}건 확정{#if blocked} · {blocked}건 차단{/if}</span>
     </header>
     <ol>
       {#each lines as line (line.key)}
         <li class:rejected={line.rejected}>
-          <span class="icon" aria-hidden="true">{line.icon}</span>
+          <span class="icon" aria-hidden="true"><Icon name={factIconName(line.icon)} size={14}/></span>
           <span class="label">{line.label}</span>
           {#if line.delta}<span class="delta" class:down={line.delta.startsWith('-')}>{line.delta}</span>{/if}
           {#if line.after}<span class="after">→ {line.after}</span>{/if}

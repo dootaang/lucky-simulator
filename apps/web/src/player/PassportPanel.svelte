@@ -1,16 +1,17 @@
 <script lang="ts">
   import type { CardPassport } from '@simbot/risu';
+  import Icon from '@simbot/ui/Icon.svelte';
   let {passport}:{passport:CardPassport}=$props();
   let rows=$derived([
-    {label:'직역',icon:'✅',values:passport.grades.exact,empty:'직역 태그 없음'},
-    {label:'근사',icon:'⚠️',values:passport.grades.approx,empty:'근사 태그 없음'},
-    {label:'보존',icon:'📦',values:passport.grades.preserved,empty:'보존 태그 없음'}
+    {label:'직역',icon:'star' as const,values:passport.grades.exact,empty:'직역 태그 없음'},
+    {label:'근사',icon:'refresh' as const,values:passport.grades.approx,empty:'근사 태그 없음'},
+    {label:'보존',icon:'box' as const,values:passport.grades.preserved,empty:'보존 태그 없음'}
   ]);
 </script>
 
 <section class="passport" aria-label="카드 호환성 여권">
   <header><div><span class="eyebrow">호환성 여권</span><strong>{passport.cardName}</strong></div><span class:full={passport.mode==='full-sim'} class="mode">{passport.mode==='full-sim'?'완전 시뮬':'일반 채팅'}</span></header>
-  <dl>{#each rows as row}<div><dt>{row.icon} {row.label}</dt><dd class:empty={!row.values.length}>{row.values.length?row.values.join(' · '):row.empty}</dd></div>{/each}</dl>
+  <dl>{#each rows as row}<div><dt><Icon name={row.icon} size={13}/> {row.label}</dt><dd class:empty={!row.values.length}>{row.values.length?row.values.join(' · '):row.empty}</dd></div>{/each}</dl>
 </section>
 
 <style>

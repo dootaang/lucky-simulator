@@ -35,6 +35,17 @@
 
 `msgpackr` 1.11.5(MIT)는 Risu preset의 MessagePack 상호운용에 사용한다.
 
+### Slice 7 — UX 패리티
+
+| 날짜 | 원본 | 우리 구현 | 방식 | 범위 |
+|---|---|---|---|---|
+| 2026-07-12 | RisuAI `src/lib/Setting/Settings.svelte` | `apps/web/src/player/SettingsPanel.svelte` | 레이아웃·탐색 문법 재구현 | 좌측 전역 메뉴와 우측 모델·프롬프트·페르소나·기타 설정 화면 |
+| 2026-07-12 | RisuAI `src/ts/parser/parser.svelte.ts`의 `ParseMarkdown`, 채팅 메시지 표시 문법 | `packages/ui/src/markdown.ts`, `apps/web/src/player/MessageList.svelte` | 안전 부분집합 독립 구현 | HTML 선 이스케이프, 마크다운 부분집합, 대사 강조, 표시층 매크로 치환, 인레이 이미지 |
+| 2026-07-12 | RisuAI `SideChatList.svelte`, 기본 채팅 화면의 중단·메시지 조작 UX | `apps/web/src/player/{InputBar,MessageList,SidePanel}.svelte`, `packages/session/src/index.ts` | 동작 문법 재구현 | 타이핑 표시, AbortSignal 중단, undo/redo, 엔진 영수증 밀도 |
+
+아이콘의 기본 도형과 선 문법은 Lucide 아이콘 세트(ISC License)를 참고해 `packages/ui/src/icons/Icon.svelte`에
+인라인 SVG로 재구성했다. 런타임 패키지 의존성은 추가하지 않았으며 ★는 럭키★시뮬레이터 고유 확정 도장이다.
+
 ### 명시적으로 가져오지 않은 것
 
 - `hypav3.ts` 전체, Risu DB(`DBState`)·Svelte store·localForage 결합
