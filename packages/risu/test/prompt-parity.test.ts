@@ -51,7 +51,11 @@ describe('프롬프트 파리티 골든',()=>{
 
   it('SimPack 엔진 지시는 Risu 원문에 가산적이다',()=>{
     const fixture=fixtures.find(({name})=>name.startsWith('04-'))!.value,input=fixture.input;
-    const risu=compilePrompt({preset:defaultCardPreset(),card:input.card});
+    // '순수 리스' 기준선은 엔진 블록이 하나도 없는 프리셋이어야 한다. defaultCardPreset은 v2부터
+    // engineFacts가 켜져 있어(시뮬 카드에 필요) 그대로 쓰면 파손이 양쪽에 똑같이 적용돼 등식이 공허해진다.
+    const pure=defaultCardPreset();
+    pure.blocks=pure.blocks.filter((block)=>!['engineFacts','availableActions','groundedMemory'].includes(block.type));
+    const risu=compilePrompt({preset:pure,card:input.card});
     const simpack=compilePrompt({preset:presetFor(fixture),...input});
     const engine=new Set(['엔진 사실','가능 행동']);
     expect(simpack.messages.filter((message)=>!engine.has(message.content))).toEqual(risu.messages);
