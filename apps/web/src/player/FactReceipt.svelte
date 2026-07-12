@@ -35,7 +35,8 @@
     }
     if (event === 'scale_delta') {
       const tier = log.tierChanged as Record<string, Record<string, unknown>> | undefined;
-      const tierNote = tier ? `${s(tier.from?.label)} → ${s(tier.to?.label)}` : reason;
+      const from = s(tier?.from?.label), to = s(tier?.to?.label);
+      const tierNote = tier && (from || to) ? `${from} → ${to}` : reason;
       const capped = log.capped === true ? '오늘 상한 도달' : tierNote;
       return { key: `${index}`, icon: '❤️', label: `${s(log.target)} ${s(log.scale)}`, delta: deltaStr(n(log.delta)), after: after != null ? fmt(after) : null, note: capped, rejected: false };
     }

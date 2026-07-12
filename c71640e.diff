@@ -1,0 +1,236 @@
+﻿commit c71640e313f601a8cc53642082ee34166fd61997
+Author: dootaang <kksk980@gmail.com>
+Date:   Sun Jul 12 16:34:47 2026 +0900
+
+    lucky(slice-1): ?⑹궗?ш? ?쒓렇?믪뿏吏?踰덉뿭湲?+ ?붿떛???섎쾭??(??궎 留ㅼ쭅 利앸챸)
+    
+    ADR 0002 泥??섏쭅 ?⑤㈃???붿쭊 利앸챸(UI ??. LLM 蹂몃Ц??[ysp_*] ?쒓렇瑜??곕━ ?붿쭊
+    ?대깽?몃줈 踰덉뿭?섍퀬, ?붿쭊???곹깭瑜??뚯쑀???섎갚 ?????由쇱쓣 湲곌퀎?곸쑝濡?利앸챸.
+    
+    - packages/risu/ysp-translate.ts: translateYspTags(?쒖닔) ???⑹궗?ш? ?쒓렇瑜??붿쭊
+      ?대깽?몃줈. ?깃툒(?명솚???ш텒): exact 吏곸뿭(gold_delta쨌resource_delta쨌checkin/out쨌
+      day_end쨌hire/fire) / approx 洹쇱궗(affinity ??raw?명??뭩tepped size) / preserved
+      誘몄???蹂댁〈(rep쨌exp쨌capture쨌gate ???꾩쓽 ?ㅽ뻾 湲덉?). ?쒓렇 ?쒓굅 residue 諛섑솚.
+    - ?붿떛???섎쾭??session/test): ?⑹궗?ш? 300???쒓렇 ?ㅽ겕由쏀듃 ??      ???붿쭊 ?곹깭媛 ?낅┰ ?λ?? 留????쇱튂(?붿떛??0) ???쒓렇 ?녿뒗 ?쒖궗???곹깭 遺덈?
+      (?쒖궗媛 猷?議곗옉 紐삵븿) ???ы쁽??媛숈? ?쒕뱶쨌?ㅽ겕由쏀듃=?숈씪 ?ㅻ깄?? ??濡ㅻ갚??湲??      ?꾨땲???곹깭瑜??꾩쟾 蹂듭썝쨌?ы쁽. 移대뱶媛 ?먯퐫?⑺븯??reindexYspState쨌bk_turn_key瑜?      ?붿쭊???ㅼ씠?곕툕 ?泥댄븿??利앷굅.
+    - ?뚭? ?뚯뒪???좎꽕(risu 6쨌session 4). ???⑦궎吏 typecheck쨌test쨌web build 洹몃┛.
+    
+    ?ㅼ쓬(UI ?щ씪?댁뒪): ?댁궗 ?섍꼍 ?꾪룷?맞룹궗???곸닔利씲룸몢 以??덉씪쨌?명솚???ш텒 ?곌껐.
+    
+    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/packages/risu/src/index.ts b/packages/risu/src/index.ts
+index f86fdc4..a806c4c 100644
+--- a/packages/risu/src/index.ts
++++ b/packages/risu/src/index.ts
+@@ -1,3 +1,4 @@
+ export * from './contracts.ts';
+ export * from './compiler.ts';
+ export * from './lore.ts';
++export * from './ysp-translate.ts';
+diff --git a/packages/risu/src/ysp-translate.ts b/packages/risu/src/ysp-translate.ts
+new file mode 100644
+index 0000000..a6ff96f
+--- /dev/null
++++ b/packages/risu/src/ysp-translate.ts
+@@ -0,0 +1,66 @@
++// ??궎 ?쒕??덉씠?????⑹궗?ш? [ysp_*] ?쒓렇 ???붿쭊 ?대깽??踰덉뿭湲?(?쒖닔 ?⑥닔).
++// ADR 0002: 由ъ뒪 移대뱶??Lua瑜??ㅽ뻾?섏? ?딄퀬 ?쒓렇 怨꾩빟???섎?瑜??곕━ ?붿쭊 ?대깽?몃줈 ??릿??
++// 移대뱶媛 ?먯퐫?⑺븯???꾩쟻쨌濡ㅻ갚쨌?ъ씤?깆떛? ?붿쭊(sessionJournal)???ㅼ씠?곕툕濡???좏븯誘濡?
++// ??怨꾩링? "LLM 蹂몃Ц???쒓렇瑜??붿쭊 ?대깽??紐⑸줉?쇰줈 諛붽씀怨?蹂몃Ц?먯꽌 ?쒓굅"留??쒕떎.
++//
++// ?깃툒(?명솚???ш텒): 'exact' 洹몃?濡?吏곸뿭 | 'approx' ?섎? 洹쇱궗 蹂???붿쭊 怨꾩빟 李⑥씠) | 'preserved' 誘몄???蹂댁〈).
++
++export interface TranslatedEvent { id: string; params: Record<string, unknown>; grade: 'exact' | 'approx'; tag: string; }
++export interface UnsupportedTag { tag: string; kind: string; reason: string; }
++export interface YspTranslation { events: TranslatedEvent[]; unsupported: UnsupportedTag[]; residue: string; }
++
++// ?ㅼ뿉 ?쒓? ?몃젰紐??깆씠 ?????덉뼱(?? ysp_rep_留덉쓣) ']'쨌':'留??쒖쇅?섍퀬 ?볤쾶 ?〓뒗??
++const TAG_RE = /\[((?:ysp_|YSP_)[^\]:]+)((?:::[^\]]*)?)\]/g;
++
++function num(value: string | undefined): number { const n = Number(String(value ?? '').trim()); return Number.isFinite(n) ? Math.trunc(n) : 0; }
++// 由ъ뒪 ?쒓렇??raw ?명?(짹N)瑜??붿쭊 scale_delta??stepped size濡?洹쇱궗. 寃곗젙濡?媛숈? N=媛숈? size).
++function stepFromMagnitude(magnitude: number): 'S' | 'M' | 'L' | 'XL' { const m = Math.abs(magnitude); return m >= 10 ? 'XL' : m >= 6 ? 'L' : m >= 3 ? 'M' : 'S'; }
++
++export function translateYspTags(text: string): YspTranslation {
++  const events: TranslatedEvent[] = [];
++  const unsupported: UnsupportedTag[] = [];
++  const source = String(text ?? '');
++  const residue = source.replace(TAG_RE, (match, rawKey, rawArgs) => {
++    const key = String(rawKey).toLowerCase();
++    const args = String(rawArgs || '').split('::').slice(1).map((s) => s.trim()); // 泥??먯냼??'' (?욎쓽 ::)
++    const push = (id: string, params: Record<string, unknown>, grade: 'exact' | 'approx' = 'exact') => events.push({ id, params, grade, tag: match });
++    const skip = (kind: string, reason: string) => unsupported.push({ tag: match, kind, reason });
++    switch (key) {
++      case 'ysp_gold': push('gold_delta', { amount: num(args[0]), reason: args[1] ?? '' }); break;
++      case 'ysp_food': push('resource_delta', { resource: 'food', amount: num(args[0]) }); break;
++      case 'ysp_drink': push('resource_delta', { resource: 'drink', amount: num(args[0]) }); break;
++      case 'ysp_material': push('resource_delta', { resource: 'material', amount: num(args[0]) }); break;
++      case 'ysp_affinity': case 'ysp_lewd': case 'ysp_pop': case 'ysp_obd': {
++        const scale = key === 'ysp_affinity' ? 'affinity' : key.slice(4);
++        const target = args[0] ?? '', delta = num(args[1]);
++        push('scale_delta', { scale, target, size: stepFromMagnitude(delta), direction: delta < 0 ? '-' : '+' }, 'approx');
++        break;
++      }
++      case 'ysp_checkin': push('checkin', { roomNo: args[0] ?? '', guestName: args[1] ?? '', stayDays: num(args[2]) || 1 }); break;
++      case 'ysp_checkout': push('checkout', { roomNo: args[0] ?? '', guestName: args[1] ?? '' }); break;
++      case 'ysp_nextday': push('day_end', {}); break;
++      case 'ysp_hire': push('hire', { npcId: args[0] ?? '', dailyWage: num(args[1]) }); break;
++      case 'ysp_fire': push('fire', { npcId: args[0] ?? '' }); break;
++      case 'ysp_sex': skip('?ш탳/愿怨?, 'ysp_sex???꾩옱 ?ㅽ궎留덉뿉 ????곹깭媛 ?놁뼱 蹂댁〈(愿怨?紐⑤뱢 ?뺤옣 ?湲?'); break;
++      case 'ysp_exp': skip('寃쏀뿕移?, 'exp_gain? ?뚯뒪(category) 怨꾩빟?대씪 raw ?명?瑜?吏곸뿭 遺덇? ??洹쇨굅 ?쒓렇 ?ъ꽕怨??湲?); break;
++      case 'ysp_hp': case 'ysp_mp': skip('?', `${key}??pool ?뚮났 怨꾩빟 留ㅽ븨 ?湲?); break;
++      case 'ysp_capture': case 'ysp_release': skip('?щ줈', '?щ줈 紐⑤뱢 誘멸뎄?????먮낯 蹂댁〈'); break;
++      case 'ysp_equip_add': case 'ysp_equip_remove': skip('?λ퉬', '?λ퉬 ?몃깽 留ㅽ븨 ?湲?); break;
++      default:
++        if (key.startsWith('ysp_rep_')) skip('?됲뙋', 'rep_event??axis/category 怨꾩빟?대씪 raw ?명? 吏곸뿭 遺덇? ??留ㅽ븨 ?뚯씠釉??湲?);
++        else if (key.startsWith('ysp_gate') || key.startsWith('ysp_dungeon')) skip('?섏쟾/寃뚯씠??, '?섏쟾 紐⑤뱢 誘멸뎄?????먮낯 蹂댁〈');
++        else skip('誘몃텇瑜?, `?????녿뒗 ?쒓렇: ${key}`);
++    }
++    return ''; // 蹂몃Ц?먯꽌 ?쒓렇 ?쒓굅
++  });
++  return { events, unsupported, residue: residue.replace(/\n{3,}/g, '\n\n').trim() };
++}
++
++// ?명솚???ш텒???붿빟 ??移대뱶 ?꾪룷?????쒓렇 怨꾩빟???대뒓 ?깃툒?쇰줈 踰덉뿭?섎뒗吏.
++export function tagCompatibilityGrades(sampleText: string): { exact: string[]; approx: string[]; preserved: string[] } {
++  const t = translateYspTags(sampleText);
++  const exact = [...new Set(t.events.filter((e) => e.grade === 'exact').map((e) => e.id))];
++  const approx = [...new Set(t.events.filter((e) => e.grade === 'approx').map((e) => e.id))];
++  const preserved = [...new Set(t.unsupported.map((u) => u.kind))];
++  return { exact, approx, preserved };
++}
+diff --git a/packages/risu/test/ysp-translate.test.ts b/packages/risu/test/ysp-translate.test.ts
+new file mode 100644
+index 0000000..241fa77
+--- /dev/null
++++ b/packages/risu/test/ysp-translate.test.ts
+@@ -0,0 +1,47 @@
++import {describe,expect,it}from'vitest';
++import{translateYspTags,tagCompatibilityGrades}from'../src/index.ts';
++
++describe('ysp tag translation (??궎: ?⑹궗?ш? ?쒓렇 ???붿쭊 ?대깽??',()=>{
++  it('源붾걫????묓븯???쒓렇??exact濡?吏곸뿭?쒕떎',()=>{
++    const t=translateYspTags('?곸뾽 留덇컧. [ysp_gold::+35000::?먯떖 留ㅼ텧] ?먮떂??遺먮퀜??[ysp_food::-5][ysp_drink::-3]');
++    expect(t.events).toEqual([
++      {id:'gold_delta',params:{amount:35000,reason:'?먯떖 留ㅼ텧'},grade:'exact',tag:'[ysp_gold::+35000::?먯떖 留ㅼ텧]'},
++      {id:'resource_delta',params:{resource:'food',amount:-5},grade:'exact',tag:'[ysp_food::-5]'},
++      {id:'resource_delta',params:{resource:'drink',amount:-3},grade:'exact',tag:'[ysp_drink::-3]'},
++    ]);
++    expect(t.residue).toBe('?곸뾽 留덇컧.  ?먮떂??遺먮퀜??); // ?쒓렇 ?쒓굅???쒖궗留??⑥쓬
++  });
++
++  it('checkin/checkout/nextday/hire/fire瑜?吏곸뿭?쒕떎',()=>{
++    const t=translateYspTags('[ysp_checkin::101::silvia::2][ysp_hire::mirian::10000][ysp_nextday][ysp_fire::kang][ysp_checkout::101::silvia]');
++    expect(t.events.map((e)=>e.id)).toEqual(['checkin','hire','day_end','fire','checkout']);
++    expect(t.events[0]!.params).toEqual({roomNo:'101',guestName:'silvia',stayDays:2});
++    expect(t.events[1]!.params).toEqual({npcId:'mirian',dailyWage:10000});
++    expect(t.events[4]!.params).toEqual({roomNo:'101',guestName:'silvia'});
++  });
++
++  it('?멸컧?꾨뒗 raw ?명?瑜?stepped size濡?洹쇱궗 蹂??approx)?쒕떎',()=>{
++    const t=translateYspTags('[ysp_affinity::silvia::+2][ysp_affinity::kang::-8]');
++    expect(t.events[0]).toMatchObject({id:'scale_delta',grade:'approx',params:{scale:'affinity',target:'silvia',size:'S',direction:'+'}});
++    expect(t.events[1]).toMatchObject({params:{scale:'affinity',target:'kang',size:'L',direction:'-'}});
++  });
++
++  it('?꾩옱 ?ㅽ궎留덉뿉 ????녿뒗 ?쒓렇???ㅽ뻾?섏? ?딄퀬 蹂댁〈(unsupported)?쒕떎',()=>{
++    const t=translateYspTags('[ysp_capture::a::b::c::D::0::0::0::0::0][ysp_rep_留덉쓣::+5][YSP_GATE_MAP::?섏쟾::A::x][ysp_exp::+40]');
++    expect(t.events).toHaveLength(0); // ?꾩쓽 ?ㅽ뻾 湲덉?
++    const kinds=t.unsupported.map((u)=>u.kind);
++    expect(kinds).toContain('?щ줈');expect(kinds).toContain('?됲뙋');expect(kinds).toContain('?섏쟾/寃뚯씠??);expect(kinds).toContain('寃쏀뿕移?);
++  });
++
++  it('寃곗젙濡???媛숈? 蹂몃Ц?대㈃ 媛숈? 踰덉뿭',()=>{
++    const text='[ysp_gold::+100][ysp_affinity::silvia::+3][ysp_capture::x::y::z::E::0::0::0::0::0]';
++    expect(translateYspTags(text)).toEqual(translateYspTags(text));
++  });
++
++  it('?명솚???ш텒 ?깃툒 ?붿빟???몃떎',()=>{
++    const g=tagCompatibilityGrades('[ysp_gold::+1][ysp_affinity::a::+1][ysp_rep_留덉쓣::+1][ysp_gate_move::1]');
++    expect(g.exact).toContain('gold_delta');
++    expect(g.approx).toContain('scale_delta');
++    expect(g.preserved).toEqual(expect.arrayContaining(['?됲뙋','?섏쟾/寃뚯씠??]));
++  });
++});
+diff --git a/packages/session/test/disync-harness.test.ts b/packages/session/test/disync-harness.test.ts
+new file mode 100644
+index 0000000..0b787c0
+--- /dev/null
++++ b/packages/session/test/disync-harness.test.ts
+@@ -0,0 +1,78 @@
++import {describe,expect,it}from'vitest';
++import{ProjectRuntime,type RuntimeProject}from'@simbot/runtime';
++import{translateYspTags}from'@simbot/risu';
++
++// ??궎 ?쒕??덉씠??遺곴레???섎쾭??ADR 0002): ?ㅼ젣 由ъ뒪 移대뱶泥섎읆 LLM??[ysp_*] ?쒓렇瑜?蹂몃Ц??諭됱쑝硫?+// 踰덉뿭湲곌? ?붿쭊 ?대깽?몃줈 ??린怨??붿쭊???곹깭瑜??뚯쑀?쒕떎. 300?댁쓣 ?뚮젮???붿쭊 ?곹깭媛 ?낅┰ ?λ??
++// ?닿툔?섏? ?딄퀬(?붿떛??0), ?섎룎由щ㈃ ?곹깭???④퍡 蹂듭썝?⑥쓣 利앸챸?쒕떎. 移대뱶媛 ?먯퐫?⑺븯??+// reindexYspState쨌bk_turn_key瑜??붿쭊???ㅼ씠?곕툕濡??泥댄븳?ㅻ뒗 寃껋쓽 湲곌퀎??利앷굅.
++
++const innProject=():RuntimeProject=>({
++  projectId:'yongsa',
++  schema:{
++    staffing:{facility:'quarter',capacityByLevel:{'1':1,'2':3}},
++    scales:[{id:'affinity',owner:'npc',range:[0,200],default:20,steps:{S:1,M:3,L:6,XL:10,'S-':-1,'M-':-3,'L-':-6,'XL-':-10}}],
++    entities:[
++      {type:'facility',instances:[{id:'quarter',maxLevel:2},{id:'tavern',maxLevel:2},{id:'room',maxLevel:2},{id:'kitchen',maxLevel:2}]},
++      {type:'npc',instances:[{id:'silvia'}]},
++      {type:'room',instances:[{no:'101',capacity:1,requiresRoomLevel:1,pricePerNight:0}]},
++    ],
++    initialState:{day:1,gold:1_000_000,resources:{food:200,drink:200},items:{},facilities:{quarter:1,tavern:1,room:1,kitchen:1},staff:[],rooms:{},npcs:{silvia:{affinity:20}},player:{pools:{hp:{cur:10,max:10}}},combat:null},
++  },
++  screens:[],navigation:[],content:{},featureToggles:{},moduleIds:['genre.inn'],
++});
++
++// 寃곗젙濡??쒓렇 ?ㅽ겕由쏀듃 ????t??'LLM 蹂몃Ц'. RNG쨌?쒓컖 ?놁쓬(index 湲곕컲).
++function turnText(t:number):string{
++  const sale=30000+(t%7)*1000, cost=5000+(t%3)*500;
++  let s=`${t}?쇱감 ?곸뾽???뺣━?덈떎. [ysp_gold::+${sale}::留ㅼ텧][ysp_gold::-${cost}::?щ즺鍮? `;
++  s+=`二쇰갑??諛붾뭅??[ysp_food::+2][ysp_food::-1][ysp_drink::+1][ysp_drink::-1] `;
++  if(t%5===0)s+=`?ㅻ퉬?꾩? ?덉씠 留덉＜爾ㅻ떎 [ysp_affinity::silvia::+1] `;
++  return s;
++}
++// ?붿쭊怨??낅┰??'湲곕? ?λ?' ??媛숈? ?쒓렇瑜??쒖닔 ?곗닠濡??꾩쟻(?붿쭊 clamp? ?숈씪 洹쒖튃).
++function expectedLedger(turns:number){let gold=1_000_000,food=200,drink=200;for(let t=1;t<=turns;t++){const sale=30000+(t%7)*1000,cost=5000+(t%3)*500;gold=Math.max(0,gold+sale);gold=Math.max(0,gold-cost);food=Math.max(0,food+2);food=Math.max(0,food-1);drink=Math.max(0,drink+1);drink=Math.max(0,drink-1);}return{gold,food,drink};}
++
++function applyTurn(runtime:ProjectRuntime,text:string){const{events}=translateYspTags(text);for(const e of events)runtime.dispatch(e.id,e.params as Record<string,unknown>);}
++
++describe('disync harness ??300???쒓렇 ?뚮젅??遺덈???,()=>{
++  it('?붿쭊 ?곹깭媛 ?낅┰ ?λ?? 留????쇱튂?쒕떎(?붿떛??0)',()=>{
++    const runtime=new ProjectRuntime(innProject(),7);
++    for(let t=1;t<=300;t++){
++      applyTurn(runtime,turnText(t));
++      const led=expectedLedger(t),st=runtime.state as Record<string,unknown>,res=st.resources as Record<string,number>;
++      expect(st.gold).toBe(led.gold);
++      expect(res.food).toBe(led.food);
++      expect(res.drink).toBe(led.drink);
++    }
++    // ?쒖궗媛 ?곹깭瑜?議곗옉?섏? 紐삵븳?? LLM??"怨⑤뱶 100留?踰뚯뿀??怨??⑤룄 ?쒓렇媛 ?놁쑝硫??붿쭊 遺덈?.
++    const before=(runtime.state as Record<string,unknown>).gold;
++    applyTurn(runtime,'?섎뒗 媛묒옄湲?怨⑤뱶瑜?諛깅쭔?대굹 踰뚯뿀?? 理쒓퀬??');
++    expect((runtime.state as Record<string,unknown>).gold).toBe(before);
++  });
++
++  it('?ы쁽????媛숈? ?쒕뱶쨌媛숈? ?ㅽ겕由쏀듃硫?300??理쒖쥌 ?곹깭媛 ?숈씪',()=>{
++    const a=new ProjectRuntime(innProject(),7),b=new ProjectRuntime(innProject(),7);
++    for(let t=1;t<=300;t++){applyTurn(a,turnText(t));applyTurn(b,turnText(t));}
++    expect(a.snapshot()).toEqual(b.snapshot());
++  });
++
++  it('?섎룎由щ㈃ ?곹깭???④퍡 ?섎룎?꾧컙????濡ㅻ갚??湲???꾨땲???곹깭瑜?蹂듭썝',()=>{
++    const runtime=new ProjectRuntime(innProject(),7);
++    for(let t=1;t<=150;t++)applyTurn(runtime,turnText(t));
++    const checkpoint=runtime.snapshot(); // 150???쒖젏 ?꾩껜 ?곹깭
++    for(let t=151;t<=300;t++)applyTurn(runtime,turnText(t));
++    const at300=runtime.snapshot();
++    runtime.restore(checkpoint); // ?섎룎由ш린
++    expect(runtime.snapshot()).toEqual(checkpoint); // 150???곹깭濡??꾩쟾 蹂듭썝
++    for(let t=151;t<=300;t++)applyTurn(runtime,turnText(t)); // 媛숈? 誘몃옒 ?ъ깮
++    expect(runtime.snapshot()).toEqual(at300); // 寃곗젙濡좎쟻?쇰줈 ?숈씪 ?ы쁽
++  });
++
++  it('affinity 洹쇱궗 蹂?섎룄 寃곗젙濡좎쟻?쇰줈 ?꾩쟻?쒕떎',()=>{
++    const runtime=new ProjectRuntime(innProject(),7);
++    for(let t=1;t<=60;t++)applyTurn(runtime,turnText(t)); // t%5===0?먯꽌 +1(S) 12??+    const npcs=(runtime.state as Record<string,unknown>).npcs as Record<string,{affinity?:number}>;
++    expect(npcs.silvia?.affinity).toBe(20+12); // 20 ?쒖옉 + S?ㅽ뀦(1)*12
++  });
++});

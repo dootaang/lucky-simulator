@@ -33,6 +33,13 @@ describe('ysp tag translation (럭키: 용사여관 태그 → 엔진 이벤트)
     expect(kinds).toContain('포로');expect(kinds).toContain('평판');expect(kinds).toContain('던전/게이트');expect(kinds).toContain('경험치');
   });
 
+  it('미지원 태그는 소각하지 않고 원본을 본문에 보존한다',()=>{
+    const t=translateYspTags('경험치를 [ysp_exp::+40] 얻었고 [ysp_gold::+100] 골드도 벌었다');
+    expect(t.residue).toContain('[ysp_exp::+40]'); // 보존
+    expect(t.residue).not.toContain('[ysp_gold::+100]'); // 번역된 태그는 제거
+    expect(t.events.map((e)=>e.id)).toEqual(['gold_delta']);
+  });
+
   it('결정론 — 같은 본문이면 같은 번역',()=>{
     const text='[ysp_gold::+100][ysp_affinity::silvia::+3][ysp_capture::x::y::z::E::0::0::0::0::0]';
     expect(translateYspTags(text)).toEqual(translateYspTags(text));

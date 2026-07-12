@@ -1,0 +1,193 @@
+﻿commit e65607fb696cfd6778eb76bca3cc087978cbced4
+Author: dootaang <kksk980@gmail.com>
+Date:   Sun Jul 12 17:36:23 2026 +0900
+
+    lucky(slice-1 UI): ?ъ떎 ?곸닔利?+ ???섎룎由ш린 (??궎 留ㅼ쭅 媛?쒗솕)
+    
+    ?붿쭊???곹깭瑜??뚯쑀?쒕떎??嫄??뚮젅?댁뼱媛 吏곸젒 蹂닿쾶 留뚮뱺??
+    
+    - FactReceipt.svelte: ?대쾲 ???붿쭊 濡쒓렇(lastLogs)瑜?'?붿쭊 ?뺤젙' ?곸닔利앹쑝濡??뚮뜑.
+      怨⑤뱶쨌?먯썝 ?명?? ?붿븸, scale ?깃툒 蹂?? ?섎（ 留덇컧쨌泥댄겕???꾩썐쨌怨좎슜???щ엺??      ?쎈뒗 以꾨줈. LLM??李⑤떒???대깽?몃? ?쒕룄?섎㈃ '?붿쭊??李⑤떒' 嫄곕? 以꾨줈 ?쒖떆 ??      移섑듃 梨꾨꼸 李⑤떒(BUTTON_ONLY/allowed 寃뚯씠?????덉뿉 蹂댁씤?? 湲곗〈 raw JSON
+      <pre> ?ㅽ봽瑜??泥?
+    - ChatPanel: ?꾩넚 吏곸쟾 ?몄뀡 ?ㅻ깄?룹쓣 泥댄겕?ъ씤???ㅽ깮???볤퀬 '???섎룎由ш린'濡?      吏곸쟾 ???곹깭瑜??꾩쟾 蹂듭썝. ?섎쾭?ㅺ? 湲곌퀎濡?利앸챸??濡ㅻ갚???뚮젅?댁뼱 ?먯뿉.
+    - ?뚭? ?뚯뒪??fact-receipt 5). svelte-check 0?먮윭쨌web build 洹몃┛.
+    
+    ?ㅼ쓬: 移대뱶 ?꾪룷?????명솚???ш텒(?쒓렇 ?깃툒) ?쒕㈃??+ ??以??덉씪 寃?ш린.
+    
+    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/apps/web/src/player/ChatPanel.svelte b/apps/web/src/player/ChatPanel.svelte
+index 2bb64fd..c921c04 100644
+--- a/apps/web/src/player/ChatPanel.svelte
++++ b/apps/web/src/player/ChatPanel.svelte
+@@ -1,15 +1,19 @@
+ <script lang="ts">
+   import Button from '@simbot/ui/Button.svelte';
+   import SpeakerStage from '@simbot/ui/SpeakerStage.svelte';
+-  import type { PlaySession } from '@simbot/session';
++  import type { PlaySession,SessionSnapshot } from '@simbot/session';
++  import FactReceipt from './FactReceipt.svelte';
+   let {session,onchange,portraitFor=()=>null}:{session:PlaySession;onchange:()=>void;portraitFor?:(npcId:string,emotion?:string)=>string|null}=$props();
+   let input=$state(''),busy=$state(false),error=$state(''),revision=$state(0);
+-  let messages=$derived.by(()=>{revision;return session.messages;}),speakers=$derived.by(()=>{revision;return session.lastSpeakers;});
+-  async function send(){if(!input.trim()||busy)return;const value=input;input='';busy=true;error='';revision+=1;try{await session.send(value);onchange();}catch(reason){error=reason instanceof Error?reason.message:String(reason);}finally{busy=false;revision+=1;}}
++  // ??泥댄겕?ъ씤???ㅽ깮 ???꾩넚 吏곸쟾 ?곹깭瑜??볦븘?먭퀬, ?섎룎由ш린濡??꾩쟾 蹂듭썝(?붿쭊 濡ㅻ갚???뚮젅?댁뼱 ?먯뿉).
++  let checkpoints=$state<SessionSnapshot[]>([]);
++  let messages=$derived.by(()=>{revision;return session.messages;}),speakers=$derived.by(()=>{revision;return session.lastSpeakers;}),logs=$derived.by(()=>{revision;return session.lastLogs;});
++  async function send(){if(!input.trim()||busy)return;const value=input;input='';busy=true;error='';const before=session.snapshot();revision+=1;try{await session.send(value);checkpoints=[...checkpoints,before];onchange();}catch(reason){error=reason instanceof Error?reason.message:String(reason);}finally{busy=false;revision+=1;}}
++  function undo(){if(busy||!checkpoints.length)return;const prev=checkpoints[checkpoints.length-1]!;session.restore(prev);checkpoints=checkpoints.slice(0,-1);error='';revision+=1;onchange();}
+   function keydown(event:KeyboardEvent){if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void send();}}
+ </script>
+ {#if speakers.length}<SpeakerStage {speakers} {portraitFor}/>{/if}
+ <div class="messages" aria-live="polite">{#if !messages.length}<p class="empty">??붾? ?쒖옉?섏꽭?? ?붿쭊? ?섏튂? ?좏깮吏瑜?愿由ы븯怨?LLM? ?쒖궗瑜??대떦?⑸땲??</p>{/if}{#each messages as message}<article class={message.role}><small>{message.role==='user'?'??:'AI'}</small><p>{message.content}</p></article>{/each}{#if busy}<p class="thinking">?묐떟??留뚮뱾怨??덉뒿?덈떎??/p>{/if}</div>
+-{#if error}<p class="error">{error}</p>{/if}<div class="composer"><textarea rows="3" bind:value={input} onkeydown={keydown} placeholder="?됰룞?대굹 ??붾? ?낅젰?섏꽭?? disabled={busy}></textarea><Button onclick={send} disabled={busy||!input.trim()}>?꾩넚</Button></div>
+-{#if session.lastLogs.length}<details><summary>?붿쭊 泥섎━ {session.lastLogs.length}嫄?/summary><pre>{JSON.stringify(session.lastLogs,null,2)}</pre></details>{/if}
+-<style>.messages small{color:var(--color-muted);font-size:.75rem}.messages{display:flex;flex-direction:column;gap:var(--space-3);min-height:14rem;max-height:32rem;overflow:auto;padding:var(--space-3)}article{max-width:85%;padding:var(--space-3);border-radius:var(--radius-lg);background:var(--color-inset)}article.user{align-self:flex-end;background:color-mix(in srgb,var(--color-accent) 18%,var(--color-inset))}article p{margin:.25rem 0 0;white-space:pre-wrap}.empty,.thinking{color:var(--color-muted)}.composer{display:grid;grid-template-columns:1fr auto;gap:var(--space-2)}textarea{resize:vertical;padding:var(--space-3);border:1px solid var(--color-line);border-radius:var(--radius-md);background:var(--color-inset);color:var(--color-text)}.error{color:var(--color-danger)}pre{white-space:pre-wrap;font:12px var(--font-mono)}@media(max-width:600px){.composer{grid-template-columns:1fr}}</style>
++{#if logs.length}<FactReceipt {logs}/>{/if}
++{#if error}<p class="error">{error}</p>{/if}<div class="composer"><textarea rows="3" bind:value={input} onkeydown={keydown} placeholder="?됰룞?대굹 ??붾? ?낅젰?섏꽭?? disabled={busy}></textarea><div class="controls"><button type="button" class="undo" onclick={undo} disabled={busy||!checkpoints.length} title="吏곸쟾 ???곹깭濡??꾩쟾 蹂듭썝">???섎룎由ш린{#if checkpoints.length} <span class="depth">{checkpoints.length}</span>{/if}</button><Button onclick={send} disabled={busy||!input.trim()}>?꾩넚</Button></div></div>
++<style>.messages small{color:var(--color-muted);font-size:.75rem}.messages{display:flex;flex-direction:column;gap:var(--space-3);min-height:14rem;max-height:32rem;overflow:auto;padding:var(--space-3)}article{max-width:85%;padding:var(--space-3);border-radius:var(--radius-lg);background:var(--color-inset)}article.user{align-self:flex-end;background:color-mix(in srgb,var(--color-accent) 18%,var(--color-inset))}article p{margin:.25rem 0 0;white-space:pre-wrap}.empty,.thinking{color:var(--color-muted)}.composer{display:grid;grid-template-columns:1fr auto;gap:var(--space-2);margin-top:var(--space-3)}.controls{display:flex;flex-direction:column;gap:var(--space-2);justify-content:stretch}.undo{display:inline-flex;align-items:center;gap:var(--space-1);min-height:2.4rem;padding:0 var(--space-3);border:1px solid var(--color-line);border-radius:var(--radius-md);background:transparent;color:var(--color-text);cursor:pointer}.undo:disabled{opacity:.4;cursor:default}.undo .depth{font-variant-numeric:tabular-nums;font-size:.72rem;color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 15%,transparent);border-radius:999px;padding:0 .4rem}textarea{resize:vertical;padding:var(--space-3);border:1px solid var(--color-line);border-radius:var(--radius-md);background:var(--color-inset);color:var(--color-text)}.error{color:var(--color-danger)}@media(max-width:600px){.composer{grid-template-columns:1fr}.controls{flex-direction:row}}</style>
+diff --git a/apps/web/src/player/FactReceipt.svelte b/apps/web/src/player/FactReceipt.svelte
+new file mode 100644
+index 0000000..9d47bf9
+--- /dev/null
++++ b/apps/web/src/player/FactReceipt.svelte
+@@ -0,0 +1,103 @@
++<script lang="ts" module>
++  // ??궎 留ㅼ쭅???덉뿉 蹂댁씠寃? ?붿쭊???대쾲 ?댁뿉 '?뺤젙???ъ떎'???곸닔利앹쑝濡??뚮뜑?쒕떎.
++  // LLM? ?쒖궗留??곌퀬, ?レ옄???붿쭊 濡쒓렇(lastLogs)媛 ?뚯쑀?쒕떎??嫄??뚮젅?댁뼱媛 吏곸젒 蹂몃떎.
++  type Log = Record<string, unknown>;
++  const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
++  const s = (v: unknown): string => (typeof v === 'string' ? v : '');
++  const fmt = (v: number): string => v.toLocaleString('en-US');
++  const signed = (v: number): string => (v >= 0 ? `+${fmt(v)}` : fmt(v));
++
++  const RESOURCE_LABEL: Record<string, string> = { food: '?앹옄??, drink: '二쇰쪟', material: '?щ즺', gold: '怨⑤뱶' };
++  const RESOURCE_ICON: Record<string, string> = { food: '?뜗', drink: '?뜺', material: '?さ', gold: '?첌' };
++  const REJECT_REASON: Record<string, string> = {
++    unregistered_model_event: '?붿쭊???녿뒗 ?대깽?몃씪 臾댁떆',
++    model_event_not_allowed: 'LLM??吏곸젒 諛붽? ???녿뒗 媛????붿쭊??李⑤떒',
++  };
++
++  export interface FactLine { key: string; icon: string; label: string; delta: string | null; after: string | null; note: string; rejected: boolean; }
++
++  // ?붿쭊 濡쒓렇 ??以????щ엺???쎈뒗 ?곸닔利???以? ?????녿뒗 ?뺥깭???덉쟾?섍쾶 ?붿빟?쒕떎.
++  export function toFactLine(log: Log, index: number): FactLine {
++    const event = s(log.event), reason = s(log.reason);
++    if (log.ok === false) {
++      const why = s(log.reason);
++      return { key: `${index}`, icon: '?슟', label: event || '嫄곕????대깽??, delta: null, after: null, note: REJECT_REASON[why] ?? why, rejected: true };
++    }
++    const before = n(log.before), after = n(log.after);
++    const deltaStr = (d: number | null): string | null => (d == null ? null : signed(d));
++
++    if (event === 'gold_delta' || (event === 'resource_delta' && s(log.resource) === 'gold')) {
++      return { key: `${index}`, icon: '?첌', label: '怨⑤뱶', delta: deltaStr(n(log.amount)), after: after != null ? fmt(after) : null, note: reason, rejected: false };
++    }
++    if (event === 'resource_delta' || event === 'gain_resource') {
++      const id = s(log.resource);
++      return { key: `${index}`, icon: RESOURCE_ICON[id] ?? '?벀', label: RESOURCE_LABEL[id] ?? id, delta: deltaStr(n(log.amount) ?? n(log.qty)), after: after != null ? fmt(after) : null, note: reason, rejected: false };
++    }
++    if (event === 'scale_delta') {
++      const tier = log.tierChanged as Record<string, Record<string, unknown>> | undefined;
++      const tierNote = tier ? `${s(tier.from?.label)} ??${s(tier.to?.label)}` : reason;
++      const capped = log.capped === true ? '?ㅻ뒛 ?곹븳 ?꾨떖' : tierNote;
++      return { key: `${index}`, icon: '?ㅿ툘', label: `${s(log.target)} ${s(log.scale)}`, delta: deltaStr(n(log.delta)), after: after != null ? fmt(after) : null, note: capped, rejected: false };
++    }
++    if (event === 'exp_gain') {
++      const ups = Array.isArray(log.levelUps) ? log.levelUps : [];
++      return { key: `${index}`, icon: '狩?, label: '寃쏀뿕移?, delta: deltaStr(n(log.amount)), after: null, note: ups.length ? `?덈꺼 ?? ??Lv.${ups[ups.length - 1]}` : reason, rejected: false };
++    }
++    if (event === 'checkin' || event === 'checkout') {
++      return { key: `${index}`, icon: event === 'checkin' ? '?썜截? : '?슞', label: event === 'checkin' ? '泥댄겕?? : '泥댄겕?꾩썐', delta: null, after: null, note: `${s(log.roomNo)}??쨌 ${s(log.guestName)}`, rejected: false };
++    }
++    if (event === 'day_end') {
++      return { key: `${index}`, icon: '?뙔', label: '?섎（ 留덇컧', delta: null, after: after != null ? `${fmt(after)}?쇱감` : null, note: reason, rejected: false };
++    }
++    if (event === 'hire' || event === 'fire') {
++      return { key: `${index}`, icon: event === 'hire' ? '?쩃' : '?몝', label: event === 'hire' ? '怨좎슜' : '?닿퀬', delta: null, after: null, note: s(log.npcId), rejected: false };
++    }
++    // ?????녿뒗 ?깃났 ?대깽?? ?명?/?좏봽?곌? ?덉쑝硫?洹멸쾬留? ?꾨땲硫??대깽?몃챸.
++    return { key: `${index}`, icon: '?숋툘', label: event || '?붿쭊 泥섎━', delta: deltaStr(n(log.amount) ?? n(log.delta)), after: after != null ? fmt(after) : null, note: reason, rejected: false };
++  }
++</script>
++
++<script lang="ts">
++  let { logs }: { logs: Log[] } = $props();
++  let lines = $derived(logs.map((log, i) => toFactLine(log, i)));
++  let confirmed = $derived(lines.filter((l) => !l.rejected).length);
++  let blocked = $derived(lines.filter((l) => l.rejected).length);
++</script>
++
++{#if lines.length}
++  <section class="receipt" aria-label="?붿쭊???뺤젙???ъ떎">
++    <header>
++      <span class="stamp">?붿쭊 ?뺤젙</span>
++      <span class="count">{confirmed}嫄??뺤젙{#if blocked} 쨌 {blocked}嫄?李⑤떒{/if}</span>
++    </header>
++    <ol>
++      {#each lines as line (line.key)}
++        <li class:rejected={line.rejected}>
++          <span class="icon" aria-hidden="true">{line.icon}</span>
++          <span class="label">{line.label}</span>
++          {#if line.delta}<span class="delta" class:down={line.delta.startsWith('-')}>{line.delta}</span>{/if}
++          {#if line.after}<span class="after">??{line.after}</span>{/if}
++          {#if line.note}<span class="note">{line.note}</span>{/if}
++        </li>
++      {/each}
++    </ol>
++  </section>
++{/if}
++
++<style>
++  .receipt { border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-panel); overflow: hidden; font-size: .82rem; }
++  header { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px dashed var(--color-line); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
++  .stamp { font-weight: 700; letter-spacing: .04em; color: var(--color-accent); text-transform: uppercase; font-size: .7rem; }
++  .count { color: var(--color-muted); font-size: .72rem; margin-left: auto; font-variant-numeric: tabular-nums; }
++  ol { list-style: none; margin: 0; padding: var(--space-1) 0; display: flex; flex-direction: column; }
++  li { display: flex; align-items: baseline; gap: var(--space-2); padding: var(--space-1) var(--space-3); }
++  li + li { border-top: 1px solid color-mix(in srgb, var(--color-line) 45%, transparent); }
++  .icon { flex: none; }
++  .label { font-weight: 600; }
++  .delta { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--color-accent); }
++  .delta.down { color: var(--color-danger); }
++  .after { font-variant-numeric: tabular-nums; color: var(--color-muted); }
++  .note { color: var(--color-muted); margin-left: auto; text-align: right; font-size: .74rem; }
++  li.rejected { background: color-mix(in srgb, var(--color-danger) 8%, transparent); }
++  li.rejected .label { color: var(--color-danger); }
++</style>
+diff --git a/apps/web/src/player/fact-receipt.test.ts b/apps/web/src/player/fact-receipt.test.ts
+new file mode 100644
+index 0000000..6c9bc66
+--- /dev/null
++++ b/apps/web/src/player/fact-receipt.test.ts
+@@ -0,0 +1,30 @@
++import { describe, expect, it } from 'vitest';
++import { toFactLine } from './FactReceipt.svelte';
++
++describe('?ъ떎 ?곸닔利????붿쭊 濡쒓렇瑜??щ엺???쎈뒗 ?뺤젙 ?ъ떎濡?, () => {
++  it('gold_delta瑜?怨⑤뱶 ?명?쨌?붿븸?쇰줈 ?쎈뒗??, () => {
++    const l = toFactLine({ ok: true, event: 'gold_delta', amount: 35000, before: 1000000, after: 1035000, reason: '?먯떖 留ㅼ텧' }, 0);
++    expect(l).toMatchObject({ icon: '?첌', label: '怨⑤뱶', delta: '+35,000', after: '1,035,000', note: '?먯떖 留ㅼ텧', rejected: false });
++  });
++
++  it('?먯썝 媛먯냼???섎씫 ?쒖떆(?뚯닔 ?명?)濡??쎈뒗??, () => {
++    const l = toFactLine({ ok: true, event: 'resource_delta', resource: 'food', amount: -5, before: 200, after: 195 }, 1);
++    expect(l).toMatchObject({ icon: '?뜗', label: '?앹옄??, delta: '-5', after: '195' });
++  });
++
++  it('scale_delta???깃툒 蹂?붾? note濡?蹂댁뿬以??, () => {
++    const l = toFactLine({ ok: true, event: 'scale_delta', scale: 'affinity', target: 'silvia', delta: 6, after: 26, tierChanged: { from: { label: '吏?? }, to: { label: '移쒓뎄' } } }, 2);
++    expect(l).toMatchObject({ label: 'silvia affinity', delta: '+6', after: '26', note: '吏????移쒓뎄' });
++  });
++
++  it('LLM??李⑤떒???대깽?몃? ?쒕룄?섎㈃ 嫄곕? ?ъ떎濡??쎈뒗??移섑듃 梨꾨꼸 李⑤떒 媛?쒗솕)', () => {
++    const l = toFactLine({ ok: false, event: 'gold_delta', reason: 'model_event_not_allowed' }, 3);
++    expect(l.rejected).toBe(true);
++    expect(l.note).toContain('?붿쭊??李⑤떒');
++  });
++
++  it('?????녿뒗 ?깃났 ?대깽?몃룄 ?덉쟾?섍쾶 ?붿빟?쒕떎', () => {
++    const l = toFactLine({ ok: true, event: 'mystery_event', amount: 3, after: 9 }, 4);
++    expect(l).toMatchObject({ icon: '?숋툘', label: 'mystery_event', delta: '+3', after: '9', rejected: false });
++  });
++});

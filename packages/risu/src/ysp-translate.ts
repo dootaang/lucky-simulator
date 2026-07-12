@@ -23,8 +23,9 @@ export function translateYspTags(text: string): YspTranslation {
   const residue = source.replace(TAG_RE, (match, rawKey, rawArgs) => {
     const key = String(rawKey).toLowerCase();
     const args = String(rawArgs || '').split('::').slice(1).map((s) => s.trim()); // 첫 원소는 '' (앞의 ::)
+    let keep = false; // 미지원 태그는 본문에서 지우지 않고 원본을 보존한다(임의 소각 금지).
     const push = (id: string, params: Record<string, unknown>, grade: 'exact' | 'approx' = 'exact') => events.push({ id, params, grade, tag: match });
-    const skip = (kind: string, reason: string) => unsupported.push({ tag: match, kind, reason });
+    const skip = (kind: string, reason: string) => { unsupported.push({ tag: match, kind, reason }); keep = true; };
     switch (key) {
       case 'ysp_gold': push('gold_delta', { amount: num(args[0]), reason: args[1] ?? '' }); break;
       case 'ysp_food': push('resource_delta', { resource: 'food', amount: num(args[0]) }); break;
@@ -51,7 +52,7 @@ export function translateYspTags(text: string): YspTranslation {
         else if (key.startsWith('ysp_gate') || key.startsWith('ysp_dungeon')) skip('던전/게이트', '던전 모듈 미구현 — 원본 보존');
         else skip('미분류', `알 수 없는 태그: ${key}`);
     }
-    return ''; // 본문에서 태그 제거
+    return keep ? match : ''; // 번역된 태그만 제거, 미지원 태그는 원본 보존
   });
   return { events, unsupported, residue: residue.replace(/\n{3,}/g, '\n\n').trim() };
 }
