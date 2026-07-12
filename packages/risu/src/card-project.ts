@@ -1,6 +1,6 @@
 import { tagCompatibilityGrades } from './ysp-translate.ts';
 
-interface ParsedCard { name:string; card:Record<string,unknown>; embeddedModules?:string[]; sourceBytes?:Uint8Array; }
+interface ParsedCard { name:string; card:Record<string,unknown>; embeddedModules?:string[]; modules?:Array<{regex?:unknown[];lorebook?:unknown[];defaultVariables?:Record<string,string>;raw?:Record<string,unknown>}>; sourceBytes?:Uint8Array; }
 interface RuntimeProject { projectId:string; schema:Record<string,unknown>; screens:Record<string,unknown>[]; navigation:Record<string,unknown>[]; content:Record<string,unknown>; featureToggles:Record<string,unknown>; moduleIds?:string[]; }
 
 export interface CardPassport {
@@ -19,9 +19,12 @@ export interface CardRuntimeProfile {
     scenario: string;
     systemPrompt: string;
     postHistoryInstructions: string;
+    regexScripts: import('./card-regex.ts').RegexScript[];
   };
   firstMessage: string;
   greetings: string[];
+  regexScripts: import('./card-regex.ts').RegexScript[];
+  defaultVariables: Record<string,string>;
 }
 
 export function cardToRuntimeProject(parsed: ParsedCard): CardRuntimeProfile {
@@ -35,6 +38,8 @@ export function cardToRuntimeProject(parsed: ParsedCard): CardRuntimeProfile {
   const grades=tagCompatibilityGrades(textPool);
   const hasTags=grades.exact.length+grades.approx.length+grades.preserved.length>0;
   const cardName=text(data.name)||parsed.name||'Imported card';
+  const regexScripts=extractRegexScripts(parsed),risuExtension=(data.extensions&&typeof data.extensions==='object'?((data.extensions as Record<string,unknown>).risuai):null),defaultVariables={...variableMap((risuExtension&&typeof risuExtension==='object'?(risuExtension as Record<string,unknown>).defaultVariables:null)??data.defaultVariables??data.default_variables)};
+  for(const module of parsed.modules??[])Object.assign(defaultVariables,module.defaultVariables??variableMap(module.raw?.defaultVariables??module.raw?.default_variables));
   const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks:loreEntries};
   const project:RuntimeProject={
     // 이름 슬러그만 쓰면 동명 카드 2장이 라이브러리·채팅을 서로 덮어쓴다(감사 #8) — 원본 바이트 해시로 유일화.
@@ -47,11 +52,15 @@ export function cardToRuntimeProject(parsed: ParsedCard): CardRuntimeProfile {
   return {
     project,
     passport:{mode:hasTags?'full-sim':'chat',grades,cardName},
-    card:{name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario),systemPrompt:text(data.system_prompt),postHistoryInstructions:text(data.post_history_instructions)},
+    card:{name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario),systemPrompt:text(data.system_prompt),postHistoryInstructions:text(data.post_history_instructions),regexScripts},
     firstMessage:text(data.first_mes),
-    greetings:[text(data.first_mes),...(Array.isArray(data.alternate_greetings)?data.alternate_greetings.map(text):[])].filter(Boolean)
+    greetings:[text(data.first_mes),...(Array.isArray(data.alternate_greetings)?data.alternate_greetings.map(text):[])].filter(Boolean),
+    regexScripts,defaultVariables
   };
 }
+
+import {extractRegexScripts} from './card-regex.ts';
+function variableMap(value:unknown):Record<string,string>{if(!value||typeof value!=='object'||Array.isArray(value))return{};return Object.fromEntries(Object.entries(value as Record<string,unknown>).map(([key,item])=>[key,String(item??'')]));}
 
 function innSchema():Record<string,unknown>{return{
   staffing:{facility:'quarter',capacityByLevel:{'1':1,'2':3}},

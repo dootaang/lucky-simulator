@@ -82,3 +82,8 @@
 - 이식 범위: 코드 복사 없이 공식 프로바이더 엔드포인트·인증 헤더·모델 카탈로그와 보조 모델 슬롯 개념을 확인해 `packages/session/src/providers/` 계약으로 독립 구현.
 - 제외: CPM 자체 프록시·자동 업데이트·IPC·텔레메트리·RisuAI 플러그인 런타임/DOM/DatabaseSubset 의존부.
 - GitHub Copilot 필수 헤더값(`Editor-Version: vscode/1.115.0`, `Editor-Plugin-Version: copilot-chat/0.43.2026040705`, `Copilot-Integration-Id: vscode-chat`, `X-Initiator: user`, `Openai-Intent: conversation-edits`)은 CPM이 실제로 전송하는 기본값과 동일하게 맞췄다. Copilot API가 에디터 신원 헤더를 요구하므로 임의값으로는 요청이 거부된다.
+## Risu 표시 파이프라인 이식
+
+- `packages/risu/src/card-regex.ts`: LogPapa(GPL-3.0-or-later) `core/convert/cardRegex.js`의 `extractRegexScripts`, `sanitizeRegexOut`, `isCatastrophic`, `buildRegex`, `substituteGroups`, `expandCardRegex`를 TypeScript 계약과 4단계 훅으로 이식했다.
+- `packages/risu/src/cbs.ts`: LogPapa(GPL-3.0-or-later) `core/risu/parser.js`의 `calcString`, `evalInline`, `expandBlocks`, `renderRisu`를 최소 CBS 범위로 이식했다. 이 구현의 원전은 RisuAI(GPL-3.0) `src/ts/parser/parser.svelte.ts`의 `assetRegex`, `parseAdditionalAssets`, `risuChatParser`/`matcher`다.
+- RisuAI 호출 위치를 따라 `editinput`=사용자 입력, `editoutput`=모델 출력, `editprocess`=요청 전송 전, `editdisplay`=표시 직전으로 매핑했다. Lua와 임의 JavaScript 실행부는 이식하지 않았다.
