@@ -1,0 +1,2 @@
+<script lang="ts">let { label, tone='neutral' }: { label:string; tone?:'neutral'|'success'|'warning'|'danger' }=$props();</script><span class={tone}>{label}</span>
+<style>span{display:inline-flex;padding:.2rem .5rem;border:1px solid var(--color-line);border-radius:999px;font:700 .75rem var(--font-mono);color:var(--color-text-muted)}.success{color:var(--color-success)}.warning{color:var(--color-accent)}.danger{color:var(--color-danger)}</style>

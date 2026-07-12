@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest'; import {createRouter} from './router.svelte.ts'; describe('router',()=>it('switches modes without changing project runtime',()=>{const router=createRouter();expect(router.route).toBe('home');router.go('editor');expect(router.route).toBe('editor');}));

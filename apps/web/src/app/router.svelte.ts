@@ -1,0 +1,1 @@
+export type AppRoute='home'|'player'|'editor'|'components'; export function createRouter(initial:AppRoute='home'){let route=$state<AppRoute>(initial);return{get route(){return route;},go(next:AppRoute){route=next;}};}
