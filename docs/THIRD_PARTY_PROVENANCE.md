@@ -41,6 +41,8 @@
 |---|---|---|---|---|
 | 2026-07-12 | RisuAI `src/lib/Setting/Settings.svelte` | `apps/web/src/player/SettingsPanel.svelte` | 레이아웃·탐색 문법 재구현 | 좌측 전역 메뉴와 우측 모델·프롬프트·페르소나·기타 설정 화면 |
 | 2026-07-12 | RisuAI `src/ts/parser/parser.svelte.ts`의 `ParseMarkdown`, 채팅 메시지 표시 문법 | `packages/ui/src/markdown.ts`, `apps/web/src/player/MessageList.svelte` | 안전 부분집합 독립 구현 | HTML 선 이스케이프, 마크다운 부분집합, 대사 강조, 표시층 매크로 치환, 인레이 이미지 |
+| 2026-07-13 | RisuAI `src/ts/parser/parser.svelte.ts`의 `assetRegex`, `parseAdditionalAssets`, `getAssetSrc`, `getEmoSrc` | `packages/risu/src/asset-macros.ts`, `apps/web/src/player/display-macros.ts` | 안전 부분집합 의미 재현 | 확인된 에셋 문법 중 raw/img/image/asset/emotion만 표시하고, 프롬프트에는 이름만 전달; 실행·자동재생 계열은 원문과 경고로 보존 |
+| 2026-07-13 | RisuAI `src/lib/Mobile/{MobileHeader,MobileBody,MobileCharacters}.svelte`, `src/ts/stores.svelte.ts`의 `MobileGUI`, `MobileSideBar` | `apps/web/src/player/MobileShell.svelte`, `PlayerPage.svelte` | 모바일 탐색 문법 재구현 | 상단 앱바, 카드·채팅 통합 드로어, 스크림·ESC 닫기, safe-area 및 100dvh 셸 |
 | 2026-07-12 | RisuAI `SideChatList.svelte`, 기본 채팅 화면의 중단·메시지 조작 UX | `apps/web/src/player/{InputBar,MessageList,SidePanel}.svelte`, `packages/session/src/index.ts` | 동작 문법 재구현 | 타이핑 표시, AbortSignal 중단, undo/redo, 엔진 영수증 밀도 |
 
 아이콘의 기본 도형과 선 문법은 Lucide 아이콘 세트(ISC License)를 참고해 `packages/ui/src/icons/Icon.svelte`에
