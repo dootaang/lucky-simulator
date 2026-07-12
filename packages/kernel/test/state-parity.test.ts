@@ -1,0 +1,3 @@
+import { createRequire } from 'node:module'; import { readFileSync } from 'node:fs'; import { resolve } from 'node:path'; import { describe,expect,it } from 'vitest'; import { createState,type RuntimeRecord } from '../src/index.ts';
+const require=createRequire(import.meta.url),legacy=require('../../../engine/core/createState.js') as{createState(schema:RuntimeRecord,seed:unknown):RuntimeRecord};
+for(const file of ['yongsa-inn.v0.json','generic-combat.v0.json'])describe('state parity',()=>it(file,()=>{const schema=JSON.parse(readFileSync(resolve(import.meta.dirname,`../../../schema/${file}`),'utf8')) as RuntimeRecord;expect(createState(schema,77)).toEqual(legacy.createState(schema,77));}));
