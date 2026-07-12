@@ -11,31 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm 모노레포로 마이그레이션(감사: CI가 삭제된 app/를 참조하던 것 교정).
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
-        working-directory: app
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: npm run typecheck
-        working-directory: app
+        run: pnpm -r --if-present typecheck
 
-      - name: App tests
-        run: npm test
-        working-directory: app
+      - name: Tests
+        run: pnpm -r --if-present test
 
-      - name: Engine tests
-        run: npm test
-        working-directory: engine
-
-      - name: Build
-        run: npm run build
-        working-directory: app
+      - name: Build web app
+        run: pnpm --filter @simbot/web build
 
       - name: Deploy to Firebase Hosting (live)
         uses: FirebaseExtended/action-hosting-deploy@v0
