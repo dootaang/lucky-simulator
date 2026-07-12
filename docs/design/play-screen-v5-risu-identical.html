@@ -1,0 +1,433 @@
+<title>럭키 시뮬레이터 — 리스 동일 레이아웃 시안 v5</title>
+<style>
+  /* ────────────────────────────────────────────────────────────
+     럭키 시뮬레이터 · v5 — 리스AI 레이아웃과 "동일"
+     원칙: 리스에서 온 사람이 아무것도 다시 배우지 않는다.
+     모든 요소의 위치·문법은 RisuAI 기본 테마의 실제 DOM을 따름:
+       아바타 스트립(80px) + 사이드 패널 / 메시지 = [사각 아바타 |
+       이름줄+아이콘줄(같은 행, 우측정렬) / 모델칩 / 본문] / 하단 입력바.
+     럭키의 것은 리스 유저가 이미 보는 자리 '안'에만 스며든다:
+       ① 본문 아래 엔진확정 칩 ② 리롤(같은 버튼, 상태까지 복원)
+       ③ 캐릭 설정 아이콘줄에 여권 탭 하나 ④ 토글 자리에 엔진 박스.
+     서체만 우리 개선 유지(서사=세리프) — 위치는 전부 리스.
+     ──────────────────────────────────────────────────────────── */
+  :root {
+    --bg: #141414;            /* 리스 기본 다크 근사 */
+    --bg-side: #0f0f0f;
+    --panel: #1b1b1b;
+    --panel-2: #222222;
+    --selected: #2e2e2e;
+    --border: #2b2b2b;
+    --text: #e6e6e6;
+    --text2: #9ca3af;         /* 리스 text-textcolor2 */
+    --blue: #3b82f6;          /* 리스 hover:text-blue-500 */
+    --green: #22c55e;         /* 리스 사이드바 hover:text-green-500 */
+    --gold: #d8b36a; --moon: #82a3cc; --sage: #93b27c; --ember: #d06d55; --rose: #ce8db4;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    --font-narr: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: var(--font-ui); color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+
+  .app { display: flex; height: 100dvh; }
+
+  /* ── 아바타 스트립 (리스: w-20 세로 캐릭터 열) ── */
+  .strip {
+    width: 80px; min-width: 80px; background: var(--bg-side); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0;
+  }
+  .strip .avatar-btn {
+    width: 56px; height: 56px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--char, #333); display: grid; place-items: center; cursor: pointer;
+    font-family: var(--font-narr); font-size: 20px; color: rgba(255,255,255,.9); position: relative;
+  }
+  .strip .avatar-btn.sel { outline: 2px solid var(--blue); outline-offset: 1px; }
+  .strip .avatar-btn.add { background: none; color: var(--text2); border-style: dashed; font-size: 24px; }
+  .strip .grow { flex: 1; }
+  .strip .icon-btn { background: none; border: 0; color: var(--text2); cursor: pointer; padding: 6px; }
+  .strip .icon-btn:hover { color: var(--text); }
+
+  /* ── 사이드 패널 (리스: 채팅목록 + CharConfig가 사는 곳) ── */
+  .side {
+    width: 300px; min-width: 300px; background: var(--bg-side); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow-y: auto; padding: 14px 12px;
+  }
+  .side .charname { font-size: 18px; font-weight: 600; margin: 2px 4px 10px; display: flex; align-items: center; gap: 8px; }
+  .side .charname small { color: var(--text2); font-weight: 400; font-size: 11px; }
+  /* CharConfig 아이콘 탭 줄 (리스 CharConfigSubMenu) — 🛂 여권만 럭키 추가 */
+  .cfgrow { display: flex; gap: 12px; margin: 0 4px 12px; position: relative; }
+  .cfgrow button { background: none; border: 0; color: var(--text2); cursor: pointer; font-size: 16px; padding: 2px; }
+  .cfgrow button:hover, .cfgrow button.on { color: var(--text); }
+  .cfgrow button.lucky.on { color: var(--gold); }
+
+  .side .view[hidden] { display: none; }
+
+  /* 채팅 목록 (리스 SideChatList) */
+  .chatitem {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px;
+    color: var(--text2); cursor: pointer; font-size: 13.5px;
+  }
+  .chatitem:hover { background: var(--panel); color: var(--text); }
+  .chatitem.sel { background: var(--selected); color: var(--text); }
+  .chatitem .cnt { margin-left: auto; font: 10.5px var(--font-mono); color: var(--text2); }
+  .chatitem.new { color: var(--text2); border: 1px dashed var(--border); justify-content: center; }
+  .chatitem.new:hover { color: var(--green); border-color: var(--green); background: none; }
+  .folder { font-size: 11px; color: var(--text2); letter-spacing: .05em; margin: 10px 10px 4px; text-transform: uppercase; }
+  /* 하단 아이콘 줄 (내보내기·가져오기·편집·브랜치·북마크·폴더) */
+  .listtools { display: flex; gap: 12px; padding: 10px 8px 6px; border-top: 1px solid var(--selected); margin-top: 10px; }
+  .listtools button { background: none; border: 0; color: var(--text2); cursor: pointer; font-size: 14px; padding: 2px; }
+  .listtools button:hover { color: var(--green); }
+  .listtools .right { margin-left: auto; }
+
+  /* 토글 자리 (리스 Toggles) — 엔진 박스가 여기 산다 */
+  .toggles { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; position: relative; }
+  .togglechip { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text2); padding: 2px 4px; }
+  .togglechip .sw { width: 30px; height: 17px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); position: relative; cursor: pointer; flex: none; }
+  .togglechip .sw::after { content: ""; position: absolute; top: 1.5px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--text2); transition: .15s; }
+  .togglechip .sw.on { background: rgba(59,130,246,.2); border-color: var(--blue); }
+  .togglechip .sw.on::after { left: 14px; background: var(--blue); }
+
+  .enginebox { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); overflow: hidden; font-size: 12px; }
+  .enginebox .ehead { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-bottom: 1px dashed var(--border); color: var(--gold); font: 700 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+  .enginebox .ehead .n { margin-left: auto; color: var(--text2); font-weight: 400; }
+  .enginebox .stats { display: flex; gap: 12px; padding: 8px 10px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+  .enginebox .stats .g { color: var(--gold); }
+  .enginebox ul { list-style: none; margin: 0; padding: 2px 0 4px; }
+  .enginebox li { display: flex; gap: 7px; align-items: baseline; padding: 3.5px 10px; color: var(--text2); }
+  .enginebox li b { color: var(--text); font-weight: 600; }
+  .enginebox li .d { font-family: var(--font-mono); color: var(--blue); margin-left: auto; }
+  .enginebox li .d.down { color: var(--ember); }
+  .enginebox li.rej { color: var(--ember); }
+  .enginebox .undo { display: flex; align-items: center; justify-content: center; gap: 7px; width: calc(100% - 20px); margin: 4px 10px 10px; padding: 7px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font: 600 12px var(--font-ui); cursor: pointer; }
+  .enginebox .undo:hover { border-color: var(--blue); color: var(--blue); }
+  .enginebox .undo .depth { font: 700 10px var(--font-mono); color: var(--blue); background: rgba(59,130,246,.15); border-radius: 999px; padding: 1px 6px; }
+
+  /* 사이드 뷰: 기본(작가의노트)·로어북·여권 — 리스 CharConfig 자리 */
+  .f { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .f > label { font-size: 12px; color: var(--text2); display: flex; align-items: baseline; }
+  .f > label .tok { margin-left: auto; font: 10.5px var(--font-mono); }
+  .f input[type=text], .f textarea { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font: 13px var(--font-ui); resize: vertical; }
+  .f textarea { min-height: 80px; line-height: 1.5; }
+  .hint { font-size: 11px; color: var(--text2); line-height: 1.5; margin: 0 0 12px; }
+
+  .lore { border: 1px solid var(--border); border-radius: 7px; background: var(--panel); margin-bottom: 8px; overflow: hidden; }
+  .lore .lhead { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
+  .lore .lhead .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text2); flex: none; }
+  .lore.on .lhead .dot { background: var(--green); }
+  .lore .lhead .meta { margin-left: auto; font: 10px var(--font-mono); color: var(--text2); }
+  .lore .lbody { display: none; padding: 2px 10px 10px; border-top: 1px solid var(--border); }
+  .lore.open .lbody { display: block; }
+
+  .ppgroup { border: 1px solid var(--border); border-radius: 7px; margin-bottom: 10px; overflow: hidden; }
+  .ppgroup .ghead { display: flex; padding: 7px 10px; font: 600 10.5px var(--font-mono); letter-spacing: .08em; border-bottom: 1px dashed var(--border); }
+  .ppgroup .ghead .n { margin-left: auto; }
+  .ppgroup.ge .ghead { color: var(--green); background: rgba(34,197,94,.06); }
+  .ppgroup.ga .ghead { color: var(--gold); background: rgba(216,179,106,.07); }
+  .ppgroup.gp .ghead { color: var(--text2); background: rgba(156,163,175,.06); }
+  .ppgroup ul { list-style: none; margin: 0; padding: 4px 0; }
+  .ppgroup li { display: flex; gap: 7px; align-items: baseline; padding: 4px 10px; font-size: 11.5px; color: var(--text2); }
+  .ppgroup li code { font: 10.5px var(--font-mono); color: var(--text); background: var(--bg); border-radius: 4px; padding: 1px 5px; }
+  .ppgroup li .why { margin-left: auto; font-size: 10px; text-align: right; }
+  .ppbadge { display: inline-block; font: 700 10.5px var(--font-mono); letter-spacing: .06em; color: #10130c; background: var(--green); border-radius: 999px; padding: 3px 11px; margin-bottom: 10px; }
+
+  /* ── 메인 채팅 (리스 DefaultChatScreen 골격) ── */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .chat { flex: 1; overflow-y: auto; padding: 18px 16px 6px; }
+  .chat-width { max-width: 900px; margin: 0 auto; }
+
+  /* 메시지 = [사각 아바타 | 이름줄+아이콘줄(같은 행) / 모델칩 / 본문] — 리스와 동일 */
+  .msg { display: flex; align-items: flex-start; padding: 8px 16px; margin: 4px 0; position: relative; }
+  .msg .icon {
+    width: 56px; height: 56px; min-width: 56px; border-radius: 6px;
+    background: linear-gradient(180deg, rgba(255,255,255,.08), transparent 35%), var(--char, #333);
+    display: grid; place-items: center; font-family: var(--font-narr); font-size: 21px; color: rgba(255,255,255,.9);
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  .msg .body { flex: 1; min-width: 0; margin-left: 16px; display: flex; flex-direction: column; }
+  .msg .namerow { display: flex; align-items: center; }
+  .msg .namerow .nm { font-size: 19px; color: var(--text); }
+  .msg .namerow .nm small { font-size: 10.5px; color: var(--text2); margin-left: 7px; font-family: var(--font-mono); }
+  .msg .btns { margin-left: auto; display: flex; align-items: center; gap: 9px; color: var(--text2); }
+  .msg .btns button { background: none; border: 0; color: inherit; cursor: pointer; font-size: 14px; padding: 2px; display: inline-flex; align-items: center; }
+  .msg .btns button:hover { color: var(--blue); }
+  .msg .btns .page { font: 11px var(--font-mono); }
+  .msg .genchip {
+    align-self: flex-end; margin: 3px 2px 0; background: none; border: 0; cursor: pointer;
+    font: 11px var(--font-mono); color: var(--text2); display: inline-flex; gap: 6px; align-items: center;
+    padding: 3px 6px; border-radius: 6px; font-variant-numeric: tabular-nums;
+  }
+  .msg .genchip:hover { color: var(--text); box-shadow: 0 0 0 2px var(--selected); }
+  .msg .text { font-family: var(--font-narr); font-size: 15.5px; line-height: 1.62; color: #e4ddcf; letter-spacing: .005em; margin-top: 2px; }
+  .msg .text em { color: var(--gold); font-style: italic; }
+  .msg .text p { margin: 0 0 10px; }
+
+  /* 삽화 — 본문 흐름 안 (리스 인레이 이미지와 동일한 자리) */
+  .illust { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; max-width: 560px; margin: 4px 0 10px; cursor: zoom-in; background: var(--panel); }
+  .illust .art { aspect-ratio: 16/9; background:
+      radial-gradient(60% 90% at 30% 80%, rgba(216,179,106,.45), transparent 60%),
+      radial-gradient(45% 60% at 72% 30%, rgba(130,163,204,.25), transparent 65%),
+      linear-gradient(180deg, #241d26 0%, #1a1410 55%, #100c08 100%); }
+  .illust figcaption { padding: 5px 10px; font: 10.5px var(--font-mono); color: var(--text2); border-top: 1px solid var(--border); display: flex; }
+  .illust figcaption span { margin-left: auto; }
+
+  /* ① 엔진 확정 칩 — 본문 바로 아래 (럭키 추가, 메시지 내부) */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+  .chip { font: 11.5px var(--font-mono); font-variant-numeric: tabular-nums; background: var(--panel); border: 1px solid var(--border); border-left-width: 2px; border-radius: 5px; padding: 3.5px 8px; color: var(--text); display: inline-flex; gap: 6px; }
+  .chip .k { color: var(--text2); }
+  .chip.resource { border-left-color: var(--gold); }
+  .chip.settle { border-left-color: var(--moon); }
+  .chip.aff { border-left-color: var(--rose); }
+  .chip.rej { border-left-color: var(--ember); color: var(--ember); }
+
+  /* 입력바 (리스: textarea+전송+메뉴 붙은 그룹) */
+  .inputwrap { padding: 8px 16px 14px; }
+  .inputbar { display: flex; }
+  .inputbar textarea {
+    flex: 1; min-height: 46px; max-height: 140px; resize: none;
+    background: transparent; border: 1px solid var(--border); border-right: 0; border-radius: 6px 0 0 6px;
+    padding: 12px 14px; color: var(--text); font: 14.5px var(--font-ui); outline: none;
+  }
+  .inputbar textarea:focus { border-color: var(--text2); }
+  .inputbar button { background: transparent; border: 1px solid var(--border); border-right: 0; color: var(--text); padding: 0 15px; cursor: pointer; font-size: 15px; }
+  .inputbar button:hover { background: var(--blue); color: #fff; }
+  .inputbar button:last-child { border-right: 1px solid var(--border); border-radius: 0 6px 6px 0; }
+
+  /* 설계 주석 */
+  .anno { display: none; position: absolute; z-index: 30; align-items: center; gap: 5px; background: var(--gold); color: #17130a; font: 700 10.5px var(--font-ui); padding: 3px 9px 3px 5px; border-radius: 999px; box-shadow: 0 4px 12px rgba(0,0,0,.5); white-space: nowrap; pointer-events: none; }
+  body.annot .anno { display: inline-flex; }
+  .anno .n { background: #17130a; color: var(--gold); width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font-size: 9.5px; }
+
+  @media (max-width: 1000px) {
+    .side { display: none; }
+  }
+  @media (max-width: 680px) {
+    .strip { display: none; }
+    .msg { padding: 6px 4px; }
+    .msg .icon { width: 42px; height: 42px; min-width: 42px; font-size: 16px; }
+    .msg .body { margin-left: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <!-- 아바타 스트립 — 리스 그대로 -->
+  <nav class="strip">
+    <button class="avatar-btn sel" style="--char:linear-gradient(180deg,#6a4f74,#33253c)" title="용사여관">여</button>
+    <button class="avatar-btn" style="--char:linear-gradient(180deg,#3f5a6a,#232f38)" title="DOMINIUM">도</button>
+    <button class="avatar-btn" style="--char:linear-gradient(180deg,#6a5340,#332a20)" title="테셀리아">테</button>
+    <button class="avatar-btn add" title="카드 가져오기 (.charx/.png)">+</button>
+    <span class="grow"></span>
+    <button class="icon-btn" id="t-annot" title="설계 주석 (시안 전용)">ⓘ</button>
+    <button class="icon-btn" title="설정">⚙</button>
+  </nav>
+
+  <!-- 사이드 패널 — 리스: 채팅 목록 + CharConfig -->
+  <aside class="side">
+    <div class="charname">용사여관 <small>chara_card_v3</small></div>
+    <div class="cfgrow">
+      <span class="anno" style="top:-6px;right:-4px"><span class="n">3</span>여권 탭만 추가</span>
+      <button class="on" data-view="chats" title="채팅">💬</button>
+      <button data-view="basic" title="기본 정보 · 작가의 노트">👤</button>
+      <button data-view="lore" title="로어북">📖</button>
+      <button title="TTS">🔊</button>
+      <button title="스크립트">{}</button>
+      <button title="고급">📈</button>
+      <button class="lucky" data-view="pass" title="호환성 여권 — 럭키">🛂</button>
+    </div>
+
+    <!-- 뷰: 채팅 목록 (리스 SideChatList) -->
+    <div class="view" data-body="chats">
+      <div class="chatitem new">＋ 새 채팅</div>
+      <div class="chatitem">1회차 — 첫 여관 <span class="cnt">88턴</span></div>
+      <div class="chatitem sel">2회차 — 실비아 루트 <span class="cnt">213턴</span></div>
+      <div class="folder">📁 브랜치</div>
+      <div class="chatitem">150일 분기 — 던전行 <span class="cnt">150턴</span></div>
+      <div class="listtools">
+        <button title="전체 내보내기">⤓</button>
+        <button title="가져오기">⤒</button>
+        <button title="편집(이름·삭제)">✎</button>
+        <button title="브랜치 트리">⑂</button>
+        <button title="북마크">🔖</button>
+        <button class="right" title="새 폴더">📁+</button>
+      </div>
+      <!-- 토글 자리(리스 Toggles) — ④ 엔진 박스가 여기 -->
+      <div class="toggles">
+        <span class="anno" style="top:-8px;left:8px"><span class="n">4</span>엔진 박스 · 토글 자리에</span>
+        <div class="togglechip"><span class="sw on"></span> 시뮬 엔진 <span style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--green)">완전 시뮬</span></div>
+        <div class="enginebox">
+          <div class="ehead">엔진 확정 — 이번 턴 <span class="n">3확정 · 1차단</span></div>
+          <div class="stats"><span class="g">◈ 1,204,800</span><span>3일차 저녁</span><span>🍚88 🍶40</span><span>🛏 4/12</span></div>
+          <ul>
+            <li>🌙 <b>정산</b> <span class="d">+18,400</span></li>
+            <li>🍚 <b>식자재</b> <span class="d down">−12</span></li>
+            <li>❤️ <b>실비아</b> 지인→친구 <span class="d">+2</span></li>
+            <li class="rej">🚫 gold_delta — 엔진이 차단</li>
+          </ul>
+          <button class="undo">↶ 되돌리기 <span class="depth">3</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 뷰: 기본 (리스 CharConfig 👤 탭 — 작가의 노트가 사는 곳) -->
+    <div class="view" data-body="basic" hidden>
+      <div class="f">
+        <label>작가의 노트 <span class="tok">132 토큰</span></label>
+        <textarea>서사는 담백하게, 실비아는 무뚝뚝하지만 정이 깊다. 매출 언급 시 반드시 태그 사용.</textarea>
+      </div>
+      <p class="hint">이 채팅에만 적용됩니다 — 리스와 동일하게 채팅별로 따로 저장.</p>
+      <div class="f"><label>첫 인사</label><input type="text" value="기본 — 『비 내리는 밤…』 (대체 인사 2종)"/></div>
+      <div class="f"><label>설명 (읽기 전용)</label><textarea readonly>이세계 여관 경영 시뮬레이션. 300일을 버텨라.</textarea></div>
+    </div>
+
+    <!-- 뷰: 로어북 (리스 LoreBook 문법) -->
+    <div class="view" data-body="lore" hidden>
+      <p class="hint">18항목 · 상시 활성 3 (초록 점)</p>
+      <div class="lore on open">
+        <div class="lhead"><span class="dot"></span> 여관의 구조 <span class="meta">상시 · 214tk</span></div>
+        <div class="lbody">
+          <div class="f"><label>활성 키</label><input type="text" value="여관, 홀, 객실"/></div>
+          <div class="f"><label>내용 <span class="tok">214 토큰</span></label><textarea>1층: 홀·주방·카운터. 2층: 객실 101~112…</textarea></div>
+        </div>
+      </div>
+      <div class="lore on"><div class="lhead"><span class="dot"></span> 실비아 <span class="meta">상시 · 388tk</span></div><div class="lbody"></div></div>
+      <div class="lore"><div class="lhead"><span class="dot"></span> 던전 『잿빛 문』 <span class="meta">키 2 · 152tk</span></div><div class="lbody"></div></div>
+      <div class="chatitem new" style="margin-top:6px">＋ 항목 추가</div>
+    </div>
+
+    <!-- 뷰: 호환성 여권 (럭키 고유 — 하지만 자리는 CharConfig 탭) -->
+    <div class="view" data-body="pass" hidden>
+      <span class="ppbadge">완전 시뮬 모드</span>
+      <div class="ppgroup ge"><div class="ghead">✅ 직역 <span class="n">6</span></div>
+        <ul>
+          <li><code>[ysp_gold]</code> 골드 <span class="why">gold_delta</span></li>
+          <li><code>[ysp_food/drink]</code> 자원 <span class="why">resource_delta</span></li>
+          <li><code>[ysp_checkin/out]</code> 투숙 <span class="why">checkin·checkout</span></li>
+          <li><code>[ysp_nextday]</code> 마감 <span class="why">day_end</span></li>
+          <li><code>[ysp_hire/fire]</code> 고용 <span class="why">hire·fire</span></li>
+        </ul>
+      </div>
+      <div class="ppgroup ga"><div class="ghead">⚠️ 근사 <span class="n">4</span></div>
+        <ul><li><code>[ysp_affinity]</code> 호감도 <span class="why">±N → 단계(S/M/L/XL)</span></li></ul>
+      </div>
+      <div class="ppgroup gp"><div class="ghead">📦 보존 <span class="n">5</span></div>
+        <ul>
+          <li><code>[ysp_rep_*]</code> 평판 <span class="why">매핑 대기</span></li>
+          <li><code>[ysp_exp]</code> <code>[ysp_capture]</code> <code>[ysp_gate]</code> <span class="why">모듈 대기</span></li>
+        </ul>
+      </div>
+      <p class="hint">보존 태그는 실행되지 않고 본문에 원문 그대로 남습니다. 카드 Lua는 실행하지 않습니다.</p>
+    </div>
+  </aside>
+
+  <!-- 메인 채팅 — 리스 기본 테마 골격 그대로 -->
+  <main class="main">
+    <section class="chat">
+      <div class="chat-width">
+
+        <div class="msg">
+          <span class="icon" style="--char:linear-gradient(180deg,#6a4f74,#33253c)">실</span>
+          <div class="body">
+            <div class="namerow">
+              <span class="nm">실비아 <small>미소</small></span>
+              <div class="btns">
+                <button title="번역">🌐</button>
+                <button title="편집">✎</button>
+                <button title="복사">⧉</button>
+                <button title="삭제 (길게: 이후 전부)">🗑</button>
+                <button title="더보기 — 브랜치·비활성·북마크">⋯</button>
+              </div>
+            </div>
+            <button class="genchip" title="토큰·메타·프롬프트·엔진 로그">🤖 GPT-5.6 · 1.9k↑ 0.6k↓</button>
+            <div class="text">
+              <p>난롯불이 잦아드는 홀에서 실비아가 젖은 잔을 마지막으로 닦아 건다. “오늘 손님, 꽤 많았죠? …고생 많으셨어요, 주인장.” 그녀의 눈매가 <em>처음으로 부드럽게</em> 풀린다.</p>
+              <figure class="illust" style="margin:4px 0 10px">
+                <div class="art" role="img" aria-label="여관 홀의 저녁 삽화"></div>
+                <figcaption>삽화 모듈 · 여관 홀 · 3일차 저녁 <span>🔍</span></figcaption>
+              </figure>
+            </div>
+            <div class="chips" style="position:relative">
+              <span class="anno" style="top:-30px;left:0"><span class="n">1</span>엔진 확정 칩 · 본문 바로 아래</span>
+              <span class="chip settle"><span class="k">🌙 정산</span> +18,400</span>
+              <span class="chip resource"><span class="k">🍚 식자재</span> −12</span>
+              <span class="chip aff"><span class="k">♥ 실비아</span> +2 → 친구</span>
+              <span class="chip rej">🚫 gold_delta 차단</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <span class="icon" style="--char:linear-gradient(180deg,#41525e,#242c33)">나</span>
+          <div class="body">
+            <div class="namerow">
+              <span class="nm">나</span>
+              <div class="btns">
+                <button title="편집">✎</button>
+                <button title="복사">⧉</button>
+                <button title="삭제">🗑</button>
+              </div>
+            </div>
+            <div class="text"><p style="font-family:var(--font-ui);font-size:14px;color:var(--text)">실비아한테 오늘 매출 좋았다고, 내일은 좀 쉬라고 말한다</p></div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <span class="icon" style="--char:linear-gradient(180deg,#6a4f74,#33253c)">실</span>
+          <div class="body">
+            <div class="namerow">
+              <span class="nm">실비아 <small>부끄</small></span>
+              <div class="btns" style="position:relative">
+                <span class="anno" style="top:-30px;right:0"><span class="n">2</span>같은 리롤 버튼 · 상태까지 복원</span>
+                <button title="번역">🌐</button>
+                <button title="편집">✎</button>
+                <button title="복사">⧉</button>
+                <button title="삭제">🗑</button>
+                <button title="더보기">⋯</button>
+                <button title="이전 응답 — 엔진 상태도 그 시점으로">←</button>
+                <span class="page">2/2</span>
+                <button title="리롤 — 이 턴 직전 상태로 복원 후 재생성">→</button>
+              </div>
+            </div>
+            <button class="genchip" title="토큰·메타·프롬프트·엔진 로그">🤖 GPT-5.6 · 2.1k↑ 0.4k↓</button>
+            <div class="text">
+              <p>“쉬라고요? …주인장이 그런 말을 다 하고.” 짐짓 툴툴대면서도 입꼬리는 이미 올라가 있다. 미리안이 저편에서 조용히 웃는다.</p>
+            </div>
+            <div class="chips">
+              <span class="chip aff"><span class="k">♥ 실비아</span> +1</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <div class="inputwrap">
+      <div class="chat-width">
+        <div class="inputbar">
+          <textarea placeholder="무엇을 하시겠어요?" aria-label="입력"></textarea>
+          <button title="전송">➤</button>
+          <button title="메뉴 — 이어쓰기·채팅 목록·입력 번역">☰</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var t = document.getElementById('t-annot');
+    t.addEventListener('click', function () { document.body.classList.toggle('annot'); });
+    // 사이드 패널 뷰 전환 (리스 CharConfigSubMenu 문법)
+    document.querySelectorAll('.cfgrow [data-view]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.cfgrow [data-view]').forEach(function (x) { x.classList.toggle('on', x === b); });
+        document.querySelectorAll('.side .view').forEach(function (p) { p.hidden = p.getAttribute('data-body') !== b.getAttribute('data-view'); });
+      });
+    });
+    // 로어북 펼침
+    document.querySelectorAll('.lore .lhead').forEach(function (h) {
+      h.addEventListener('click', function () { h.parentElement.classList.toggle('open'); });
+    });
+  })();
+</script>
