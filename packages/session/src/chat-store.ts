@@ -9,7 +9,8 @@ export class ChatStore {
   readonly #projectId:string;
   constructor(repository:SessionRepository<ChatIndex>,projectId:string){this.#repository=repository;this.#projectId=projectId;}
   async list():Promise<ChatIndex>{const stored=await this.#repository.get(this.#indexId());if(!stored)return this.#empty();const value=stored.payload;if(value.contract!=='simbot-chat-index/0.1'||value.projectId!==this.#projectId)throw new Error('chat_index_incompatible');return structuredClone(value);}
-  async create(name?:string):Promise<ChatMeta>{const index=await this.list(),chatId=crypto.randomUUID(),now=Date.now(),meta={chatId,name:name?.trim()||`${index.chats.length+1}회차`,turn:0,updatedAt:now};index.chats.push(meta);index.activeChatId=chatId;await this.#save(index);return structuredClone(meta);}
+  // 리스 문법: 새 채팅은 맨 위(unshift). 회차 번호는 기존 최대치+1이라 삭제 후에도 겹치지 않는다.
+  async create(name?:string):Promise<ChatMeta>{const index=await this.list(),chatId=crypto.randomUUID(),now=Date.now(),next=index.chats.reduce((max,chat)=>Math.max(max,Number(/^(\d+)회차$/.exec(chat.name)?.[1]??0)),0)+1,meta={chatId,name:name?.trim()||`${next}회차`,turn:0,updatedAt:now};index.chats.unshift(meta);index.activeChatId=chatId;await this.#save(index);return structuredClone(meta);}
   async rename(chatId:string,name:string){const value=name.trim();if(!value)throw new Error('chat_name_empty');const index=await this.list(),chat=this.#required(index,chatId);chat.name=value;chat.updatedAt=Date.now();await this.#save(index);}
   // 인덱스를 먼저 저장하고 세션 행을 지운다 — 역순이면 인덱스 쓰기 실패 시 목록에 남은 고스트 채팅이
   // 이미 지워진 세션을 가리킨다(감사 #4). 이 순서면 실패해도 무해한 고아 행만 남는다.
