@@ -2,11 +2,12 @@
   import type { PlaySession, ChatMessage, SessionSnapshot } from '@simbot/session';
   import { alternateForward } from './card-library';
   import { toFactLine } from './FactReceipt.svelte';
-  let {session,version,firstMessage='',cardName,model,portraitFor,onchange}:{session:PlaySession;version:number;firstMessage?:string;cardName:string;model:string;portraitFor:(id:string,emotion?:string)=>string|null;onchange:()=>void}=$props();
-  let editing=$state<string|null>(null),draft=$state(''),busy=$state(false),alternateIndex=$state(0),latest=$state<SessionSnapshot|null>(null);
-  // 대안 탐색 상태는 세션에 종속 — 채팅 전환·되돌리기로 대안이 사라지면 즉시 클램프하고 latest를 버린다.
-  // (같은 카드의 다른 채팅은 projectId가 같아 stale latest가 무결성 검사를 통과해 버릴 수 있음 — 교차 오염 차단)
-  $effect(()=>{void version;void session;const max=session.alternateCount;if(alternateIndex>max||latest&&latest.id!==session.id){alternateIndex=Math.min(alternateIndex,max);latest=null;}});
+  let {session,version,firstMessage='',cardName,model,portraitFor,onchange,onerror=()=>{}}:{session:PlaySession;version:number;firstMessage?:string;cardName:string;model:string;portraitFor:(id:string,emotion?:string)=>string|null;onchange:()=>void;onerror?:(message:string)=>void}=$props();
+  let editing=$state<string|null>(null),draft=$state(''),busy=$state(false),alternateIndex=$state(0),latest=$state<SessionSnapshot|null>(null),lastSessionId=$state('');
+  // 대안 탐색 상태는 세션에 종속 — 세션이 바뀌면 무조건 그 세션의 종단점으로 리셋, 대안이 사라지면 클램프하고
+  // latest를 버린다. (같은 카드의 다른 채팅은 projectId가 같아 stale latest가 무결성 검사를 통과해 버릴 수 있음)
+  $effect(()=>{void version;if(lastSessionId!==session.id){lastSessionId=session.id;alternateIndex=session.alternateCount;latest=null;return;}const max=session.alternateCount;if(alternateIndex>max||latest&&latest.id!==session.id){alternateIndex=Math.min(alternateIndex,max);latest=null;}});
+  const guard=(work:()=>Promise<void>)=>work().catch((e)=>onerror(e instanceof Error?e.message:String(e)));
   let messages=$derived.by(()=>{void version;return session.messages;});
   let facts=$derived(session.lastLogs.map(toFactLine));
   function name(message:ChatMessage){return message.role==='user'?'사용자':cardName;}
@@ -22,7 +23,7 @@
       <div class="avatar">{#if portraitFor(message.role==='assistant'?cardName:'user')}<img src={portraitFor(message.role==='assistant'?cardName:'user')!} alt=""/>{:else}{name(message).slice(0,1)}{/if}</div>
       <div class="body"><div class="head"><strong>{name(message)}</strong><span>{message.role==='assistant'?'default':''}</span><div class="tools"><button title="편집" onclick={()=>{editing=message.id;draft=message.content;}}>✎</button><button title="복사" onclick={()=>navigator.clipboard.writeText(message.content)}>⧉</button><button title="삭제" onclick={()=>void remove(message)}>🗑</button><button title="이후 전부 삭제" onclick={()=>void remove(message,true)}>⋯</button></div></div>
         {#if editing===message.id}<textarea bind:value={draft} onblur={()=>void save(message)} onkeydown={(e)=>{if(e.key==='Enter'&&e.ctrlKey)void save(message);}}></textarea>{:else}<div class="text">{message.content}</div>{/if}
-        {#if message.role==='assistant'}<div class="meta"><span class="model">🤖 {model}</span>{#if index===messages.length-1}<span class="swipe"><button disabled={busy||alternateIndex===0} onclick={()=>void left()}>←</button><b>{alternateIndex+1}/{session.alternateCount+1}</b><button disabled={busy||session.checkpointDepth===0} onclick={()=>void right()}>→</button></span>{/if}</div>{/if}
+        {#if message.role==='assistant'}<div class="meta"><span class="model">🤖 {model}</span>{#if index===messages.length-1}<span class="swipe"><button disabled={busy||alternateIndex===0} onclick={()=>void guard(left)}>←</button><b>{alternateIndex+1}/{session.alternateCount+1}</b><button disabled={busy||session.checkpointDepth===0} onclick={()=>void guard(right)}>→</button></span>{/if}</div>{/if}
         {#if message.role==='assistant'&&index===messages.length-1&&facts.length}<div class="chips">{#each facts as fact}<span class:rejected={fact.rejected}>{fact.icon} {fact.label} {fact.delta??''}</span>{/each}</div>{/if}
       </div>
     </article>

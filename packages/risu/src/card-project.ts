@@ -1,6 +1,6 @@
 import { tagCompatibilityGrades } from './ysp-translate.ts';
 
-interface ParsedCard { name:string; card:Record<string,unknown>; embeddedModules?:string[]; }
+interface ParsedCard { name:string; card:Record<string,unknown>; embeddedModules?:string[]; sourceBytes?:Uint8Array; }
 interface RuntimeProject { projectId:string; schema:Record<string,unknown>; screens:Record<string,unknown>[]; navigation:Record<string,unknown>[]; content:Record<string,unknown>; featureToggles:Record<string,unknown>; moduleIds?:string[]; }
 
 export interface CardPassport {
@@ -36,7 +36,8 @@ export function cardToRuntimeProject(parsed: ParsedCard): CardRuntimeProfile {
   const cardName=text(data.name)||parsed.name||'Imported card';
   const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks:loreEntries};
   const project:RuntimeProject={
-    projectId:`card:${slug(cardName)}`,
+    // 이름 슬러그만 쓰면 동명 카드 2장이 라이브러리·채팅을 서로 덮어쓴다(감사 #8) — 원본 바이트 해시로 유일화.
+    projectId:`card:${slug(cardName)}:${hashBytes(parsed.sourceBytes??new TextEncoder().encode(cardName))}`,
     schema:hasTags?innSchema():{initialState:{day:1}},
     screens:[{id:'play',title:'플레이',layout:'stage-chat-sidebar',regions:{main:[{widget:'chat'}]}}],
     navigation:[{id:'play',screenId:'play',label:'플레이'}],
@@ -60,5 +61,6 @@ function innSchema():Record<string,unknown>{return{
   ],
   initialState:{day:1,gold:1_000_000,resources:{food:200,drink:200},items:{},facilities:{quarter:1,tavern:1,room:1,kitchen:1},staff:[],rooms:{},npcs:{silvia:{affinity:20}},player:{pools:{hp:{cur:10,max:10}}},combat:null}
 };}
+function hashBytes(bytes:Uint8Array):string{let h=2166136261;for(let i=0;i<bytes.length;i+=1){h^=bytes[i]!;h=Math.imul(h,16777619);}return(h>>>0).toString(16).padStart(8,'0');}
 function text(value:unknown):string{return typeof value==='string'?value:'';}
 function slug(value:string):string{return value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9가-힣]+/g,'-').replace(/^-+|-+$/g,'')||'card';}

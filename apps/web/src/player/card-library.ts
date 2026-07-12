@@ -5,7 +5,8 @@ export interface CardLibraryEntry { projectId:string; name:string; format:CardFo
 export interface CardLibraryMeta { projectId:string; name:string; format:CardFormat; addedAt:number; }
 interface CardLibraryIndex { contract:'simbot-card-library/0.1'; cards:CardLibraryMeta[]; }
 
-const INDEX_ID='cardlib:index', MAX_PERSISTED_BYTES=10*1024*1024, CHUNK=0x8000;
+// CHUNK는 String.fromCharCode 스프레드 인자 상한(엔진별 상이)을 넉넉히 밑돌게 8K로(감사 #6).
+const INDEX_ID='cardlib:index', MAX_PERSISTED_BYTES=10*1024*1024, CHUNK=0x2000;
 const repo=<T>(repository:SessionRepository<unknown>)=>repository as SessionRepository<T>;
 export function bytesToBase64(bytes:Uint8Array){let binary='';for(let i=0;i<bytes.length;i+=CHUNK)binary+=String.fromCharCode(...bytes.subarray(i,i+CHUNK));return btoa(binary);}
 export function base64ToBytes(value:string){const binary=atob(value),out=new Uint8Array(binary.length);for(let i=0;i<binary.length;i+=1)out[i]=binary.charCodeAt(i);return out;}
