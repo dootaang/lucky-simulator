@@ -1,4 +1,4 @@
-import{describe,expect,it}from'vitest';import{createMemoryRepository}from'@simbot/persistence';import{type PromptPreset}from'@simbot/risu';import{ProjectRuntime}from'@simbot/runtime';import{PlaySession,type SessionSnapshot}from'../src/index.ts';
+import{describe,expect,it}from'vitest';import{createMemoryRepository}from'@simbot/persistence';import{type PromptPreset}from'@simbot/risu';import{ProjectRuntime}from'@simbot/runtime';import{PlaySession,sessionIntegrity,type SessionSnapshot}from'../src/index.ts';
 
 describe('session editing and turn checkpoints',()=>{
   it('edits and removes messages without changing engine state or reusing message ids',async()=>{const repository=createMemoryRepository<SessionSnapshot>(),session=new PlaySession({id:'editing',runtime:runtime(),preset,card:{name:'Guide'},repository,provider:{async complete(){return{text:'answer',events:[{id:'progression/gain',params:{source:'train'}}]};}}});await session.send('one');await session.send('two');const engine=session.runtime.snapshot();await session.editMessage('m2','edited answer');expect(session.messages.find((message)=>message.id==='m2')?.content).toBe('edited answer');expect((await repository.get('editing'))?.payload.messages.find((message)=>message.id==='m2')?.content).toBe('edited answer');expect(session.runtime.snapshot()).toEqual(engine);await session.removeMessage('m2');expect(session.messages.map((message)=>message.id)).toEqual(['m1','m3','m4']);expect(session.runtime.snapshot()).toEqual(engine);await session.send('three');expect(new Set(session.messages.map((message)=>message.id)).size).toBe(session.messages.length);expect(session.messages.at(-1)?.id).toBe('m6');const afterThird=session.runtime.snapshot();await session.removeMessage('m3',true);expect(session.messages.map((message)=>message.id)).toEqual(['m1']);expect(session.runtime.snapshot()).toEqual(afterThird);});
@@ -39,5 +39,33 @@ describe('서사 검증 관문 — 지어낸 숫자 탐지',()=>{
     const session=new PlaySession({id:'nv2',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){return{text:'별일 없이 하루가 지났다.'};}}});
     await session.send('쉰다');
     expect(session.narrativeIssues).toEqual([]);
+  });
+});
+describe('통합 감사 수정 — 무결성·카드 태그 채널',()=>{
+  it('cbsVariables 변조를 무결성 검증이 잡는다',async()=>{
+    const session=new PlaySession({id:'ia',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
+    await session.send('x');
+    const snap=structuredClone(session.snapshot()) as SessionSnapshot&{cbsVariables?:Record<string,string>};
+    snap.cbsVariables={gold:'99999999'}; // 저장 파일의 변수만 손댄다
+    const target=new PlaySession({id:'ia',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
+    expect(()=>target.restore(snap)).toThrow(/session_corrupt/);
+  });
+  it('cbsVariables가 없던 구 스냅샷은 그대로 복원된다(하위호환)',async()=>{
+    const session=new PlaySession({id:'ib',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
+    await session.send('x');
+    const snap=structuredClone(session.snapshot()) as unknown as Record<string,unknown>;
+    delete snap.cbsVariables; const base={...snap}; delete base.integrity;
+    const legacy={...base,integrity:sessionIntegrity(base as never)} as SessionSnapshot;
+    const target=new PlaySession({id:'ib',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
+    expect(()=>target.restore(legacy)).not.toThrow();
+  });
+  it('카드 태그 채널은 허용목록 밖 이벤트를 거부한다(방어 심층)',async()=>{
+    const value=runtime();
+    const session=new PlaySession({id:'ic',runtime:value,preset,card:{name:'C'},
+      tagTranslator:()=>({residue:'서사',events:[{id:'progression/gain',params:{source:'train'}}]}), // 번역기가 넓어진 상황을 가정
+      provider:{async complete(){return{text:'서사'};}}} as never);
+    await session.send('x');
+    expect(session.lastLogs).toEqual(expect.arrayContaining([expect.objectContaining({ok:false,reason:'card_tag_not_allowed'})]));
+    expect((value.state.player as Record<string,unknown>).exp).toBe(0); // 상태 불변
   });
 });
