@@ -6,11 +6,11 @@
   export type MobileSettingsTab = 'model' | 'prompt' | 'persona' | 'other';
   let {
     cardName = '카드를 선택하세요', cards, index, activeId, hasCard = false, compiling = false, compiled = false,
-    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onexport, onimport, oncompile, onsim, oninspect, onsettings,
+    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onexport, onimport, oncompile, onsim, oninspect, onedit, onsettings,
   }: {
     cardName?: string; cards: CardLibraryMeta[]; index: ChatIndex; activeId: string | null; hasCard?: boolean; compiling?: boolean; compiled?: boolean;
     onadd: () => void; oncard: (id: string) => void; onchat: (id: string) => void;
-    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void; onexport?: () => void; onimport?: (file: File) => void; oncompile?: () => void; onsim?: () => void; oninspect?: () => void;
+    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void; onexport?: () => void; onimport?: (file: File) => void; oncompile?: () => void; onsim?: () => void; oninspect?: () => void; onedit?: () => void;
     onsettings: (tab: MobileSettingsTab) => void;
   } = $props();
 
@@ -43,6 +43,7 @@
         <button class="settings-entry" onclick={() => view = 'settings'}><Icon name="settings"/><span><b>설정</b><small>모델 · 프롬프트 · 페르소나</small></span><Icon name="right"/></button>
         <button onclick={() => view = 'cards'}><Icon name="user"/><span><b>봇 목록</b><small>{cards.length}개</small></span><Icon name="right"/></button>
         <button onclick={() => view = 'chats'}><Icon name="message"/><span><b>채팅 목록</b><small>{index.chats.length}개</small></span><Icon name="right"/></button>
+        {#if hasCard&&onedit}<button onclick={()=>{close();onedit?.();}}><Icon name="pencil"/><span><b>봇 편집</b><small>기본 정보 · 로어북 · 에셋 · 시뮬레이션</small></span><Icon name="right"/></button>{/if}
         {#if hasCard&&oncompile}<button class="compile-entry" disabled={compiling} onclick={()=>{close();oncompile?.();}}><Icon name="star"/><span><b>{compiling?'엔진 컴파일 중…':compiled?'엔진 재컴파일':'엔진 컴파일'}</b><small>{compiled?'승인된 엔진 적용 중':'봇카드를 시뮬 엔진으로 변환'}</small></span><Icon name="right"/></button>{/if}
         {#if compiled&&onsim}<button onclick={()=>{close();onsim?.();}}><Icon name="badge"/><span><b>시뮬레이션</b><small>경영 · 전투 · 퀘스트 화면</small></span><Icon name="right"/></button>{/if}
         {#if hasCard&&oninspect}<button onclick={()=>{close();oninspect?.();}}><Icon name="badge"/><span><b>세션 검사기</b><small>프롬프트 · 기억 · 엔진 증거</small></span><Icon name="right"/></button>{/if}

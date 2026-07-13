@@ -1,0 +1,27 @@
+import {strToU8,strFromU8,unzipSync,zipSync,type Zippable} from 'fflate';
+import type {CardDocument,CardDocumentAsset,CardLoreEntry} from './document.ts';
+import {embeddedZipStart,encodeRisuBytes,parseCard,type ParsedCard} from './index.ts';
+import {joinBytes,makePngChunk,PNG_SIGNATURE,readPngChunks} from './png.ts';
+
+const clone=<T>(value:T):T=>structuredClone(value);
+const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
+function toBase64(bytes:Uint8Array){let binary='';for(let at=0;at<bytes.length;at+=0x2000)binary+=String.fromCharCode(...bytes.subarray(at,at+0x2000));return btoa(binary);}
+function loreCard(entry:CardLoreEntry,index:number){const raw=clone(entry.raw);raw.keys=[...entry.keys];raw.secondary_keys=[...entry.secondaryKeys];raw.comment=entry.name;if('name'in raw)raw.name=entry.name;raw.content=entry.content;raw.enabled=entry.enabled;raw.constant=entry.constant;raw.selective=entry.selective;raw.insertion_order=entry.order??index;if(entry.useRegex){const ext=object(raw.extensions);ext.risu_useRegex=true;raw.extensions=ext;}return raw;}
+function loreRisu(entry:CardLoreEntry,index:number){const raw=clone(entry.raw);raw.key=entry.keys.join(', ');raw.secondkey=entry.secondaryKeys.join(', ');raw.comment=entry.name;raw.content=entry.content;raw.alwaysActive=entry.constant;raw.selective=entry.selective;raw.useRegex=entry.useRegex;raw.insertorder=entry.order??index;raw.enabled=entry.enabled;if(entry.folder)raw.folder=entry.folder;return raw;}
+function assetMeta(asset:CardDocumentAsset){return{name:asset.name,type:asset.type,ext:asset.ext,uri:asset.uri};}
+
+export function buildEditedRoots(document:CardDocument){
+  const root=clone(document.cardRoot),data=object(root.data??root),draft=document.draft;
+  data.name=draft.name;data.description=draft.description;data.personality=draft.personality;data.scenario=draft.scenario;data.first_mes=draft.firstMessage;data.alternate_greetings=[...draft.alternateGreetings];data.creator_notes=draft.creatorNotes;data.system_prompt=draft.systemPrompt;data.post_history_instructions=draft.postHistoryInstructions;data.tags=[...draft.tags];
+  const book=object(data.character_book);book.entries=draft.lorebook.map(loreCard);data.character_book=book;data.assets=draft.assets.filter(asset=>!asset.deleted&&asset.origin==='card').map(assetMeta);
+  const extensions=object(data.extensions),risu=object(extensions.risuai);risu.backgroundHTML=draft.backgroundHtml;extensions.risuai=risu;data.extensions=extensions;if(root.data)root.data=data;
+  const moduleRoot=document.moduleRoot?clone(document.moduleRoot):null;if(moduleRoot){moduleRoot.lorebook=draft.lorebook.map(loreRisu);moduleRoot.regex=clone(draft.regexScripts);moduleRoot.backgroundEmbedding=draft.backgroundHtml;}
+  return{root,moduleRoot};
+}
+function rpackMain(original:Uint8Array,root:Record<string,unknown>){const oldLength=new DataView(original.buffer,original.byteOffset+2,4).getUint32(0,true),encoded=encodeRisuBytes(strToU8(JSON.stringify(root))),length=new Uint8Array(4);new DataView(length.buffer).setUint32(0,encoded.length,true);return joinBytes(original.subarray(0,2),length,encoded,original.subarray(6+oldLength));}
+function repackCharx(document:CardDocument,cardRoot:Record<string,unknown>,moduleRoot:Record<string,unknown>|null,source?:Uint8Array){
+  const files=unzipSync(source??document.source.sourceBytes),out:Zippable={},moduleName=document.source.embeddedModules?.[0];for(const[name,bytes]of Object.entries(files)){if(name==='card.json')out[name]=[strToU8(JSON.stringify(cardRoot)),{level:6}];else if(name===moduleName&&moduleRoot)out[name]=[rpackMain(bytes,{module:moduleRoot}),{level:0}];else out[name]=[bytes,{level:0}];}
+  for(const asset of document.draft.assets)if(!asset.deleted&&asset.bytes&&asset.path&&!(asset.path in files))out[asset.path]=[asset.bytes,{level:0}];return zipSync(out);
+}
+function repackPng(document:CardDocument,cardRoot:Record<string,unknown>){const chunks=readPngChunks(document.source.sourceBytes),target=chunks.some(chunk=>chunk.type==='tEXt'&&strFromU8(chunk.data.subarray(0,chunk.data.indexOf(0)))==='ccv3')?'ccv3':'chara',payload=strToU8(`${target}\0${toBase64(strToU8(JSON.stringify(cardRoot)))}`),parts:Uint8Array[]=[PNG_SIGNATURE.slice()];let replaced=false;for(const chunk of chunks){if(chunk.type==='tEXt'&&strFromU8(chunk.data.subarray(0,chunk.data.indexOf(0)))===target){if(!replaced)parts.push(makePngChunk('tEXt',payload));replaced=true;}else parts.push(chunk.raw.slice());}return joinBytes(...parts);}
+export function repackCardDocument(document:CardDocument):{bytes:Uint8Array;parsed:ParsedCard}{const{root,moduleRoot}=buildEditedRoots(document);let bytes:Uint8Array;switch(document.source.format){case'charx':bytes=repackCharx(document,root,moduleRoot);break;case'jpeg':{const start=embeddedZipStart(document.source.sourceBytes);if(start<0)throw new Error('jpeg_card_payload_unsupported');bytes=joinBytes(document.source.sourceBytes.subarray(0,start),repackCharx(document,root,moduleRoot,document.source.sourceBytes.subarray(start)));break;}case'png':bytes=repackPng(document,root);break;case'risum':bytes=rpackMain(document.source.sourceBytes,{module:moduleRoot??root});break;default:bytes=strToU8(JSON.stringify(root));}return{bytes,parsed:parseCard(bytes,document.source.source)}}

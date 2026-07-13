@@ -1,7 +1,7 @@
 <script lang="ts">
   import Button from '@simbot/ui/Button.svelte';
   import Panel from '@simbot/ui/Panel.svelte';
-  import { parseCard } from '@simbot/card';
+  import { parseCard,type ParsedCard } from '@simbot/card';
   import { compileCardDraft,type CompileReport } from '@simbot/compiler';
   import { compilePrompt, type Persona, type PromptPreset } from '@simbot/risu';
   import { createSimPack, packSimPack, unpackSimPack, type SimPackProject } from '@simbot/simpack';
@@ -9,10 +9,11 @@
   import ScreenRenderer from '../player/ScreenRenderer.svelte';
   import { onDestroy } from 'svelte';
 
+  let {embedded=false,initialCard=null}:{embedded?:boolean;initialCard?:ParsedCard|null}=$props();
   const sections=[['basics','기본 정보'],['persona','페르소나'],['prompt','프롬프트'],['lore','로어북'],['assets','에셋'],['state','초기 상태'],['modules','모듈'],['screens','화면'],['review','검토·내보내기']] as const;
   let project=$state<SimPackProject>(blank()); let compileReport=$state<CompileReport|null>(null); let importedCard=$state<ReturnType<typeof parseCard>|null>(null);
   let revision=$state(0),section=$state('basics'),error=$state(''),stateText=$state('{}');
-  let assetUrls=$state<Record<string,string>>({});
+  let assetUrls=$state<Record<string,string>>({}),loadedInitial=$state<string|null>(null);
   let manifest=$derived(project.manifest as unknown as Record<string,unknown>);
   let runtime=$derived.by(()=>{try{return new ProjectRuntime(runtimeFromManifest(manifest));}catch{return null;}});
   let personas=$derived(((manifest.personas as Record<string,unknown>)?.library??[]) as Persona[]);
@@ -23,6 +24,7 @@
   let presetValue=$derived(presets[0]??defaultPreset());
   let promptPreview=$derived.by(()=>{try{return compilePrompt({preset:presetValue,persona,card:{name:characterName(),description:characterDescription()},chat:[{role:'user',content:'안녕하세요.'}],engineContext:{facts:'[엔진 사실 미리보기]',availableActions:'[가능한 행동 미리보기]',groundedMemory:'[근거 있는 기억 미리보기]'}});}catch(reason){return{messages:[],assistantPrefill:'',trace:[],warnings:[{code:'compile_error',path:'prompt',detail:String(reason)}]};}});
   onDestroy(clearAssetUrls);
+  $effect(()=>{if(initialCard&&loadedInitial!==`${initialCard.source}:${initialCard.sourceBytes.length}`){loadedInitial=`${initialCard.source}:${initialCard.sourceBytes.length}`;loadCardDraft(initialCard);}});
 
   function defaultPersona():Persona{return{contract:'persona/0.1',id:'default-persona',name:'플레이어',prompt:'',icon:'',note:'',embeddedModule:null,source:{source:'user',path:'editor'},version:1};}
   function defaultPreset():PromptPreset{const source={source:'user' as const,path:'editor'};return{contract:'prompt-preset/0.1',id:'default-preset',name:'Risu 호환 기본 프롬프트',compatibilityMode:'risu',version:1,raw:null,settings:{assistantPrefill:'',sendNames:false,sendChatAsSystem:false},blocks:[{id:'main',type:'plain',name:'기본 지시',enabled:true,role:'system',text:'{{char}}로서 일관되게 응답하세요.',slot:'main',source},{id:'description',type:'description',name:'캐릭터 설명',enabled:true,role:'system',source},{id:'persona',type:'persona',name:'페르소나',enabled:true,role:'system',innerFormat:'플레이어 정보:\n{{slot}}',source},{id:'lore',type:'lorebook',name:'로어북',enabled:true,role:'system',source},{id:'memory',type:'memory',name:'장기 기억',enabled:true,role:'system',source},{id:'chat',type:'chat',name:'대화 기록',enabled:true,rangeStart:-1000,rangeEnd:'end',source},{id:'facts',type:'engineFacts',name:'엔진 사실',enabled:true,role:'system',source},{id:'actions',type:'availableActions',name:'가능한 행동',enabled:true,role:'system',source},{id:'grounded',type:'groundedMemory',name:'검증된 기억',enabled:true,role:'system',source}]};}
@@ -37,7 +39,8 @@
   function addLore(){mutate((root)=>{const content=root.content as Record<string,unknown>,entries=structuredClone((content.lorebooks??[]) as Record<string,unknown>[]);entries.push({id:`lore-${entries.length+1}`,name:`새 로어 ${entries.length+1}`,content:'',keys:[],enabled:true});content.lorebooks=entries;});}
   function setAsset(index:number,field:'name'|'kind',value:string){mutate((root)=>{const entries=structuredClone((root.assets??[]) as Record<string,unknown>[]);entries[index]={...entries[index],[field]:value};root.assets=entries;});}
   async function open(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];if(!file)return;try{project=unpackSimPack(new Uint8Array(await file.arrayBuffer()));refreshAssetUrls();stateText=JSON.stringify(((project.manifest.runtime.schema as Record<string,unknown>)?.initialState??{}),null,2);revision+=1;}catch(reason){error=reason instanceof Error?reason.message:String(reason);}}
-  async function importCard(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];if(!file)return;try{importedCard=parseCard(new Uint8Array(await file.arrayBuffer()),file.name);const draft=compileCardDraft(importedCard);project=draft.project;compileReport=draft.report;const root=project.manifest as unknown as Record<string,unknown>;(root.personas as Record<string,unknown>).library=[defaultPersona()];(root.prompts as Record<string,unknown>).presets=[defaultPreset()];refreshAssetUrls();stateText=JSON.stringify((root.runtime as Record<string,unknown>).initialState??{},null,2);revision+=1;section='modules';error='';}catch(reason){error=reason instanceof Error?reason.message:String(reason);}}
+  function loadCardDraft(card:ParsedCard){try{importedCard=card;const draft=compileCardDraft(card);project=draft.project;compileReport=draft.report;const root=project.manifest as unknown as Record<string,unknown>;(root.personas as Record<string,unknown>).library=[defaultPersona()];(root.prompts as Record<string,unknown>).presets=[defaultPreset()];refreshAssetUrls();stateText=JSON.stringify((root.runtime as Record<string,unknown>).initialState??{},null,2);revision+=1;section='modules';error='';}catch(reason){error=reason instanceof Error?reason.message:String(reason);}}
+  async function importCard(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];if(!file)return;try{loadCardDraft(parseCard(new Uint8Array(await file.arrayBuffer()),file.name));}catch(reason){error=reason instanceof Error?reason.message:String(reason);}}
   function approveModule(id:string){if(!importedCard)return;const installed=(((project.manifest.modules as Record<string,unknown>).installed??[])as string[]),old=project.manifest as unknown as Record<string,unknown>,draft=compileCardDraft(importedCard,[...installed,id]),next=draft.project.manifest as unknown as Record<string,unknown>;next.personas=structuredClone(old.personas);next.prompts=structuredClone(old.prompts);project=draft.project;compileReport=draft.report;refreshAssetUrls();revision+=1;}
   function clearAssetUrls(){for(const url of Object.values(assetUrls))URL.revokeObjectURL(url);assetUrls={};}
   function refreshAssetUrls(){clearAssetUrls();const next:Record<string,string>={};for(const raw of project.manifest.assets){const ref=raw.blob,bytes=ref&&project.files[ref.path];if(bytes&&ref.mime.startsWith('image/'))next[raw.id]=URL.createObjectURL(new Blob([Uint8Array.from(bytes)],{type:ref.mime}));}assetUrls=next;}
@@ -47,8 +50,8 @@
   function chatScreens(){return[{id:'play',title:'대화',layout:'stage-chat-sidebar',regions:{main:[{widget:'chat'}]}}];}
 </script>
 
-<div class="editor">
-  <aside><label class="open">봇 카드 가져오기<input type="file" accept=".json,.png,.charx,.risum,.jpg,.jpeg" onchange={importCard}/></label><label class="open">SimPack 열기<input type="file" accept=".simpack" onchange={open}/></label>{#each sections as item}<button class:active={section===item[0]} onclick={()=>section=item[0]}>{item[1]}</button>{/each}</aside>
+<div class="editor" class:embedded>
+  <aside>{#if !embedded}<label class="open">봇 카드 가져오기<input type="file" accept=".json,.png,.charx,.risum,.jpg,.jpeg" onchange={importCard}/></label><label class="open">SimPack 열기<input type="file" accept=".simpack" onchange={open}/></label>{/if}{#each sections as item}<button class:active={section===item[0]} onclick={()=>section=item[0]}>{item[1]}</button>{/each}</aside>
   <main class="form"><h1>{project.manifest.title}</h1>{#if error}<p class="error">{error}</p>{/if}
     {#if section==='basics'}<Panel title="프로젝트 기본 정보"><label>프로젝트 이름<input value={project.manifest.title} oninput={(event)=>mutate((value)=>value.title=(event.currentTarget as HTMLInputElement).value)}/></label><label>캐릭터 이름<input value={characterName()} oninput={(event)=>mutate((root)=>{const content=root.content as Record<string,unknown>,values=content.characters as Record<string,unknown>[];values[0]={...values[0],name:(event.currentTarget as HTMLInputElement).value};})}/></label><p>원본 카드는 호환 정보와 별도로 보존됩니다.</p></Panel>
     {:else if section==='persona'}<Panel title="플레이어 페르소나"><label>이름<input value={persona.name} oninput={(event)=>setPersona('name',(event.currentTarget as HTMLInputElement).value)}/></label><label>LLM에 전달할 설명<textarea rows="10" value={persona.prompt} oninput={(event)=>setPersona('prompt',(event.currentTarget as HTMLTextAreaElement).value)}></textarea></label><label>제작자 메모<textarea rows="4" value={persona.note} oninput={(event)=>setPersona('note',(event.currentTarget as HTMLTextAreaElement).value)}></textarea></label></Panel>
