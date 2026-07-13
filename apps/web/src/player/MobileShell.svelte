@@ -6,11 +6,11 @@
   export type MobileSettingsTab = 'model' | 'prompt' | 'persona' | 'other';
   let {
     cardName = '카드를 선택하세요', cards, index, activeId, hasCard = false,
-    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onexport, onimport, onsettings,
+    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onexport, onimport, oninspect, onsettings,
   }: {
     cardName?: string; cards: CardLibraryMeta[]; index: ChatIndex; activeId: string | null; hasCard?: boolean;
     onadd: () => void; oncard: (id: string) => void; onchat: (id: string) => void;
-    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void; onexport?: () => void; onimport?: (file: File) => void;
+    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void; onexport?: () => void; onimport?: (file: File) => void; oninspect?: () => void;
     onsettings: (tab: MobileSettingsTab) => void;
   } = $props();
 
@@ -43,6 +43,7 @@
         <button class="settings-entry" onclick={() => view = 'settings'}><Icon name="settings"/><span><b>설정</b><small>모델 · 프롬프트 · 페르소나</small></span><Icon name="right"/></button>
         <button onclick={() => view = 'cards'}><Icon name="user"/><span><b>봇 목록</b><small>{cards.length}개</small></span><Icon name="right"/></button>
         <button onclick={() => view = 'chats'}><Icon name="message"/><span><b>채팅 목록</b><small>{index.chats.length}개</small></span><Icon name="right"/></button>
+        {#if hasCard&&oninspect}<button onclick={()=>{close();oninspect?.();}}><Icon name="badge"/><span><b>세션 검사기</b><small>프롬프트 · 기억 · 엔진 증거</small></span><Icon name="right"/></button>{/if}
       </nav>
     {:else if view === 'settings'}
       <nav class="list-menu">

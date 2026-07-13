@@ -1,7 +1,28 @@
-import type{EvidenceReference,KnowledgeScope,MemoryRecord}from'@simbot/contracts';export interface Viewer{userId?:string;entityIds?:readonly string[];}export interface Retrieval{records:MemoryRecord[];abstained:boolean;reason?:string;}
-export class MemoryLedger{#records=new Map<string,MemoryRecord>();add(record:MemoryRecord){validate(record);this.#records.set(record.id,structuredClone(record));}reset(records:MemoryRecord[]){this.#records.clear();for(const record of records)this.add(record);}approve(id:string){const value=this.#required(id);this.#records.set(id,{...value,status:'approved'});}supersede(id:string,turn:number){const value=this.#required(id);this.#records.set(id,{...value,status:'superseded',validToTurn:turn});}get(id:string){const value=this.#records.get(id);return value?structuredClone(value):null;}all(){return[...this.#records.values()].map((value)=>structuredClone(value));}eligible(turn:number,viewer:Viewer={}){return[...this.#records.values()].filter((value)=>(value.status==='approved'||value.status==='superseded')&&value.validFromTurn<=turn&&(value.validToTurn==null||value.validToTurn>=turn)&&visible(value.scope,viewer)).map((value)=>structuredClone(value));}retrieve(query:string,turn:number,viewer:Viewer={},limit=8):Retrieval{const terms=tokens(query);const ranked=this.eligible(turn,viewer).map((value)=>({value,score:score(terms,tokens(value.text))})).filter((entry)=>entry.score>0).sort((a,b)=>b.score-a.score||b.value.validFromTurn-a.value.validFromTurn||a.value.id.localeCompare(b.value.id)).slice(0,limit).map((entry)=>structuredClone(entry.value));return ranked.length?{records:ranked,abstained:false}:{records:[],abstained:true,reason:'insufficient_grounding'};}#required(id:string){const value=this.#records.get(id);if(!value)throw new Error(`memory_not_found:${id}`);return value;}}
-function validate(value:MemoryRecord){if(!value.id||!value.text.trim())throw new Error('memory_invalid');if(!value.evidence.length)throw new Error('memory_evidence_required');if(value.validFromTurn<0||value.validToTurn!=null&&value.validToTurn<value.validFromTurn)throw new Error('memory_interval_invalid');}function visible(scope:KnowledgeScope,viewer:Viewer){if(scope.kind==='public')return true;if(scope.kind==='user')return scope.userId===viewer.userId;return(viewer.entityIds??[]).includes(scope.entityId);}function tokens(value:string){return[...new Set(value.toLowerCase().match(/[가-힣]{2,}|[a-z0-9_-]{2,}/g)??[])];}function score(query:string[],document:string[]){return query.reduce((total,term)=>total+(document.some((value)=>value===term||value.includes(term)||term.includes(value))?1:0),0)/Math.max(1,query.length);}
-export function memoryRecord(input:{id:string;text:string;turn:number;scope?:KnowledgeScope;evidence:EvidenceReference[];status?:MemoryRecord['status']}):MemoryRecord{return{id:input.id,text:input.text,validFromTurn:input.turn,validToTurn:null,scope:input.scope??{kind:'public'},evidence:input.evidence,status:input.status??'candidate'};}
+import type { EvidenceReference, KnowledgeScope, MemoryRecord } from '@simbot/contracts';
+
+export interface Viewer { userId?: string; entityIds?: readonly string[] }
+export interface Retrieval { records: MemoryRecord[]; abstained: boolean; reason?: string }
+
+export class MemoryLedger {
+  #records = new Map<string, MemoryRecord>();
+  add(record: MemoryRecord){validate(record);this.#records.set(record.id,structuredClone(record));}
+  reset(records: MemoryRecord[]){this.#records.clear();for(const record of records)this.add(record);}
+  approve(id: string){const value=this.#required(id);this.#records.set(id,{...value,status:'approved'});}
+  reject(id: string){const value=this.#required(id);this.#records.set(id,{...value,status:'rejected'});}
+  supersede(id: string,turn: number){const value=this.#required(id);this.#records.set(id,{...value,status:'superseded',validToTurn:turn});}
+  get(id: string){const value=this.#records.get(id);return value?structuredClone(value):null;}
+  all(){return[...this.#records.values()].map((value)=>structuredClone(value));}
+  eligible(turn: number,viewer: Viewer={}){return[...this.#records.values()].filter((value)=>(value.status==='approved'||value.status==='superseded')&&value.validFromTurn<=turn&&(value.validToTurn==null||value.validToTurn>=turn)&&visible(value.scope,viewer)).map((value)=>structuredClone(value));}
+  retrieve(query: string,turn: number,viewer: Viewer={},limit=8): Retrieval {const terms=tokens(query);const ranked=this.eligible(turn,viewer).map((value)=>({value,score:score(terms,tokens(value.text))})).filter((entry)=>entry.score>0).sort((a,b)=>b.score-a.score||b.value.validFromTurn-a.value.validFromTurn||a.value.id.localeCompare(b.value.id)).slice(0,limit).map((entry)=>structuredClone(entry.value));return ranked.length?{records:ranked,abstained:false}:{records:[],abstained:true,reason:'insufficient_grounding'};}
+  #required(id: string){const value=this.#records.get(id);if(!value)throw new Error(`memory_not_found:${id}`);return value;}
+}
+
+function validate(value: MemoryRecord){if(!value.id||!value.text.trim())throw new Error('memory_invalid');if(!value.evidence.length)throw new Error('memory_evidence_required');if(value.validFromTurn<0||value.validToTurn!=null&&value.validToTurn<value.validFromTurn)throw new Error('memory_interval_invalid');}
+function visible(scope: KnowledgeScope,viewer: Viewer){if(scope.kind==='public')return true;if(scope.kind==='user')return scope.userId===viewer.userId;return(viewer.entityIds??[]).includes(scope.entityId);}
+function tokens(value: string){return[...new Set(value.toLowerCase().match(/[가-힣]{2,}|[a-z0-9_-]{2,}/g)??[])];}
+function score(query: string[],document: string[]){return query.reduce((total,term)=>total+(document.some((value)=>value===term||value.includes(term)||term.includes(value))?1:0),0)/Math.max(1,query.length);}
+export function memoryRecord(input: { id:string;text:string;turn:number;scope?:KnowledgeScope;evidence:EvidenceReference[];status?:MemoryRecord['status'] }): MemoryRecord {return{id:input.id,text:input.text,validFromTurn:input.turn,validToTurn:null,scope:input.scope??{kind:'public'},evidence:input.evidence,status:input.status??'candidate'};}
+
 export * from './semantic.ts';
 export * from './narrative-verifier.ts';
 export * from './providers/fixed.ts';
