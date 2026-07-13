@@ -13,4 +13,8 @@
 </div>
 <style>
   .backdrop{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:18px;background:#07090db8;backdrop-filter:blur(4px)}.panel{width:min(1100px,100%);height:min(860px,calc(100dvh - 36px));display:flex;flex-direction:column;border:1px solid #3b414d;border-radius:12px;background:#12151b;color:#eceef3;box-shadow:0 24px 80px #000b;overflow:hidden}header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #30343d;background:#191c22}header div{display:grid;gap:2px}header small{font-size:11px;color:#9299a7}header button{display:grid;place-items:center;padding:7px;border:0;background:transparent;color:#b4bac6;cursor:pointer}main{padding:14px;overflow:auto}@media(max-width:700px){.backdrop{padding:0}.panel{width:100%;height:100dvh;border:0;border-radius:0}main{padding:10px}}
+  @media(min-width:1000px){
+    .backdrop{place-items:stretch end;padding:0;background:transparent;backdrop-filter:none;pointer-events:none}
+    .panel{width:min(460px,42vw);height:100dvh;border-width:0 0 0 1px;border-radius:0;box-shadow:-18px 0 48px #0008;pointer-events:auto}
+  }
 </style>
