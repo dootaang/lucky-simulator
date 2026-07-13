@@ -2,7 +2,7 @@ import { tagCompatibilityGrades } from './ysp-translate.ts';
 
 interface ParsedCard { name:string; card:Record<string,unknown>; embeddedModules?:string[]; modules?:Array<{regex?:unknown[];lorebook?:unknown[];defaultVariables?:Record<string,string>;raw?:Record<string,unknown>}>; sourceBytes?:Uint8Array; }
 interface RuntimeProject { projectId:string; schema:Record<string,unknown>; screens:Record<string,unknown>[]; navigation:Record<string,unknown>[]; content:Record<string,unknown>; featureToggles:Record<string,unknown>; moduleIds?:string[]; }
-export interface CardCompileArtifact {schema:Record<string,unknown>;moduleIds:string[];}
+export interface CardCompileArtifact {schema:Record<string,unknown>;moduleIds:string[];screens?:Record<string,unknown>[];navigation?:Record<string,unknown>[];}
 
 export interface CardPassport {
   mode: 'full-sim' | 'chat';
@@ -46,8 +46,8 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
     // 이름 슬러그만 쓰면 동명 카드 2장이 라이브러리·채팅을 서로 덮어쓴다(감사 #8) — 원본 바이트 해시로 유일화.
     projectId:`card:${slug(cardName)}:${hashBytes(parsed.sourceBytes??new TextEncoder().encode(cardName))}`,
     schema:compiled?.schema??(fixtureInn?innFixtureSchema():{initialState:{day:1}}),
-    screens:[{id:'play',title:'플레이',layout:'stage-chat-sidebar',regions:{main:[{widget:'chat'}]}}],
-    navigation:[{id:'play',screenId:'play',label:'플레이'}],
+    screens:compiled?.screens??[{id:'play',title:'플레이',layout:'stage-chat-sidebar',regions:{main:[{widget:'chat'}]}}],
+    navigation:compiled?.navigation??[{id:'play',screenId:'play',label:'플레이'}],
     content,featureToggles:{},moduleIds:compiled?.moduleIds??(fixtureInn?['genre.inn']:[])
   };
   return {

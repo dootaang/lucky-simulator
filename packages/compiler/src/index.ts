@@ -21,7 +21,7 @@ function resolveModules(source:string,diagnosis:ReturnType<typeof diagnoseCard>)
 }
 function screensFor(moduleIds:string[]){
   const screens:Record<string,unknown>[]=[];
-  if(moduleIds.includes('genre.inn'))screens.push({id:'management',title:'여관 경영',layout:'dashboard',regions:{hud:[{widget:'detail-panel',title:'시설',source:'state.facilities'},{widget:'detail-panel',title:'재고',source:'state.resources'}],main:[{widget:'card-list',title:'객실',source:'engine:inn/rooms'},{widget:'quest-board',title:'의뢰 게시판',source:'engine:inn/quests'}],actions:[{widget:'action-group',title:'영업',actions:[{label:'점심 영업',event:{id:'traffic_wave',params:{wave:'lunch'}}},{label:'저녁 영업',event:{id:'traffic_wave',params:{wave:'evening'}}},{label:'숙박 문의 확인',event:{id:'lodging_review',params:{}}},{label:'우편 확인',event:{id:'mail_check',params:{}}},{label:'하루 마감',event:{id:'day_end',params:{}}}]}]}});
+  if(moduleIds.includes('genre.inn'))screens.push({id:'management',title:'여관 경영',layout:'dashboard',regions:{main:[{widget:'inn-management'}]}});
   if(moduleIds.includes('genre.hunter'))screens.push({id:'hunter',title:'헌터 활동',layout:'dashboard',regions:{hud:[{widget:'detail-panel',source:'engine:hunter/status'}],main:[{widget:'quest-board',source:'state.hunter'}]}});
   return screens;
 }

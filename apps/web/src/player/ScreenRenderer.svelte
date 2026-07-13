@@ -9,6 +9,7 @@
   import { evaluateCondition, resolveValue, type ProjectRuntime } from '@simbot/runtime';
   import type { PlaySession } from '@simbot/session';
   import ChatPanel from './ChatPanel.svelte';
+  import InnManagement from './InnManagement.svelte';
   import { classifyWidgetValue, structuredEntries } from './widget-model.ts';
 
   let { runtime, version, session = null, portraitFor = () => null }: { runtime: ProjectRuntime; version: number; session?: PlaySession|null; portraitFor?: (npcId:string,emotion?:string)=>string|null } = $props();
@@ -33,6 +34,8 @@
         <Panel title={widget.title?String(widget.title):undefined}>
           {#if widget.widget==='chat'}
             {#if session}<ChatPanel {session} {portraitFor} onchange={()=>revision+=1}/>{:else}<div class="chat"><p>플레이 세션을 준비하고 있습니다.</p>{#if lastLog.length}<dl class="structured">{#each structuredEntries(lastLog) as entry}<div><dt>{entry.key}</dt><dd>{entry.value}</dd></div>{/each}</dl>{/if}</div>{/if}
+          {:else if widget.widget==='inn-management'}
+            <InnManagement {runtime} {version} onchange={()=>revision+=1}/>
           {:else if widget.widget==='action-group'}
             <div class="actions">{#each asList(widget.actions) as action}<Button disabled={action.enabled===false} onclick={()=>act(action)}>{String(action.label??action.id)}</Button>{/each}</div>
           {:else if widget.widget==='decision-card'}
