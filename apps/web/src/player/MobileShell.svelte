@@ -59,7 +59,7 @@
         <button class="create" onclick={() => { close(); onadd(); }}><Icon name="plus"/> 봇카드 가져오기</button>
         {#each cards as card}
           <button class:active={card.projectId === activeId} onclick={() => { close(); oncard(card.projectId); }}>
-            <span class="avatar">{card.name.slice(0, 1)}</span><span>{card.name}</span>{#if card.missing}<small>재연결 필요</small>{/if}
+            <span class="avatar">{#if card.thumbnail}<img src={card.thumbnail} alt=""/>{:else}{card.name.slice(0, 1)}{/if}</span><span>{card.name}</span>{#if card.missing}<small>재연결 필요</small>{/if}
           </button>
         {/each}
       </section>
@@ -88,7 +88,7 @@
     .scrim{display:block;position:fixed;inset:0;z-index:40;border:0;background:#0009}.drawer{display:flex;position:fixed;inset:0 auto 0 0;z-index:45;width:min(88vw,380px);flex-direction:column;background:#15171c;color:#e8eaf0;box-shadow:8px 0 28px #0008;animation:slide .18s ease-out;padding-top:env(safe-area-inset-top)}
     .drawer-head{height:56px;display:grid;grid-template-columns:48px 1fr 48px;align-items:center;border-bottom:1px solid #30343d}.drawer-head strong{align-self:center}.drawer-head button{height:48px;display:grid;place-items:center}.drawer-head strong:first-child{grid-column:1/3;padding-left:16px}.drawer-head .close{font-size:26px;color:#9aa1ae}
     .home-menu,.list-menu{display:grid;padding:10px}.home-menu button,.list-menu button{min-height:62px;display:grid;grid-template-columns:34px minmax(0,1fr) 24px;align-items:center;gap:8px;padding:10px;border-radius:8px;text-align:left}.home-menu button:hover,.list-menu button:hover{background:#292d36}.home-menu .settings-entry{margin-bottom:10px;border:1px solid #343a47;background:#20242c}.home-menu span{display:grid;gap:3px}.home-menu b{font-size:14px}.home-menu small{color:#858c99}
-    .items{overflow-y:auto;padding:10px}.items>button{width:100%;min-height:50px;display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px;text-align:left}.items>button:hover,.items>button.active{background:#292d36}.items .create{border:1px dashed #4b5260;margin-bottom:8px;justify-content:center}.avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:6px;background:#333844}.items small{margin-left:auto;color:#d59d6a}.items p{color:#9299a7;font-size:13px}
+    .items{overflow-y:auto;padding:10px}.items>button{width:100%;min-height:50px;display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px;text-align:left}.items>button:hover,.items>button.active{background:#292d36}.items .create{border:1px dashed #4b5260;margin-bottom:8px;justify-content:center}.avatar{width:36px;height:36px;display:grid;place-items:center;overflow:hidden;border-radius:6px;background:#333844}.avatar img{width:100%;height:100%;object-fit:cover}.items small{margin-left:auto;color:#d59d6a}.items p{color:#9299a7;font-size:13px}
     .transfer{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}.transfer button{padding:8px;border:1px solid #353b48;border-radius:6px;color:#aeb6c5}.hidden{display:none}.chatrow{display:flex;align-items:center;gap:2px;border-radius:8px}.chatrow.active{background:#2a3040}.chatrow .pick{flex:1;display:flex;align-items:center;gap:8px;padding:10px;text-align:left}.chatrow .pick small{margin-left:auto;color:#7d8596;font-size:11px}.chatrow .row-action{color:#8a92a2;padding:8px;border-radius:6px}.chatrow .row-action:hover{color:#fff;background:#333b4d}
     @keyframes slide{from{transform:translateX(-100%)}to{transform:none}}
   }

@@ -25,7 +25,7 @@
   let filteredChats = $derived(index.chats.filter((chat) => chat.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
 </script>
 
-<aside class="side" class:open style:display={open?'flex':undefined} style:background="var(--card-atmosphere-bg,#0f1013)" style:border-color="var(--card-atmosphere-border,#2c2f36)">
+<aside class="side" class:open style:display={open?'flex':undefined}>
   <header><strong>{profile.card.name}</strong><span class="passport-count">{passport.grades.exact.length}/{passport.grades.approx.length}/{passport.grades.preserved.length}</span><div class="tabs"><button class:active={tab==='chat'} onclick={()=>tab='chat'} title="채팅"><Icon name="message"/></button><button class:active={tab==='basic'} onclick={()=>tab='basic'} title="카드 정보"><Icon name="user"/></button><button class:active={tab==='passport'} onclick={()=>tab='passport'} title="호환성 여권"><Icon name="badge"/></button></div></header>
   {#if tab==='chat'}
     <section class="content chats">

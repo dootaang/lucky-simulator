@@ -62,7 +62,11 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
 
 import {extractRegexScripts} from './card-regex.ts';
 function innFixtureSchema():Record<string,unknown>{return{initialState:{day:1,gold:1_000_000,resources:{food:200,drink:200},facilities:{quarter:1,tavern:1,room:1,kitchen:1},staff:[],player:{}}};}
-function variableMap(value:unknown):Record<string,string>{if(!value||typeof value!=='object'||Array.isArray(value))return{};return Object.fromEntries(Object.entries(value as Record<string,unknown>).map(([key,item])=>[key,String(item??'')]));}
+function variableMap(value:unknown):Record<string,string>{
+  if(typeof value==='string')return Object.fromEntries(value.split(/\r?\n/).map(line=>line.trim()).filter(line=>line&&!line.startsWith('#')).map(line=>{const at=line.indexOf('=');return at<0?[line,'']:[line.slice(0,at).trim(),line.slice(at+1).trim()];}).filter(([key])=>key));
+  if(!value||typeof value!=='object'||Array.isArray(value))return{};
+  return Object.fromEntries(Object.entries(value as Record<string,unknown>).map(([key,item])=>[key,String(item??'')]));
+}
 
 function hashBytes(bytes:Uint8Array):string{let h=2166136261;for(let i=0;i<bytes.length;i+=1){h^=bytes[i]!;h=Math.imul(h,16777619);}return(h>>>0).toString(16).padStart(8,'0');}
 function text(value:unknown):string{return typeof value==='string'?value:'';}
