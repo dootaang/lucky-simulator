@@ -1,0 +1,16 @@
+import type{MemoryRecord}from'@simbot/contracts';
+import{decideAbstention,type AbstentionConfig}from'./abstention.ts';
+import type{EmbeddingProvider}from'./semantic.ts';
+import type{MemoryLedger,Retrieval,Viewer}from'./index.ts';
+export interface GroundedMemoryOptions{atTurn:number;viewer?:Viewer;sceneId?:string;queryMode?:'auto'|'current'|'past';budgetTokens?:number;perKindQuota?:number;limit?:number;abstention?:AbstentionConfig;provider?:EmbeddingProvider|undefined;signal?:AbortSignal|undefined}
+const pastPattern=/과거|예전|전에|지난|기억|history|before|previous/i;
+export async function planGroundedMemory(ledger:MemoryLedger,query:string,options:GroundedMemoryOptions):Promise<Retrieval>{
+  const includePast=options.queryMode==='past'||options.queryMode!=='current'&&pastPattern.test(query),viewer=options.viewer??{},eligible=ledger.eligible(options.atTurn,viewer,includePast).filter((record)=>!options.sceneId||!record.sceneId||record.sceneId===options.sceneId||includePast),lexical=ledger.score(query,options.atTurn,viewer,includePast),lexicalById=new Map(lexical.map((entry)=>[entry.record.id,entry.evidenceScore])),semanticById=new Map<string,number>();
+  if(options.provider&&eligible.length)try{const[q]=await options.provider.embedQueries([query],options.signal),vectors=await options.provider.embedDocuments(eligible.map((record)=>record.text),options.signal);eligible.forEach((record,index)=>semanticById.set(record.id,cosine(q??[],vectors[index]??[])));}catch(error){if(options.signal?.aborted)throw error;/* lexical fallback */}
+  const lexicalRank=new Map(lexical.slice(0,Math.max((options.limit??8)*3,20)).map((entry,index)=>[entry.record.id,index])),semanticRank=new Map([...semanticById].filter(([,score])=>score>0).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([id],index)=>[id,index])),rankScore=(record:MemoryRecord)=>(lexicalRank.has(record.id)?1/(61+(lexicalRank.get(record.id)??0)):0)+(semanticRank.has(record.id)?1/(61+(semanticRank.get(record.id)??0)):0)+(record.importance??0)*1e-8+1e-9/(1+Math.max(0,options.atTurn-record.validFromTurn)),ranked=eligible.map((record)=>({record,evidence:Math.max(lexicalById.get(record.id)??0,semanticById.get(record.id)??0),rank:rankScore(record)})).filter((entry)=>entry.evidence>0).sort((a,b)=>b.rank-a.rank||b.record.validFromTurn-a.record.validFromTurn||a.record.id.localeCompare(b.record.id)),decision=decideAbstention(ranked.map((entry)=>entry.evidence),options.abstention);
+  if(decision.abstained)return{records:[],abstained:true,...(decision.reason?{reason:decision.reason}:{})};
+  const records:MemoryRecord[]=[],kinds=new Map<string,number>();let tokens=0;
+  for(const{record}of ranked){const kind=record.kind??'summary',cost=Math.max(1,Math.ceil(record.text.length/4));if((kinds.get(kind)??0)>=(options.perKindQuota??Number.POSITIVE_INFINITY)||tokens+cost>(options.budgetTokens??1000))continue;records.push(record);kinds.set(kind,(kinds.get(kind)??0)+1);tokens+=cost;if(records.length>=(options.limit??8))break;}
+  return records.length?{records,abstained:false}:{records:[],abstained:true,reason:'insufficient_grounding'};
+}
+function cosine(a:number[],b:number[]){let dot=0,aa=0,bb=0;for(let i=0;i<Math.min(a.length,b.length);i++){dot+=(a[i]??0)*(b[i]??0);aa+=(a[i]??0)**2;bb+=(b[i]??0)**2;}return aa&&bb?dot/Math.sqrt(aa*bb):0;}

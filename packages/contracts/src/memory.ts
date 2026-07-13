@@ -1,3 +1,11 @@
 export type KnowledgeScope = { readonly kind: 'public' } | { readonly kind: 'user'; readonly userId: string } | { readonly kind: 'entity'; readonly entityId: string };
 export interface EvidenceReference { readonly kind: 'message' | 'event'; readonly id: string; }
-export interface MemoryRecord { readonly id: string; readonly text: string; readonly validFromTurn: number; readonly validToTurn: number | null; readonly scope: KnowledgeScope; readonly evidence: readonly EvidenceReference[]; readonly status: 'candidate' | 'approved' | 'rejected' | 'superseded'; }
+export type MemoryKind='engine-fact'|'event'|'promise'|'secret'|'relation'|'episode'|'summary';
+export type MemoryKnowledgeType='experienced'|'witnessed'|'heard'|'inferred'|'rumor'|'private-thought'|'public-fact';
+export type MemoryKnowledgeState='known'|'suspected'|'uncertain'|'misunderstood'|'forgotten'|'hidden';
+export type MemoryPrivacy='public'|'shared'|'private'|'secret'|'internal';
+export type MemoryTruthState='true'|'false'|'contested'|'unknown';
+export interface MemorySourceLocator{readonly sourceMessageFingerprint?:string;readonly sourcePacketIndex?:number;readonly sceneId?:string;readonly eventTime?:string;readonly observedAt?:string;readonly knownAt?:string;readonly narrationTime?:string;readonly lastConfirmedAt?:string;}
+export interface MemoryKnowledge{readonly type?:MemoryKnowledgeType;readonly state?:MemoryKnowledgeState;readonly privacy?:MemoryPrivacy;readonly truth?:MemoryTruthState;readonly visibleToEntityIds?:readonly string[];readonly deniedToEntityIds?:readonly string[];readonly holderEntityIds?:readonly string[];readonly inferredByEntityIds?:readonly string[];}
+export interface MemoryLifecycle{readonly state?:'active'|'resolved'|'dormant'|'superseded'|'no-longer-true';readonly timeScope?:'current'|'past'|'unknown';}
+export interface MemoryRecord { readonly id: string; readonly text: string; readonly validFromTurn: number; readonly validToTurn: number | null; readonly scope: KnowledgeScope; readonly evidence: readonly EvidenceReference[]; readonly status: 'candidate' | 'approved' | 'rejected' | 'superseded';readonly kind?:MemoryKind;readonly sourceMessageIds?:readonly string[];readonly sourceEventIndexes?:readonly number[];readonly entities?:readonly string[];readonly createdTurn?:number;readonly supersedes?:readonly string[];readonly importance?:number;readonly canonicalAnchors?:readonly string[];readonly sceneId?:string;readonly sourceLocator?:MemorySourceLocator;readonly knowledge?:MemoryKnowledge;readonly lifecycle?:MemoryLifecycle;}

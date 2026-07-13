@@ -75,11 +75,13 @@
 
 | 원본 | 표시 버전 | SHA-256 | 참조한 개념 | 우리 구현(재구현) |
 |---|---:|---|---|---|
-| `LIBRA World Manager.js` | 5.3.1 | `81FCEB0F…C774D8` | evidence gate off/soft/strict, rollback row tombstone, embedding cache/queue | `abstention.ts`(gate), `groundedPlanner.ts`(rollback 필터·budget/quota), `embeddingCache.ts` |
-| `RisuAI Agent v5.3.1.js` | 5.3.1 | `F8117404…10EC6` | recency decay, embedding batch 아이디어 | `groundedPlanner.ts` recency 가중, `voyage.ts` 배치/캐시 |
+| `LIBRA World Manager.js` | 5.3.1 | `81FCEB0F…C774D8` | evidence gate off/soft/strict, rollback row tombstone, embedding cache/queue | `packages/memory/src/abstention.ts`(gate), `planner.ts`(rollback 필터·budget/quota), `embedding-cache.ts` |
+| `RisuAI Agent v5.3.1.js` | 5.3.1 | `F8117404…10EC6` | recency decay, embedding batch 아이디어 | `packages/memory/src/planner.ts` recency 가중, `semantic.ts` Voyage 배치/캐시 |
 
 - Risu DB·pluginStorage·DOM·API 키 저장·직접 채팅 수정 코드는 가져오지 않음(금지선).
 - `risu_agents.js`(1.1.9, `1E1D24D1…770CC`)·`multiagent-full-v0.8.4`(`E5A89828…EA7A4`)는 후속 에이전트 런타임 연구용으로만 기록, 이번 Phase C 미포함.
+
+> 2026-07-13 감사: 위 독립 구현은 모노레포 전환 커밋 `03074d8`에서 삭제된 뒤 축소판만 남았고, 같은 날 현재 경로에 다시 이식했다. 표의 경로는 복구 후 실제 존재하는 파일만 가리킨다.
 
 ### Cupcake Provider Manager
 

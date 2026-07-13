@@ -1,0 +1,3 @@
+export interface AbstentionConfig{mode?:'off'|'soft'|'strict';minConfidence?:number;minMargin?:number}
+export interface AbstentionDecision{abstained:boolean;reason?:'insufficient_grounding'|'ambiguous_grounding'}
+export function decideAbstention(scores:readonly number[],config:AbstentionConfig={}):AbstentionDecision{const mode=config.mode??'soft';if(mode==='off')return{abstained:false};const first=scores[0]??0,second=scores[1]??0;if(first<(config.minConfidence??0.2))return{abstained:true,reason:'insufficient_grounding'};if(mode==='strict'&&first-second<(config.minMargin??0.1))return{abstained:true,reason:'ambiguous_grounding'};return{abstained:false};}
