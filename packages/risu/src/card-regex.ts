@@ -9,7 +9,7 @@ export interface RegexScript{in:string;out:string;type:string;flag?:string;flags
 const stageTypes:Record<CardRegexStage,Set<string>>={
   display:new Set(['editdisplay','edit_display','display']),
   output:new Set(['editoutput','edit_output','output']),
-  process:new Set(['editprocess','edit_process','process']),
+  process:new Set(['editprocess','edit_process','process','editrequest','edit_request','request']),
   input:new Set(['editinput','edit_input','input'])
 };
 const MAX_SCRIPTS=200,MAX_MATCHES=1000,MAX_TEXT=1_000_000,MAX_MS=25;

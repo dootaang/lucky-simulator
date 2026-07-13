@@ -7,6 +7,7 @@ describe('session editing and turn checkpoints',()=>{
 });
 
 describe('Risu-style alternatives and continuation',()=>{
+  it('stores a sidecar translation and response metadata without changing the original',async()=>{let calls=0;const provider={async complete(){calls+=1;return calls===1?{text:'<b>Hello</b> {{raw::face}}',usage:{inputTokens:12,outputTokens:4},model:'model-x',finishReason:'stop',generationId:'gen-1'}:{text:'<b>안녕</b> {{raw::face}}'};}};const session=new PlaySession({id:'translation',runtime:runtime(),preset,card:{name:'Guide'},provider,providerInfo:{provider:'test',model:'fallback'}});await session.send('hello');const original=session.messages.at(-1)!.content;await session.translateMessage(session.messages.at(-1)!.id);expect(session.messages.at(-1)?.content).toBe(original);expect(session.messages.at(-1)?.translation).toContain('{{raw::face}}');expect(session.promptRuns[0]).toMatchObject({provider:'test',model:'model-x',inputTokens:12,outputTokens:4,tokensEstimated:false,finishReason:'stop',generationId:'gen-1'});});
   it('restores generated alternatives after reopening a saved session',async()=>{
     const repository=createMemoryRepository<SessionSnapshot>();let call=0;
     const make=()=>new PlaySession({id:'persistent-alternates',runtime:runtime(),preset,card:{name:'Guide'},repository,provider:{async complete(){call+=1;return{text:`answer-${call}`};}}});
