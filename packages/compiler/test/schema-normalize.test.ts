@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import type {ParsedCard} from '@simbot/card';
-import {compileCard,normalizeCompiledSchema} from '../src/index.ts';
+import {compileCard,normalizeCompiledSchema,validateCompiledSemantics} from '../src/index.ts';
 
 const card:ParsedCard={format:'charx',source:'inn.charx',spec:'chara_card_v3',specVersion:'3',name:'용사여관',card:{data:{name:'용사여관',description:'객실 숙박과 체크인 체크아웃을 운영한다.'}},assets:[],containerEntries:[],sourceBytes:new Uint8Array([1]),modules:[]};
 
@@ -13,9 +13,14 @@ describe('compiled schema normalization',()=>{
     expect(value.issues.some(issue=>issue.path==='traffic')).toBe(true);
   });
 
+  it('rejects an empty inn shell even when its top-level arrays are valid',()=>{
+    const issues=validateCompiledSemantics({resources:[],entities:[],initialState:{}},['genre.inn']);
+    expect(issues.map(issue=>issue.path)).toEqual(expect.arrayContaining(['resources','entities.facility','entities.room','entities.menuItem','traffic']));
+  });
+
   it('asks the model to repair a structurally invalid but valid JSON response',async()=>{
     let calls=0;
-    const good={meta:{id:'inn'},resources:[],scales:[],ladders:[],entities:[],events:[],initialState:{day:1}};
+    const good={meta:{id:'inn'},resources:[{id:'food'}],scales:[],ladders:[],entities:[{type:'facility',instances:[{id:'tavern'}]},{type:'room',instances:[{no:'101',capacity:1,pricePerNight:1000}]},{type:'menuItem',instances:[{id:'meal',name:'식사',price:1000,consumes:{food:1}}]}],events:[],initialState:{day:1,resources:{food:10},facilities:{tavern:1}}};
     const result=await compileCard({parsed:card,provider:{async complete(){calls++;return{text:JSON.stringify(calls===1?{meta:{id:'bad'}}:good),events:[]};}}});
     expect(calls).toBe(2);
     expect(result.attempts[0]?.issues.length).toBeGreaterThan(0);

@@ -82,6 +82,12 @@ describe('통합 감사 수정 — 무결성·카드 태그 채널',()=>{
     const target=new PlaySession({id:'ib',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
     expect(()=>target.restore(legacy)).not.toThrow();
   });
+  it('컴파일 스키마가 바뀌면 같은 채팅의 낡은 엔진 상태를 복원하지 않는다',async()=>{
+    const source=new PlaySession({id:'schema-bound',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
+    await source.send('x');
+    const project=runtime().project,changed=new ProjectRuntime({...project,schema:{...project.schema,_compiler:{version:'0.2'},initialState:{day:1,gold:999,player:{}}}}),target=new PlaySession({id:'schema-bound',runtime:changed,preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
+    expect(()=>target.restore(source.snapshot())).toThrow('session_schema_incompatible');
+  });
   it('카드 태그 채널은 허용목록 밖 이벤트를 거부한다(방어 심층)',async()=>{
     const value=runtime();
     const session=new PlaySession({id:'ic',runtime:value,preset,card:{name:'C'},

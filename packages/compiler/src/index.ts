@@ -6,7 +6,7 @@ import { buildCompilerPrompt,buildRepairPrompt } from './compiler-prompt.ts';
 import { diagnoseCard } from './diagnosis.ts';
 import { mineCard } from './lua-mine.ts';
 import { patchSchemaWithMined, type SchemaPatch, type UnmatchedMinedValue } from './schema-patch.ts';
-import { normalizeCompiledSchema,type CompileIssue } from './schema-normalize.ts';
+import { normalizeCompiledSchema,validateCompiledSemantics,type CompileIssue } from './schema-normalize.ts';
 export * from './compiler-prompt.ts';export * from './diagnosis.ts';export * from './lua-mine.ts';export * from './schema-patch.ts';export * from './schema-normalize.ts';
 
 export interface CompileAttempt{attempt:number;raw:string;issues:string[];}
@@ -31,10 +31,11 @@ export async function compileCard({parsed,provider,signal}:CompileCardOptions):P
   for(let index=0;index<3;index++){
     const messages=repair?[{role:'system' as const,content:'당신은 JSON 스키마 교정기다.'},{role:'user' as const,content:repair}]:[{role:'system' as const,content:prompt.system},{role:'user' as const,content:prompt.user}];
     try{
-      const raw=(await provider.complete({prompt:{messages,assistantPrefill:'',trace:[],warnings:[]},format:'json',...(signal?{signal}:{})})).text,llm=parseOutput(raw),normalized=normalizeCompiledSchema(llm,moduleIds),patched=patchSchemaWithMined(normalized.schema,mined),validation=inspectGameRuntimeSchema(patched.schema),validationMessages=validation.map(value=>`${value.path} ${value.message}`);
+      const raw=(await provider.complete({prompt:{messages,assistantPrefill:'',trace:[],warnings:[]},format:'json',...(signal?{signal}:{})})).text,llm=parseOutput(raw),normalized=normalizeCompiledSchema(llm,moduleIds),patched=patchSchemaWithMined(normalized.schema,mined),semantic=validateCompiledSemantics(patched.schema,moduleIds),validation=inspectGameRuntimeSchema(patched.schema),validationMessages=[...validation.map(value=>`${value.path} ${value.message}`),...semantic.filter(value=>value.level==='error').map(value=>`${value.path} ${value.message}`)];
       attempts.push({attempt:index+1,raw,issues:validationMessages});
       if(validationMessages.length){repair=buildRepairPrompt(raw,validationMessages);last=new Error(validationMessages.join('; '));continue;}
-      const screens=screensFor(moduleIds),issues=normalized.issues,warnings=[...mined.warnings,...diagnosis.issues.map(value=>value.message),...issues.map(value=>value.message),...patched.unmatchedMinedValues.map(value=>`채굴했으나 연결 못함: ${value.path} — ${value.reason}`)];
+      patched.schema._compiler={version:'0.2'};
+      const screens=screensFor(moduleIds),issues=[...normalized.issues,...semantic.filter(value=>value.level!=='error')],warnings=[...mined.warnings,...diagnosis.issues.map(value=>value.message),...issues.map(value=>value.message),...patched.unmatchedMinedValues.map(value=>`채굴했으나 연결 못함: ${value.path} — ${value.reason}`)];
       return{compilerVersion:'0.2',schema:patched.schema,moduleIds,screens,navigation:screens.map(screen=>({id:screen.id,screenId:screen.id,label:screen.title})),patches:patched.patches,unmatchedMinedValues:patched.unmatchedMinedValues,issues,warnings,attempts,diagnosis,rulebookUsed:prompt.coverage.rulebookText};
     }catch(error){last=error;if(error instanceof DOMException&&error.name==='AbortError')throw error;repair=null;}
   }

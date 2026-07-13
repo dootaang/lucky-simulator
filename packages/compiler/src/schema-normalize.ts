@@ -109,3 +109,23 @@ export function normalizeCompiledSchema(input:Row,moduleIds:string[]){
   if(moduleIds.includes('genre.inn'))synthesizeInn(schema,issues);
   return{schema,issues};
 }
+
+export function validateCompiledSemantics(schema:Row,moduleIds:string[]):CompileIssue[]{
+  const issues:CompileIssue[]=[];
+  const error=(path:string,message:string)=>issues.push({level:'error',path,message,source:'normalizer'});
+  const resources=list<Row>(schema.resources),entities=list<Row>(schema.entities);
+  resources.forEach((row,index)=>{if(!text(row?.id))error(`resources[${index}].id`,'자원 id가 필요합니다.');});
+  entities.forEach((row,index)=>{
+    if(!text(row?.type))error(`entities[${index}].type`,'엔티티 type이 필요합니다.');
+    if(!Array.isArray(row?.instances))error(`entities[${index}].instances`,'엔티티 instances 배열이 필요합니다.');
+  });
+  if(!object(schema.initialState))error('initialState','초기 상태 객체가 필요합니다.');
+  if(moduleIds.includes('genre.inn')){
+    if(!resources.length)error('resources','여관 운영에 사용할 자원이 하나 이상 필요합니다.');
+    if(!instances(schema,'facility').length)error('entities.facility','여관 시설이 하나 이상 필요합니다.');
+    if(!instances(schema,'room').length)error('entities.room','숙박에 사용할 객실이 하나 이상 필요합니다.');
+    if(!instances(schema,'menuItem').length)error('entities.menuItem','영업에 사용할 메뉴가 하나 이상 필요합니다.');
+    if(!object(schema.traffic))error('traffic','영업·숙박 규칙을 구성할 수 없습니다. 시설, 객실, 메뉴를 보완하세요.');
+  }
+  return issues;
+}
