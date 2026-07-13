@@ -6,16 +6,17 @@
   export type MobileSettingsTab = 'model' | 'prompt' | 'persona' | 'other';
   let {
     cardName = '카드를 선택하세요', cards, index, activeId, hasCard = false,
-    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onsettings,
+    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onexport, onimport, onsettings,
   }: {
     cardName?: string; cards: CardLibraryMeta[]; index: ChatIndex; activeId: string | null; hasCard?: boolean;
     onadd: () => void; oncard: (id: string) => void; onchat: (id: string) => void;
-    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void;
+    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void; onexport?: () => void; onimport?: (file: File) => void;
     onsettings: (tab: MobileSettingsTab) => void;
   } = $props();
 
   let open = $state(false);
   let view = $state<'home' | 'cards' | 'chats' | 'settings'>('home');
+  let importInput = $state<HTMLInputElement>();
   const close = () => { open = false; view = 'home'; };
   const openSettings = (tab: MobileSettingsTab) => { close(); onsettings(tab); };
 </script>
@@ -62,6 +63,7 @@
     {:else}
       <section class="items">
         {#if hasCard && onnewchat}<button class="create" onclick={() => { close(); onnewchat?.(); }}><Icon name="plus"/> 새 채팅</button>{/if}
+        {#if hasCard&&onexport&&onimport}<div class="transfer"><button onclick={onexport}>현재 채팅 내보내기</button><button onclick={()=>importInput?.click()}>채팅 가져오기</button><input class="hidden" bind:this={importInput} type="file" accept="application/json,.json" onchange={(event)=>{const input=event.currentTarget,file=input.files?.[0];if(file)onimport?.(file);input.value='';}}/></div>{/if}
         {#if index.chats.length === 0}<p>봇을 선택하면 채팅 목록이 표시됩니다.</p>{/if}
         {#each index.chats as chat}
           <div class="chatrow" class:active={chat.chatId === index.activeChatId}>
@@ -84,7 +86,7 @@
     .drawer-head{height:56px;display:grid;grid-template-columns:48px 1fr 48px;align-items:center;border-bottom:1px solid #30343d}.drawer-head strong{align-self:center}.drawer-head button{height:48px;display:grid;place-items:center}.drawer-head strong:first-child{grid-column:1/3;padding-left:16px}.drawer-head .close{font-size:26px;color:#9aa1ae}
     .home-menu,.list-menu{display:grid;padding:10px}.home-menu button,.list-menu button{min-height:62px;display:grid;grid-template-columns:34px minmax(0,1fr) 24px;align-items:center;gap:8px;padding:10px;border-radius:8px;text-align:left}.home-menu button:hover,.list-menu button:hover{background:#292d36}.home-menu .settings-entry{margin-bottom:10px;border:1px solid #343a47;background:#20242c}.home-menu span{display:grid;gap:3px}.home-menu b{font-size:14px}.home-menu small{color:#858c99}
     .items{overflow-y:auto;padding:10px}.items>button{width:100%;min-height:50px;display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px;text-align:left}.items>button:hover,.items>button.active{background:#292d36}.items .create{border:1px dashed #4b5260;margin-bottom:8px;justify-content:center}.avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:6px;background:#333844}.items small{margin-left:auto;color:#d59d6a}.items p{color:#9299a7;font-size:13px}
-    .chatrow{display:flex;align-items:center;gap:2px;border-radius:8px}.chatrow.active{background:#2a3040}.chatrow .pick{flex:1;display:flex;align-items:center;gap:8px;padding:10px;text-align:left}.chatrow .pick small{margin-left:auto;color:#7d8596;font-size:11px}.chatrow .row-action{color:#8a92a2;padding:8px;border-radius:6px}.chatrow .row-action:hover{color:#fff;background:#333b4d}
+    .transfer{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}.transfer button{padding:8px;border:1px solid #353b48;border-radius:6px;color:#aeb6c5}.hidden{display:none}.chatrow{display:flex;align-items:center;gap:2px;border-radius:8px}.chatrow.active{background:#2a3040}.chatrow .pick{flex:1;display:flex;align-items:center;gap:8px;padding:10px;text-align:left}.chatrow .pick small{margin-left:auto;color:#7d8596;font-size:11px}.chatrow .row-action{color:#8a92a2;padding:8px;border-radius:6px}.chatrow .row-action:hover{color:#fff;background:#333b4d}
     @keyframes slide{from{transform:translateX(-100%)}to{transform:none}}
   }
   @media(prefers-reduced-motion:reduce){.drawer{animation:none}}

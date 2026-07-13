@@ -6,6 +6,23 @@ describe('session editing and turn checkpoints',()=>{
   it('rerolls from the prior checkpoint, keeps one user turn, and exposes the prior alternate',async()=>{let call=0;const session=new PlaySession({id:'reroll',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){call+=1;return{text:`answer-${call}`,events:[{id:'progression/gain',params:{source:'train'}}]};}}});await session.send('one');await session.send('two');const previous=session.snapshot();const result=await session.reroll();expect(result.response.text).toBe('answer-3');expect(session.messages.filter((message)=>message.role==='user')).toHaveLength(2);expect(session.messages.at(-1)?.content).toBe('answer-3');expect((session.runtime.state.player as Record<string,unknown>).exp).toBe(4);expect(session.alternateCount).toBe(1);expect(session.checkpointDepth).toBe(2);session.showAlternate(0);expect(session.messages).toEqual(previous.messages);expect(session.runtime.snapshot()).toEqual(previous.engine);expect(session.lastLogs).toEqual(previous.lastLogs);});
 });
 
+describe('Risu-style alternatives and continuation',()=>{
+  it('restores generated alternatives after reopening a saved session',async()=>{
+    const repository=createMemoryRepository<SessionSnapshot>();let call=0;
+    const make=()=>new PlaySession({id:'persistent-alternates',runtime:runtime(),preset,card:{name:'Guide'},repository,provider:{async complete(){call+=1;return{text:`answer-${call}`};}}});
+    const first=make();await first.send('hello');await first.reroll();expect(first.alternateCount).toBe(1);
+    const restored=make();restored.restore((await repository.get('persistent-alternates'))!.payload);
+    expect(restored.alternateCount).toBe(1);await restored.showAlternate(0);expect(restored.messages.at(-1)?.content).toBe('answer-1');
+  });
+  it('sends a continuation instruction without storing a fake user message',async()=>{
+    let promptText='';const session=new PlaySession({id:'continue',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete({prompt}){promptText=prompt.messages.map(message=>message.content).join('\n');return{text:'continued'};}}});
+    await session.continueGeneration();
+    expect(promptText).toContain('Continue the last assistant response');
+    expect(session.messages.map(message=>message.role)).toEqual(['assistant']);
+    expect(session.messages[0]?.content).toBe('continued');
+  });
+});
+
 describe('card tag translation channel',()=>{
   it('dispatches registered card events, strips translated tags, and blocks button-only events',async()=>{const value=new ProjectRuntime({projectId:'inn',schema:{initialState:{day:1,gold:0,resources:{food:0,drink:0},facilities:{},staff:[],rooms:{},npcs:{},player:{}}},screens:[],navigation:[],content:{},featureToggles:{},moduleIds:['genre.inn']}),session=new PlaySession({id:'tagged',runtime:value,preset,card:{name:'Guide'},tagTranslator:()=>({residue:'tag-free narrative',events:[{id:'gold_delta',params:{amount:50}},{id:'traffic_wave',params:{wave:'lunch'}}]}),provider:{async complete(){return{text:'story [ysp_gold::50] [ysp_wave]'};}}});const result=await session.send('play');expect((value.state as Record<string,unknown>).gold).toBe(50);expect(result.logs).toEqual(expect.arrayContaining([expect.objectContaining({ok:true,event:'gold_delta'}),expect.objectContaining({ok:false,event:'traffic_wave',reason:'card_tag_blocked'})]));expect(session.messages.at(-1)?.content).toBe('tag-free narrative');expect(session.memory.all().some((record)=>record.id.startsWith('engine:0:gold_delta:'))).toBe(true);});
   it('keeps the original assistant text when no translator is injected',async()=>{const session=new PlaySession({id:'plain',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){return{text:'plain [ysp_gold::50]'};}}});await session.send('play');expect(session.messages.at(-1)?.content).toBe('plain [ysp_gold::50]');});
