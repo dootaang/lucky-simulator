@@ -1,0 +1,2 @@
+import{describe,expect,it}from'vitest';import type{CardAsset}from'@simbot/card';import{buildNpcClusters}from'./npc-gallery.ts';const asset=(name:string):CardAsset=>({name,type:'emotion',ext:'png',uri:'',mime:'image/png',found:true,size:1,bytes:Uint8Array.of(1)});
+describe('NPC sprite clusters',()=>{it('groups silvia_smile and silvia_default as one NPC',()=>{const groups=buildNpcClusters([asset('silvia_smile'),asset('silvia_default')]);expect(groups).toHaveLength(1);expect(groups[0]).toMatchObject({charId:'silvia',emotions:['default','smile']});});});
