@@ -5,12 +5,12 @@
 
   export type MobileSettingsTab = 'model' | 'prompt' | 'persona' | 'other';
   let {
-    cardName = '카드를 선택하세요', cards, index, activeId, hasCard = false,
-    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onexport, onimport, oninspect, onsettings,
+    cardName = '카드를 선택하세요', cards, index, activeId, hasCard = false, compiling = false, compiled = false,
+    onadd, oncard, onchat, onnewchat, onrenamechat, onremovechat, onexport, onimport, oncompile, oninspect, onsettings,
   }: {
-    cardName?: string; cards: CardLibraryMeta[]; index: ChatIndex; activeId: string | null; hasCard?: boolean;
+    cardName?: string; cards: CardLibraryMeta[]; index: ChatIndex; activeId: string | null; hasCard?: boolean; compiling?: boolean; compiled?: boolean;
     onadd: () => void; oncard: (id: string) => void; onchat: (id: string) => void;
-    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void; onexport?: () => void; onimport?: (file: File) => void; oninspect?: () => void;
+    onnewchat?: () => void; onrenamechat?: (id: string) => void; onremovechat?: (id: string) => void; onexport?: () => void; onimport?: (file: File) => void; oncompile?: () => void; oninspect?: () => void;
     onsettings: (tab: MobileSettingsTab) => void;
   } = $props();
 
@@ -43,6 +43,7 @@
         <button class="settings-entry" onclick={() => view = 'settings'}><Icon name="settings"/><span><b>설정</b><small>모델 · 프롬프트 · 페르소나</small></span><Icon name="right"/></button>
         <button onclick={() => view = 'cards'}><Icon name="user"/><span><b>봇 목록</b><small>{cards.length}개</small></span><Icon name="right"/></button>
         <button onclick={() => view = 'chats'}><Icon name="message"/><span><b>채팅 목록</b><small>{index.chats.length}개</small></span><Icon name="right"/></button>
+        {#if hasCard&&oncompile}<button class="compile-entry" disabled={compiling} onclick={()=>{close();oncompile?.();}}><Icon name="star"/><span><b>{compiling?'엔진 컴파일 중…':compiled?'엔진 재컴파일':'엔진 컴파일'}</b><small>{compiled?'승인된 엔진 적용 중':'봇카드를 시뮬 엔진으로 변환'}</small></span><Icon name="right"/></button>{/if}
         {#if hasCard&&oninspect}<button onclick={()=>{close();oninspect?.();}}><Icon name="badge"/><span><b>세션 검사기</b><small>프롬프트 · 기억 · 엔진 증거</small></span><Icon name="right"/></button>{/if}
       </nav>
     {:else if view === 'settings'}
