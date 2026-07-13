@@ -62,6 +62,7 @@
             <span class="avatar">{#if card.thumbnail}<img src={card.thumbnail} alt=""/>{:else}{card.name.slice(0, 1)}{/if}</span><span>{card.name}</span>{#if card.missing}<small>재연결 필요</small>{/if}
           </button>
         {/each}
+        <button class="create create-bottom" onclick={() => { close(); onadd(); }}><Icon name="plus"/> 봇카드 가져오기</button>
       </section>
     {:else}
       <section class="items">
@@ -93,4 +94,5 @@
     @keyframes slide{from{transform:translateX(-100%)}to{transform:none}}
   }
   @media(prefers-reduced-motion:reduce){.drawer{animation:none}}
+  @media(max-width:999px){.items>.create:first-child:not(.create-bottom){display:none}.items .create-bottom{margin-top:8px;margin-bottom:0}}
 </style>
