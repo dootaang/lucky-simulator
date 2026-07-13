@@ -7,7 +7,7 @@
   import { toFactLine } from './FactReceipt.svelte';
   import { presentNarrativeIssues } from './narrative-issues';
 
-  let {session,version,greetings=[],cardName,userName='나',model,waiting=false,assets=[],assetWidth=32,portraitFor,onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;greetings?:string[];cardName:string;userName?:string;model:string;waiting?:boolean;assets?:CardAsset[];assetWidth?:number;portraitFor:(id:string,emotion?:string)=>string|null;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
+  let {session,version,greetings=[],cardName,userName='나',model,waiting=false,assets=[],assetWidth=32,portraitFor,onassetneeded=()=>{},onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;greetings?:string[];cardName:string;userName?:string;model:string;waiting?:boolean;assets?:CardAsset[];assetWidth?:number;portraitFor:(id:string,emotion?:string)=>string|null;onassetneeded?:(name:string)=>void;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
   let editing=$state<string|null>(null),draft=$state(''),rerolling=$state(false),translating=$state<string|null>(null),translationShown=$state<Record<string,boolean>>({}),detailsFor=$state<string|null>(null),alternateIndex=$state(0),greetingIndex=$state(0),latest=$state.raw<SessionSnapshot|null>(null),lastSessionId=$state(''),live=$state(0),menuFor=$state<string|null>(null),issuesOpen=$state(false);
   $effect(()=>{void version;if(lastSessionId!==session.id){lastSessionId=session.id;alternateIndex=session.alternateCount;greetingIndex=Math.max(0,greetings.indexOf(session.messages[0]?.content??''));latest=null;issuesOpen=false;cancel();return;}if(alternateIndex>session.alternateCount)alternateIndex=session.alternateCount;});
   $effect(()=>session.subscribe(()=>{live+=1;}));
@@ -15,7 +15,7 @@
   const guard=(work:()=>Promise<void>)=>work().catch(e=>onerror(e instanceof Error?e.message:String(e)));
   function name(message:ChatMessage){return message.role==='user'?userName:cardName;}
   export function displayMacros(content:string,user:string,char:string){return content.replace(/{{\s*user\s*}}/gi,user).replace(/{{\s*char\s*}}/gi,char);}
-  function rendered(message:ChatMessage){return renderDisplayContent(message.content,userName,cardName,assets,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1).html;}
+  function rendered(message:ChatMessage){const result=renderDisplayContent(message.content,userName,cardName,assets,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1);for(const warning of result.warnings)if(warning.code==='asset_missing')onassetneeded(warning.name);return result.html;}
   function cancel(){editing=null;draft='';}
   async function save(message:ChatMessage){if(draft.trim()&&draft!==message.content)await session.editMessage(message.id,draft);cancel();onchange();}
   async function toggleEdit(message:ChatMessage){if(editing===message.id){await save(message);return;}editing=message.id;draft=message.content;}

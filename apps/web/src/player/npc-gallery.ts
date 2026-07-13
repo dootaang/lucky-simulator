@@ -16,7 +16,7 @@ export function parseSpriteName(asset:Pick<CardAsset,'name'|'ext'>,owners:readon
 }
 
 export function buildNpcClusters(assets:readonly CardAsset[]):NpcCluster[]{
-  const pictures=assets.filter(image),owners=[...new Set(pictures.map(asset=>defaultOwner(stem(asset))).filter((value):value is string=>!!value))],groups=new Map<string,NpcSprite[]>();
+  const seen=new Set<string>(),pictures=assets.filter(image).filter(asset=>{const value=key(stem(asset));if(seen.has(value))return false;seen.add(value);return true;}),owners=[...new Set(pictures.map(asset=>defaultOwner(stem(asset))).filter((value):value is string=>!!value))],groups=new Map<string,NpcSprite[]>();
   for(const asset of pictures){const parsed=parseSpriteName(asset,owners);if(parsed.charId==='기타')continue;const sprites=groups.get(parsed.charId)??[];sprites.push({asset,emotion:parsed.emotion,variant:parsed.variant,command:parsed.command});groups.set(parsed.charId,sprites);}
   return[...groups].map(([charId,sprites])=>({charId,sprites,emotions:[...new Set(sprites.map(sprite=>sprite.emotion))].sort((a,b)=>emotionRank(a)-emotionRank(b)||a.localeCompare(b))})).sort((a,b)=>a.charId.localeCompare(b.charId));
 }

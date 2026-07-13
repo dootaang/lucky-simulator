@@ -1,20 +1,23 @@
-import { parseCard, type CardFormat, type ParsedCard } from '@simbot/card';
+import { parseCard,readIndexedZipEntry,type CardAsset,type CardFormat,type ParsedCard,type ZipAssetIndex } from '@simbot/card';
 import type { SessionRepository } from '@simbot/persistence';
 import type { CompileResult } from '@simbot/compiler';
-import type { CardBinaryStore } from './card-binary-store';
+import type { AssetModuleStore,CardBinaryStore } from './card-binary-store';
 
-export interface CardLibraryEntry { projectId:string; name:string; format:CardFormat; bytes?:string; binary?:'external'; size?:number; thumbnail?:string; addedAt:number; }
+export interface CardLibraryEntry { projectId:string; name:string; format:CardFormat; bytes?:string; binary?:'external'; size?:number; thumbnail?:string; boundModuleIds?:string[]; addedAt:number; }
 export interface CardLibraryMeta { projectId:string; name:string; format:CardFormat|null; thumbnail?:string; addedAt:number; missing?:boolean; }
 interface CardLibraryIndex { contract:'simbot-card-library/0.1'; cards:CardLibraryMeta[]; }
+export interface AssetModuleMeta{id:string;name:string;namespace:string;size:number;assetCount:number;fingerprint:string;addedAt:number}
+interface AssetModuleEntry extends AssetModuleMeta{index:ZipAssetIndex}
+interface AssetModuleIndex{contract:'simbot-asset-module-library/0.1';modules:AssetModuleMeta[]}
 
 // CHUNK는 String.fromCharCode 스프레드 인자 상한(엔진별 상이)을 넉넉히 밑돌게 8K로(감사 #6).
-const INDEX_ID='cardlib:index', MAX_INLINE_BYTES=10*1024*1024, CHUNK=0x2000;
+const INDEX_ID='cardlib:index',MODULE_INDEX_ID='modulelib:index', MAX_INLINE_BYTES=10*1024*1024, CHUNK=0x2000;
 const repo=<T>(repository:SessionRepository<unknown>)=>repository as SessionRepository<T>;
 export function bytesToBase64(bytes:Uint8Array){let binary='';for(let i=0;i<bytes.length;i+=CHUNK)binary+=String.fromCharCode(...bytes.subarray(i,i+CHUNK));return btoa(binary);}
 export function base64ToBytes(value:string){const binary=atob(value),out=new Uint8Array(binary.length);for(let i=0;i<binary.length;i+=1)out[i]=binary.charCodeAt(i);return out;}
 export class CardLibrary {
   private readonly cache=new Map<string,ParsedCard>();
-  constructor(private readonly repository:SessionRepository<unknown>,private readonly binaries?:CardBinaryStore){}
+  constructor(private readonly repository:SessionRepository<unknown>,private readonly binaries?:CardBinaryStore,private readonly moduleBinaries?:AssetModuleStore){}
   async nextInstance(projectId:string){const index=await this.index();if(!index.cards.some(card=>card.projectId===projectId))return{projectId,nameSuffix:''};let n=2;while(index.cards.some(card=>card.projectId===`${projectId}:${n}`))n+=1;return{projectId:`${projectId}:${n}`,nameSuffix:` (${n})`};}
   async saveCard(parsed:ParsedCard,projectId:string,nameSuffix='',thumbnail?:string){const base={projectId,name:`${parsed.name||projectId}${nameSuffix}`,format:parsed.format,size:parsed.sourceBytes.length,...(thumbnail?{thumbnail}:{}),addedAt:Date.now()};let entry:CardLibraryEntry;if(this.binaries){try{await this.binaries.put(projectId,parsed.sourceBytes);entry={...base,binary:'external'};}catch{return false;}}else{if(parsed.sourceBytes.length>MAX_INLINE_BYTES)return false;entry={...base,bytes:bytesToBase64(parsed.sourceBytes)};}await repo<CardLibraryEntry>(this.repository).put({id:`cardlib:${projectId}`,schemaHash:'cardlib',title:entry.name,updatedAt:entry.addedAt,payload:entry});const index=await this.index();index.cards=index.cards.filter(card=>card.projectId!==projectId);const meta:CardLibraryMeta={projectId:entry.projectId,name:entry.name,format:entry.format,...(entry.thumbnail?{thumbnail:entry.thumbnail}:{}),addedAt:entry.addedAt};index.cards.unshift(meta);await this.saveIndex(index);this.remember(projectId,parsed);return true;}
   async listCards(){return (await this.index()).cards;}
@@ -24,11 +27,24 @@ export class CardLibrary {
   async saveCompilation(projectId:string,result:CompileResult){await repo<CompileResult>(this.repository).put({id:`cardlib:${projectId}:compiler`,schemaHash:'cardlib-compiler',title:'Engine compilation',updatedAt:Date.now(),payload:structuredClone(result)});}
   async loadCompilation(projectId:string){return (await repo<CompileResult>(this.repository).get(`cardlib:${projectId}:compiler`))?.payload??null;}
   async saveThumbnail(projectId:string,thumbnail:string){const row=await repo<CardLibraryEntry>(this.repository).get(`cardlib:${projectId}`);if(!row)return;row.payload.thumbnail=thumbnail;row.updatedAt=Date.now();await repo<CardLibraryEntry>(this.repository).put(row);const index=await this.index(),card=index.cards.find(value=>value.projectId===projectId);if(card){card.thumbnail=thumbnail;await this.saveIndex(index);}}
+  async saveAssetModule(blob:Blob,index:ZipAssetIndex,name:string){if(!this.moduleBinaries)throw new Error('asset_module_storage_unavailable');const id=`asset-module:${index.fingerprint.slice(0,24)}`,namespace=moduleNamespace(name,index.fingerprint),entry:AssetModuleEntry={id,name,namespace,size:blob.size,assetCount:index.entries.length,fingerprint:index.fingerprint,addedAt:Date.now(),index};await this.moduleBinaries.put(id,blob);await repo<AssetModuleEntry>(this.repository).put({id:`modulelib:${id}`,schemaHash:'asset-module',title:name,updatedAt:entry.addedAt,payload:entry});const library=await this.moduleIndex();library.modules=[entry,...library.modules.filter(value=>value.id!==id)];await this.saveModuleIndex(library);return entry as AssetModuleMeta;}
+  async listAssetModules(){return(await this.moduleIndex()).modules;}
+  async exportAssetModule(moduleId:string){const[row,blob]=await Promise.all([repo<AssetModuleEntry>(this.repository).get(`modulelib:${moduleId}`),this.moduleBinaries?.get(moduleId)]);return row&&blob?{meta:row.payload as AssetModuleMeta,blob}:null;}
+  async bindAssetModule(projectId:string,moduleId:string){const card=await repo<CardLibraryEntry>(this.repository).get(`cardlib:${projectId}`),module=await repo<AssetModuleEntry>(this.repository).get(`modulelib:${moduleId}`);if(!card)throw new Error('card_not_found');if(!module)throw new Error('asset_module_not_found');card.payload.boundModuleIds=[...new Set([...(card.payload.boundModuleIds??[]),moduleId])];card.updatedAt=Date.now();await repo<CardLibraryEntry>(this.repository).put(card);}
+  async unbindAssetModule(projectId:string,moduleId:string){const card=await repo<CardLibraryEntry>(this.repository).get(`cardlib:${projectId}`);if(!card)return;card.payload.boundModuleIds=(card.payload.boundModuleIds??[]).filter(id=>id!==moduleId);card.updatedAt=Date.now();await repo<CardLibraryEntry>(this.repository).put(card);}
+  async boundAssetModules(projectId:string){const card=await repo<CardLibraryEntry>(this.repository).get(`cardlib:${projectId}`),result:AssetModuleEntry[]=[];for(const id of card?.payload.boundModuleIds??[]){const row=await repo<AssetModuleEntry>(this.repository).get(`modulelib:${id}`);if(row)result.push(row.payload);}return result;}
+  async moduleAssets(projectId:string):Promise<CardAsset[]>{const modules=await this.boundAssetModules(projectId);return modules.flatMap(module=>module.index.entries.map(entry=>{const file=entry.path.split('/').at(-1)??entry.path,ext=file.match(/\.([^.]+)$/)?.[1]?.toLowerCase()??'',name=file.replace(/\.[^.]+$/,'');return{name,type:'module-asset',ext,uri:`module://${module.id}/${entry.path}`,path:entry.path,mime:imageMime(ext),found:true,size:entry.size,bytes:null,moduleId:module.id,moduleNamespace:module.namespace};}));}
+  async loadModuleAsset(asset:CardAsset){if(!asset.moduleId||!asset.path||!this.moduleBinaries)return null;const[row,blob]=await Promise.all([repo<AssetModuleEntry>(this.repository).get(`modulelib:${asset.moduleId}`),this.moduleBinaries.get(asset.moduleId)]),entry=row?.payload.index.entries.find(value=>value.path===asset.path);return blob&&entry?readIndexedZipEntry(blob,entry):null;}
   async removeCard(projectId:string){this.cache.delete(projectId);await this.repository.delete(`cardlib:${projectId}`);await this.repository.delete(`cardlib:${projectId}:compiler`);await this.binaries?.delete(projectId);const index=await this.index();index.cards=index.cards.filter(card=>card.projectId!==projectId);await this.saveIndex(index);}
   private remember(projectId:string,parsed:ParsedCard){this.cache.delete(projectId);this.cache.set(projectId,parsed);while(this.cache.size>3)this.cache.delete(this.cache.keys().next().value!);}
   private async index(){const row=await repo<CardLibraryIndex>(this.repository).get(INDEX_ID);return row?.payload.contract==='simbot-card-library/0.1'?structuredClone(row.payload):{contract:'simbot-card-library/0.1' as const,cards:[]};}
   private async saveIndex(payload:CardLibraryIndex){await repo<CardLibraryIndex>(this.repository).put({id:INDEX_ID,schemaHash:'cardlib',title:'Card library',updatedAt:Date.now(),payload});}
+  private async moduleIndex(){const row=await repo<AssetModuleIndex>(this.repository).get(MODULE_INDEX_ID);return row?.payload.contract==='simbot-asset-module-library/0.1'?structuredClone(row.payload):{contract:'simbot-asset-module-library/0.1' as const,modules:[]};}
+  private async saveModuleIndex(payload:AssetModuleIndex){await repo<AssetModuleIndex>(this.repository).put({id:MODULE_INDEX_ID,schemaHash:'asset-module-library',title:'Asset module library',updatedAt:Date.now(),payload});}
 }
+
+function moduleNamespace(name:string,fingerprint:string){return(name.replace(/\.[^.]+$/,'').normalize('NFKC').toLowerCase().replace(/[^a-z0-9가-힣]+/g,'-').replace(/^-|-$/g,'')||`module-${fingerprint.slice(0,8)}`);}
+function imageMime(ext:string){return({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',avif:'image/avif'}as Record<string,string>)[ext]??'application/octet-stream';}
 
 export function alternateForward(current:number,last:number){return current<last?{kind:'show' as const,index:current+1}:{kind:'reroll' as const};}
 export function summarizeEngineState(state:Record<string,unknown>){const rows:Array<{label:string;value:string}>=[];if('day'in state)rows.push({label:'일차',value:String(state.day)});if('gold'in state)rows.push({label:'골드',value:Number(state.gold).toLocaleString()});const resources=(state.resources&&typeof state.resources==='object'?state.resources:{})as Record<string,unknown>;if('food'in resources)rows.push({label:'식자재',value:String(resources.food)});if('drink'in resources)rows.push({label:'주류',value:String(resources.drink)});return rows;}

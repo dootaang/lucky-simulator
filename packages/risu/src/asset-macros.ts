@@ -1,4 +1,4 @@
-export interface AssetMacroAsset{name:string;type:string;mime:string;bytes:Uint8Array|null}
+export interface AssetMacroAsset{name:string;type:string;mime:string;bytes:Uint8Array|null;url?:string;moduleNamespace?:string}
 export interface AssetMacroWarning{code:'asset_missing'|'unsupported_asset_macro';macro:string;name:string}
 export interface AssetMacroResult{content:string;warnings:AssetMacroWarning[]}
 
@@ -9,17 +9,19 @@ const pattern=/{{\s*([a-z-]+)\s*::\s*([^{}]+?)\s*}}/gims;
 export function normalizeAssetName(value:string){return value.normalize('NFKC').toLowerCase().replace(/[\s./\\]+/g,'-');}
 
 function dataUrl(asset:AssetMacroAsset){
+  if(asset.url)return asset.url;
   if(!asset.bytes)return null;
   let binary='';
   for(let index=0;index<asset.bytes.length;index+=0x2000)binary+=String.fromCharCode(...asset.bytes.subarray(index,index+0x2000));
   return `data:${asset.mime||'application/octet-stream'};base64,${btoa(binary)}`;
 }
 const bareImg=/<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/gis;
-function legacyBare(content:string,assets:readonly AssetMacroAsset[]):AssetMacroResult{const warnings:AssetMacroWarning[]=[],indexed=new Map(assets.map(asset=>[normalizeAssetName(asset.name||asset.type),asset]));return{content:content.replace(bareImg,(original:string,_quote:string,source:string)=>{const name=source.trim();if(/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(name))return original;const asset=indexed.get(normalizeAssetName(name)),url=asset&&dataUrl(asset);if(!url){warnings.push({code:'asset_missing',macro:'img',name});return'';}return original.replace(source,url);}),warnings};}
+function assetIndex(assets:readonly AssetMacroAsset[]){const indexed=new Map<string,AssetMacroAsset>();for(const asset of assets){const name=normalizeAssetName(asset.name||asset.type);if(!indexed.has(name))indexed.set(name,asset);if(asset.moduleNamespace){const scoped=normalizeAssetName(`${asset.moduleNamespace}/${asset.name||asset.type}`);if(!indexed.has(scoped))indexed.set(scoped,asset);}}return indexed;}
+function legacyBare(content:string,assets:readonly AssetMacroAsset[]):AssetMacroResult{const warnings:AssetMacroWarning[]=[],indexed=assetIndex(assets);return{content:content.replace(bareImg,(original:string,_quote:string,source:string)=>{const name=source.trim();if(/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(name))return original;const asset=indexed.get(normalizeAssetName(name)),url=asset&&dataUrl(asset);if(!url){warnings.push({code:'asset_missing',macro:'img',name});return'';}return original.replace(source,url);}),warnings};}
 
 export function resolveAssetMacros(content:string,assets:readonly AssetMacroAsset[],options:{bare?:boolean}={bare:true}):AssetMacroResult{
   const warnings:AssetMacroWarning[]=[];
-  const indexed=new Map(assets.map(asset=>[normalizeAssetName(asset.name||asset.type),asset]));
+  const indexed=assetIndex(assets);
   const resolved=content.replace(pattern,(original:string,rawMacro:string,rawName:string)=>{
     const macro=rawMacro.toLowerCase(),name=rawName.trim();
     if(!known.has(macro)){warnings.push({code:'unsupported_asset_macro',macro,name});return original;}

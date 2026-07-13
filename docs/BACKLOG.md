@@ -45,7 +45,8 @@
 - [x] 카드 유형을 대화형·선언형 시뮬·스크립트 보조형·에셋 팩으로 분류
 - [ ] 규칙 충돌을 원문 위치와 함께 보고
 - [x] 외부 source ref·additional asset·내장 모듈 의존성 1차 탐지
-- [ ] 외부 에셋 팩을 해시·namespace로 실제 연결
+- [x] 외부 에셋 팩을 ZIP 목차 지문·namespace로 카드에 실제 연결하고 화면 단위 지연 읽기
+- [ ] 외부 에셋 팩 원본 전체 바이트 해시를 스트리밍 계산해 무결성 검증에 사용 (현재는 중앙 목차 SHA-256)
 
 완료 기준: Alternate Hunters V2를 넣었을 때 내장 모듈, Lua, 로어 누락, 기능 토글, 에셋 명명법을 컴파일 전에 확인할 수 있다.
 
@@ -118,7 +119,8 @@
 ### 현재 구현 상태 — C1 완료 (2026-07-12)
 
 - [x] 새 호환 경계부터 TypeScript strict 계약을 사용하고 기존 JavaScript와 공존
-- [x] `RisuCompatibilityEnvelope`, `Persona`, `PromptPreset`, `ModuleBinding`, provenance 타입 확정
+- [x] `RisuCompatibilityEnvelope`, `Persona`, `PromptPreset`, provenance 타입 확정
+- [ ] 범용 `ModuleBinding` 계약 확정 (현재 구현은 에셋 전용 `boundModuleIds`만 제공)
 - [x] 런타임 구조 검사와 JSON Schema 3종 추가
 - [x] 기존 CharX·PNG·JSON·Risum 파서를 호환 봉투에 연결
 - [x] 원본 바이트 참조와 CharX/PNG/Risum 컨테이너 항목 색인
