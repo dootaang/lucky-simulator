@@ -14,7 +14,8 @@
 <svelte:window onkeydown={(event)=>{if(event.key!=='Escape')return;if(sideOpen)onsideclose();else if(page==='library'&&hasCard)page='chat';}}/>
 <header class="appbar">
   {#if sideOpen}<button aria-label="메뉴 닫기" onclick={onsideclose}><Icon name="left"/></button><strong>메뉴</strong><button aria-label="전체 설정" onclick={settings}><Icon name="settings"/></button>
-  {:else if page==='chat'&&hasCard}<button aria-label="봇 목록" onclick={()=>page='library'}><Icon name="left"/></button><strong>{cardName}</strong><button aria-label="현재 봇 메뉴" onclick={onsideopen}><Icon name="list"/></button>
+  <!-- 좌우가 둘 다 목록 아이콘이면 무엇이 열릴지 알 수 없다. 왼쪽=봇 목록(햄버거), 오른쪽=현재 봇 메뉴(더보기)로 나눈다. -->
+  {:else if page==='chat'&&hasCard}<button aria-label="봇 목록" onclick={()=>page='library'}><Icon name="list"/></button><strong>{cardName}</strong><button aria-label="현재 봇 메뉴" onclick={onsideopen}><Icon name="ellipsis"/></button>
   {:else}{#if hasCard}<button aria-label="채팅으로 돌아가기" onclick={()=>page='chat'}><Icon name="left"/></button>{:else}<span class="brand">★</span>{/if}<strong>봇 목록</strong><button aria-label="전체 설정" onclick={settings}><Icon name="settings"/></button>{/if}
 </header>
 
