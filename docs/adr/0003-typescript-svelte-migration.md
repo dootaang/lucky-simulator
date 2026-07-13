@@ -1,4 +1,4 @@
-# ADR 0002: TypeScript·Svelte 전면 마이그레이션
+# ADR 0003: TypeScript·Svelte 전면 마이그레이션
 
 - 상태: 승인
 - 결정일: 2026-07-12

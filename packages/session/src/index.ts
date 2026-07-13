@@ -92,6 +92,6 @@ export class PlaySession{
  async #compile(query:string,continuation=false,signal?:AbortSignal){const retrieval=await planGroundedMemory(this.memory,query,{atTurn:this.#turn,provider:this.#embeddingProvider,viewer:{},limit:8,budgetTokens:1000,perKindQuota:3,signal}),memory=retrieval.records.map((value)=>`- ${value.text} [${value.evidence.map((item)=>`${item.kind}:${item.id}`).join(', ')}]`).join('\n');let chat=this.#messages.slice(-this.#historyWindow).map(({role,content})=>({role,content}));if(continuation)chat.push({role:'user' as const,content:query});/* maxContext는 한·영 가중 근사 토큰 예산이다. 최신 대화는 항상 남기고 오래된 메시지부터 제거한다. */if(this.#maxContext&&this.#maxContext>0)while(chat.length>1&&chat.reduce((sum,message)=>sum+estimateTokens(message.content),0)>this.#maxContext)chat.shift();const lore=activateLore(this.#lore,chat).entries.map(({content,name})=>({content,name}));return compilePrompt({preset:this.#preset,persona:this.#persona,card:this.#card,lore:{entries:lore},chat,memory,engineContext:{facts:`다음 JSON은 엔진이 소유한 현재 사실이다. 서사로 수치를 바꾸지 말고 이벤트 결과만 따른다.\n${JSON.stringify(this.runtime.state)}`,availableActions:`제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(', ')||'(없음)'}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.`,groundedMemory:retrieval.abstained?'관련 근거가 부족하므로 과거 사실을 추측하지 않는다.':memory}});}
 }
 
-// 체크포인트와 대안은 런타임 메모리 전용이다. 저장에는 되돌린 현재 snapshot만 기록해 기존 무결성 계약과 파일 크기를 유지한다.
+// 체크포인트·redo 이력은 런타임 메모리 전용이다. 대안 응답은 snapshot에 저장되며, 현재 선택 상태도 무결성 해시로 봉인한다.
 export * from './chat-store.ts';
 export * from './providers/index.ts';
