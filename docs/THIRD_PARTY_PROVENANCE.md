@@ -2,6 +2,12 @@
 
 이 프로젝트(GPL-3.0-or-later)에 선별 이식한 외부 코드의 출처를 기록한다. ADR 0001 · CLAUDE-TASK-HYPA §9 정책.
 
+## Risu encrypted preset import
+
+- RisuAI (GPL-3.0-or-later) `src/ts/storage/database.svelte.ts`, `src/ts/util.ts`, and `src/ts/rpack/{rpack_js.js,rpack_map.bin}` were used to reproduce the `.risup`/`.risupreset` interoperability contract in `packages/risu/src/preset-file.ts`.
+- The imported boundary is limited to RPack byte substitution, DEFLATE, MessagePack, and AES-256-GCM with Risu's preset key. No Risu database or global Svelte state was copied.
+- `fflate` (MIT) and `msgpackr` (MIT) provide compression and MessagePack decoding.
+
 ## SQLite Wasm
 
 - Package: `@sqlite.org/sqlite-wasm` `3.53.0-build1`

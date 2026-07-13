@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createBrowserRepository,createMemoryRepository,type SessionRepository,type WorkerPort } from '@simbot/persistence';
-  import { cardToRuntimeProject,defaultCardPreset,enginePreset,importRisuPreset,translateYspTags,type CardPassport,type CardRuntimeProfile,type Persona,type PromptPreset } from '@simbot/risu';
+  import { cardToRuntimeProject,decodeRisuPresetFile,defaultCardPreset,enginePreset,importRisuPreset,translateYspTags,type CardPassport,type CardRuntimeProfile,type Persona,type PromptPreset } from '@simbot/risu';
   import { exportRisuPersonaPng,importRisuPersonaPng,parseCard,type CardAsset,type ParsedCard } from '@simbot/card';
   import {compileCard,type CompileResult} from '@simbot/compiler';
   import { ChatStore,PlaySession,catalogFor,createProvider,fetchModels,createVoyageProvider,type AuxConfig,type ChatIndex,type ModelProvider,type ProviderConfig,type ProviderId,type SessionSnapshot } from '@simbot/session';
@@ -97,7 +97,7 @@
   async function clonePreset(){const value=structuredClone(activePreset);value.id=`preset-${crypto.randomUUID()}`;value.name=`${value.name} 복사본`;await changePreset(value);}
   async function renamePreset(){const name=prompt('프리셋 이름',activePreset.name)?.trim();if(name)await changePreset({...activePreset,name});}
   async function removePreset(){if(presets.length<=1||!confirm('이 프리셋을 삭제할까요?'))return;await presetLibrary?.remove(activePreset.id);await reloadPresets();}
-  async function importPresetFile(file:File){try{const imported=importRisuPreset(JSON.parse(await file.text()));await presetLibrary?.save(imported.preset);if(imported.provider.temperature!=null)settings.temperature=imported.provider.temperature;if(imported.provider.maxTokens!=null)settings.maxTokens=imported.provider.maxTokens;await reloadPresets(imported.preset.id);if(imported.unsupported.length)error=`미지원 항목 ${imported.unsupported.length}개를 비활성 보존했습니다.`;}catch(reason){error=reason instanceof Error?reason.message:String(reason);}}
+  async function importPresetFile(file:File){try{const imported=importRisuPreset(await decodeRisuPresetFile(new Uint8Array(await file.arrayBuffer()),file.name));await presetLibrary?.save(imported.preset);if(imported.provider.temperature!=null)settings.temperature=imported.provider.temperature;if(imported.provider.maxTokens!=null)settings.maxTokens=imported.provider.maxTokens;await reloadPresets(imported.preset.id);error=imported.unsupported.length?`미지원 항목 ${imported.unsupported.length}개를 비활성 보존했습니다.`:'';}catch(reason){error=reason instanceof Error?reason.message:String(reason);}}
   function exportPreset(){const blob=new Blob([JSON.stringify(activePreset,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${activePreset.name}.json`;a.click();URL.revokeObjectURL(url);}
   // 세션 재생성 대신 provider만 교체 — 재생성하면 런타임 전용인 체크포인트·대안이 유실된다(감사 #11).
   function numberSetting(key:keyof ProviderConfig,value:string){const number=value.trim()===''?undefined:Number(value);if(number===undefined||Number.isFinite(number))(settings as unknown as Record<string,unknown>)[key]=number;}
