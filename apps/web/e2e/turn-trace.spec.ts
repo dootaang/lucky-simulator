@@ -40,9 +40,22 @@ test('턴 하나가 프롬프트·모델·엔진 사실을 콘솔에 남기고, 
   expect(result.turn).toBe(0); // 사건이 턴에 묶인다(첫 턴은 0) — "마지막 턴만 복사"가 이걸로 동작한다
   // 정보가 꺼지면 정보 사건은 사라지고, 경고(차단)는 남는다.
   expect(result.infoOffCodes).not.toContain('model_response');
+  expect(result.infoOffCodes).toContain('engine_event_blocked');
   // LLM이 골드를 직접 바꾸겠다고 제안했지만 엔진이 차단했다 — 콘솔은 그 사실을 경고로 보여줘야 한다.
   // 이게 안 보이면 사용자는 "왜 골드가 안 줄지?"에서 영원히 멈춘다.
   expect(result.codes).toContain('engine_event_blocked');
   expect(result.engineSummary).toContain('1건 차단');
   expect(result.copy).toContain('LLM은 사실을 직접 바꾸지 못한다');
+});
+
+test('같은 수의 런을 가진 두 채팅을 번갈아도 각각 추적한다',async({page})=>{
+  await page.goto('/');
+  const result=await page.evaluate(async(repo)=>{
+    const[{PlaySession},{ProjectRuntime},{diagnostics},{createTurnTracer}]=await Promise.all([import(`/@fs/${repo}/packages/session/src/index.ts`),import(`/@fs/${repo}/packages/runtime/src/index.ts`),import('/src/player/diagnostics.svelte.ts'),import('/src/player/turn-trace.ts')]);
+    const preset={contract:'prompt-preset/0.1',id:'p',name:'p',compatibilityMode:'simpack',version:1,raw:null,settings:{assistantPrefill:'',sendNames:false,sendChatAsSystem:false},blocks:[{id:'chat',type:'chat',name:'chat',enabled:true,rangeStart:-1000,rangeEnd:'end',source:{source:'user',path:'t'}}]},make=(id:string)=>new PlaySession({id,runtime:new ProjectRuntime({projectId:id,schema:{entities:[],initialState:{}},screens:[],navigation:[],content:{},featureToggles:{},moduleIds:[]}),preset,card:{name:id},provider:{async complete(){return{text:'응답',events:[]};}}});
+    const first=make('chat-a'),second=make('chat-b'),trace=createTurnTracer();diagnostics.clear();
+    await first.send('하나');await second.send('둘');trace(first,'A');trace(second,'B');
+    return diagnostics.events.filter(event=>event.code==='model_response').map(event=>event.chat).sort();
+  },repo);
+  expect(result).toEqual(['chat-a','chat-b']);
 });
