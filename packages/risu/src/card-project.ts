@@ -35,14 +35,14 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
   const data=nested&&typeof nested==='object'&&!Array.isArray(nested)?nested as Record<string,unknown>:root;
   const characterBook=data.character_book;
   const book=characterBook&&typeof characterBook==='object'&&!Array.isArray(characterBook)?characterBook as Record<string,unknown>:{};
-  const loreEntries=Array.isArray(book.entries)?book.entries.filter((entry):entry is Record<string,unknown>=>Boolean(entry)&&typeof entry==='object'&&!Array.isArray(entry)):[];
+  const loreEntries=Array.isArray(book.entries)?book.entries.filter((entry):entry is Record<string,unknown>=>Boolean(entry)&&typeof entry==='object'&&!Array.isArray(entry)):[],lorebooks=[...loreEntries.map(entry=>({...entry,_luckySourceScope:'character',_luckySourceNamespace:'character',_luckySourceRank:2,_luckyBook:{scan_depth:book.scan_depth,token_budget:book.token_budget,recursive_scanning:book.recursive_scanning}})),...(parsed.modules??[]).flatMap((module,moduleIndex)=>(module.lorebook??[]).filter((entry):entry is Record<string,unknown>=>Boolean(entry)&&typeof entry==='object'&&!Array.isArray(entry)).map(entry=>({...entry,_luckySourceScope:'module',_luckySourceNamespace:String(module.raw?.namespace??module.raw?.name??`module-${moduleIndex}`),_luckySourceRank:4,_luckyBook:{scan_depth:module.raw?.scan_depth,token_budget:module.raw?.token_budget,recursive_scanning:module.raw?.recursive_scanning}})))];
   const textPool=[data.description,data.first_mes,data.system_prompt,data.post_history_instructions,...loreEntries.map((entry)=>entry.content),...(parsed.embeddedModules??[])].map(text).filter(Boolean).join('\n');
   const grades=tagCompatibilityGrades(textPool);
   const fixtureInn=!('format'in parsed)&&grades.exact.length+grades.approx.length+grades.preserved.length>0;
   const cardName=text(data.name)||parsed.name||'Imported card';
   const regexScripts=extractRegexScripts(parsed),risuExtension=(data.extensions&&typeof data.extensions==='object'?((data.extensions as Record<string,unknown>).risuai):null),defaultVariables={...variableMap((risuExtension&&typeof risuExtension==='object'?(risuExtension as Record<string,unknown>).defaultVariables:null)??data.defaultVariables??data.default_variables)},backgroundHtml=[text(risuExtension&&typeof risuExtension==='object'?(risuExtension as Record<string,unknown>).backgroundHTML:''),...(parsed.modules??[]).map(module=>text(module.raw?.backgroundEmbedding))].filter(Boolean).join('\n');
   for(const module of parsed.modules??[])Object.assign(defaultVariables,module.defaultVariables??variableMap(module.raw?.defaultVariables??module.raw?.default_variables));
-  const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks:loreEntries};
+  const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks};
   const project:RuntimeProject={
     // 이름 슬러그만 쓰면 동명 카드 2장이 라이브러리·채팅을 서로 덮어쓴다(감사 #8) — 원본 바이트 해시로 유일화.
     projectId:`card:${slug(cardName)}:${hashBytes(parsed.sourceBytes??new TextEncoder().encode(cardName))}`,

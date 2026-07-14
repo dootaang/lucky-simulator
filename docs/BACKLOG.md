@@ -99,7 +99,7 @@
 
 ### D. 로어·CBS·정규식·모듈 호환
 
-- [ ] Risu 로어북의 key/secondary key, constant/selective, 확률, 순서, 폴더, scan depth, recursion, position/depth를 보존 — key/secondary/constant/selective/order/depth의 기본 경로만 대체됐고 확률·대소문자·폴더·재귀 활성화는 유실
+- [x] Risu 로어북의 key/secondary key, constant/selective, 확률, 대소문자, 순서, 폴더 제외, scan depth, recursion, position/depth와 카드·모듈 source 우선순위를 결정론적으로 보존
 - [ ] 카드·전역·채팅·모듈·페르소나 로어를 명시적인 우선순위로 합성 — 현행 플레이는 카드 로어 중심이며 옛 source 합성·우선순위 회귀 테스트가 유실
 - [x] 안전한 읽기 전용 CBS 부분집합을 버전 계약과 테스트로 구현; 미지원 매크로는 원문과 경고로 표시
 - [x] 정규식 단계를 `editinput`, `editrequest`, `editoutput`, `editdisplay`로 분리하고 안전 검사 후 실행
