@@ -11,6 +11,7 @@ export * from './card-regex.ts';
 export * from './cbs.ts';
 export * from './security/budget.ts';
 export * from './security/runtime-budget.ts';
+export * from './security/effect-policy.ts';
 export * from './tokens.ts';
 export * from './trigger-runtime.ts';
 export * from './worker/contract.ts';

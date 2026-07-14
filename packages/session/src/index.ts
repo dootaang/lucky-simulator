@@ -67,7 +67,7 @@ export class PlaySession{
   if(response.sessionId!==this.id)return{applied:false,reason:'session_mismatch'};
   if(response.cardId!==this.runtime.project.projectId)return{applied:false,reason:'card_mismatch'};
   if(response.baseRevision!==this.cardRuntimeRevision)return{applied:false,reason:'revision_mismatch'};
-  if(response.effects.length)return{applied:false,reason:'effects_unclassified'};
+  if(response.effects.some(effect=>effect.disposition==='apply'))return{applied:false,reason:'effects_unclassified'};
   const next=clone(this.#cbsVariables);
   for(const patch of response.patch){if(!safeRuntimeKey(patch.key))return{applied:false,reason:'unsafe_patch_key'};if(patch.op==='set'){if(typeof patch.value!=='string')return{applied:false,reason:'invalid_patch_value'};next[patch.key]=patch.value;}else if(patch.op==='delete')delete next[patch.key];else return{applied:false,reason:'invalid_patch_op'};}
   this.#cbsVariables=next;setActiveRenderContext(this.#regexScripts,this.#cbsVariables);await this.save();this.#notify();return{applied:true};
