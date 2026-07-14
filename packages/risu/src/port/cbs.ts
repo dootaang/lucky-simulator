@@ -4,6 +4,7 @@
 import type { Database, character, loreBook, RisuModule, LLMModel } from './risu-stubs.ts';
 import type { CbsConditions } from './parser.ts';
 import { get, CurrentTriggerIdStore } from './risu-stubs.ts';
+import { cbsBudget } from '../security/budget.ts'; // 럭키 보안 패치(M-S2a)
 
 export const defaultCBSRegisterArg: CBSRegisterArg = {
     registerFunction: () => { throw new Error('registerFunction not implemented') },
@@ -1551,6 +1552,7 @@ export function registerCBS(arg:CBSRegisterArg) {
             const step = arr.length > 2 ? Number(arr[2]) : 1
             let out:string[] = []
 
+            cbsBudget()?.array(Math.max(0, Math.ceil((end - start) / (step || 1)))) // 럭키 보안 패치(M-S2a): range 폭발 차단
             for(let i=start;i<end;i+=step){
                 out.push(i.toString())
             }

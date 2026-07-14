@@ -3,11 +3,14 @@
 // evalInline, expandBlocks, renderRisu), derived from RisuAI
 // src/ts/parser/parser.svelte.ts (risuChatParser/matcher). Asset markers are
 // deliberately preserved for asset-macros.ts, avoiding a second resolver.
+import{CbsBudget,CbsBudgetExceeded,withCbsBudget}from'./security/budget.ts';
 export interface CbsConditionContext{activeModules?:readonly string[]}
+// 예산 초과는 조용히 넘어가지 않는다 — 진단에 남긴다(M-S3 '차단된 효과 기록'의 선행).
+let lastBudgetBreach:string|null=null;export function lastCbsBudgetBreach(){return lastBudgetBreach;}
 // ADR 0004 M-S0 — 렌더는 영수증이지 거래가 아니다. parseCbs는 기본 읽기 전용이며,
 // setvar/addvar류의 쓰기는 스크래치 복사본에만 반영되고 폐기된다(세션 변수 불변).
 // 상태를 실제로 바꾸는 것은 명시적 트리거 트랜잭션뿐이다(mutable:true — 세션만 사용).
-export interface CbsContext extends CbsConditionContext{userName?:string;charName?:string;chatIndex?:number;lastMessageId?:number;screenWidth?:number;variables:Record<string,string>;callStack?:number;mutable?:boolean;}
+export interface CbsContext extends CbsConditionContext{userName?:string;charName?:string;chatIndex?:number;lastMessageId?:number;screenWidth?:number;variables:Record<string,string>;callStack?:number;mutable?:boolean;budget?:CbsBudget;}
 const ASSET=/\{\{\s*(?:raw|path|img|image|asset|emotion|bg|bgm|audio|video|video-img)\s*::[^{}]*?}}/gi;
 const OPEN='cbsAssetToken',CLOSE='TokenEnd';
 export function calcString(input:string):string{const s=String(input??'');let i=0;const skip=()=>{while(/\s/.test(s[i]??''))i++;};const atom=():number=>{skip();if(s[i]==='('){i++;const value=compare();skip();if(s[i]===')')i++;return value;}let j=i;while(/[0-9.]/.test(s[j]??''))j++;if(j>i){const value=Number.parseFloat(s.slice(i,j));i=j;return Number.isFinite(value)?value:0;}while(i<s.length&&!/[-+*/%()<>=\s]/.test(s[i]!))i++;return 0;};const unary=():number=>{skip();if(s[i]==='-'){i++;return-unary();}if(s[i]==='+'){i++;return unary();}return atom();};const pow=():number=>{const left=unary();skip();if(s.slice(i,i+2)==='**'){i+=2;return Math.pow(left,pow());}return left;};const mul=():number=>{let value=pow();for(;;){skip();if(s[i]==='*'&&s[i+1]!=='*'){i++;value*=pow();}else if(s[i]==='/'){i++;const right=pow();value=right===0?0:value/right;}else if(s[i]==='%'){i++;const right=pow();value=right===0?0:value%right;}else return value;}};const add=():number=>{let value=mul();for(;;){skip();if(s[i]==='+'){i++;value+=mul();}else if(s[i]==='-'){i++;value-=mul();}else return value;}};function compare(){const left=add();skip();const op=['==','!=','>=','<=','>','<'].find(value=>s.startsWith(value,i));if(!op)return left;i+=op.length;const right=add();return op==='=='?Number(left===right):op==='!='?Number(left!==right):op==='>='?Number(left>=right):op==='<='?Number(left<=right):op==='>'?Number(left>right):Number(left<right);}try{const value=compare();return Number.isFinite(value)?String(value):'0';}catch{return'0';}}
@@ -53,7 +56,7 @@ export function parseCbs(source:string,context:CbsContext):string{if((context.ca
    database:()=>({characters:[{name:context.charName??'Character',type:'character',chats:[{message:[]}],chatPage:0}],aiModel:''}),
   });
   // 업스트림 자체 게이트: setvar 계열은 runVar가 참일 때만 실행된다. 표시 경로에서는 끈다(이중 방어).
-  const parsed=risuChatParser(String(source??''),{chatID:context.chatIndex??-1,runVar:context.mutable===true,callStack:context.callStack??0});
+  const parsed=withCbsBudget(context.budget??new CbsBudget(),()=>risuChatParser(String(source??''),{chatID:context.chatIndex??-1,runVar:context.mutable===true,callStack:context.callStack??0}));
   return String(parsed).replace(/\{\{[^{}]*}}/g,'').replace(/([^]*)/g,'{{$1}}');
- }catch{return String(source??'');}
+ }catch(error){if(error instanceof CbsBudgetExceeded)lastBudgetBreach=error.reason;return String(source??'');}
  finally{activeParseContext=previousContext;restoreCbsPortEnv(previousEnv);}}

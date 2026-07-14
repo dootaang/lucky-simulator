@@ -5,6 +5,7 @@
 import { registerCBS, type matcherArg, type RegisterCallback, type CbsConditions } from './cbs.ts';
 import { calcString } from './infunctions.ts';
 import { setChatVarBridge } from './chatvar-bridge.ts';
+import { cbsBudget, CbsBudgetExceeded } from '../security/budget.ts'; // 럭키 보안 패치(M-S2a)
 import type { Database, character, groupChat, RisuModule, loreBook, LLMModel } from './risu-stubs.ts';
 
 export type { CbsConditions } from './cbs.ts';
@@ -131,6 +132,7 @@ function matcher (p1:string,matcherArg:matcherArg,vars:{[key:string]:string}|nul
 }|string|null {
 
     initMatcher()
+    cbsBudget()?.op() // 럭키 보안 패치(M-S2a): 모든 CBS 호출이 명령 예산을 소비한다
 
     try {
         if(p1.startsWith('? ')){
@@ -151,7 +153,9 @@ function matcher (p1:string,matcherArg:matcherArg,vars:{[key:string]:string}|nul
         if(callback){
             return callback(p1, matcherArg, args,vars)
         }
-    } catch (error) {}
+    } catch (error) {
+        if(error instanceof CbsBudgetExceeded) throw error // 럭키 보안 패치(M-S2a): 예산 초과는 삼키지 않는다 — 업스트림 catch가 먹으면 방어가 우연에 기댄다
+    }
 
     return null
 }
@@ -699,6 +703,8 @@ export function risuChatParser(da:string, arg:{
         return 'ERROR: Call stack limit reached'
     }
 
+    cbsBudget()?.input(da.length) // 럭키 보안 패치(M-S2a): 입력 크기 상한
+
     const matcherObj = {
         chatID: chatID,
         chara: chara,
@@ -735,6 +741,7 @@ export function risuChatParser(da:string, arg:{
                 }
                 pointer++
                 nested.unshift('')
+                cbsBudget()?.depth(nested.length) // 럭키 보안 패치(M-S2a): 중첩 깊이 상한
                 stackType[nested.length] = 1
                 break
             }
@@ -812,6 +819,7 @@ export function risuChatParser(da:string, arg:{
                                 array = parseArray(blockType.type2.substring(0, subind))
                             }
                             let added = ''
+                            cbsBudget()?.each(array.length, matchResult.length) // 럭키 보안 패치(M-S2a): #each 폭발 차단
                             for(let i = 0; i < array.length; i++) {
                                 added += matchResult.replaceAll(`{{slot::${sub}}}`, typeof(array[i]) === 'string' ? array[i] as string : JSON.stringify(array[i]))
                             }

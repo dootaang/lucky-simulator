@@ -1,4 +1,4 @@
-import {applyRegexScripts,parseCbs,resolveAssetMacros,type AssetMacroAsset,type AssetMacroWarning,type AssetResolveOptions,type RegexScript} from '@simbot/risu';
+import {applyRegexScripts,CbsBudget,parseCbs,resolveAssetMacros,type AssetMacroAsset,type AssetMacroWarning,type AssetResolveOptions,type RegexScript} from '@simbot/risu';
 import {renderMarkdownWithHtml as renderMarkdown} from '@simbot/ui/markdown';
 import {sanitizeHtml} from '@simbot/ui/sanitize-html';
 
@@ -10,7 +10,8 @@ export interface DisplayAssetOptions extends AssetResolveOptions{activeModules?:
 export function prepareDisplayContent(content:string,user:string,char:string,scripts:readonly RegexScript[]=[],variables:Record<string,string>={},chatIndex=0,lastMessageId=0,activeModules:readonly string[]=[]){
   // ADR 0004: 업스트림 processScriptFull과 같은 순서 — 각 정규식 치환 직후 CBS를 재평가한다.
   // 정규식 out에 든 {{getvar::…}}가 그 자리에서 값이 되므로(용사여관 outfit 사례) 뒷단이 완성된 이름을 받는다.
-  const cbs=(text:string)=>parseCbs(text,{userName:user,charName:char,chatIndex,lastMessageId,variables,activeModules});
+  const budget=new CbsBudget(); // 메시지 1개 렌더 전체가 예산 하나를 공유한다 — 파스를 잘게 쪼개는 우회를 막는다(M-S2a)
+  const cbs=(text:string)=>parseCbs(text,{userName:user,charName:char,chatIndex,lastMessageId,variables,activeModules,budget});
   let rendered=applyRegexScripts(content,scripts,'output',{parser:cbs});
   rendered=applyRegexScripts(rendered,scripts,'display',{parser:cbs});
   return cbs(rendered);}
