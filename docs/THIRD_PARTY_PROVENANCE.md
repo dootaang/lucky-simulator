@@ -98,7 +98,13 @@
 - GitHub Copilot 필수 헤더값(`Editor-Version: vscode/1.115.0`, `Editor-Plugin-Version: copilot-chat/0.43.2026040705`, `Copilot-Integration-Id: vscode-chat`, `X-Initiator: user`, `Openai-Intent: conversation-edits`)은 CPM이 실제로 전송하는 기본값과 동일하게 맞췄다. Copilot API가 에디터 신원 헤더를 요구하므로 임의값으로는 요청이 거부된다.
 ## Risu 런타임 전체 이식 (ADR 0004)
 
-- 기준: RisuAI(GPL-3.0) commit `eb7780b`, 로컬 클론 `C:isu`. 이식 파일은 업스트림 경로를 미러링해 diff 추적한다.
+- 기준: RisuAI(GPL-3.0) commit `eb7780b`, 로컬 클론 `C:
+isu`. 이식 파일은 업스트림 경로를 미러링해 diff 추적한다.
+- `packages/risu/src/port/cbs.ts` ← `src/ts/cbs.ts` **통이식(무수정)** — 원본이 의존성 주입(CBSRegisterArg)으로 설계돼 import 교체만 했다. CBS 함수 170종.
+- `packages/risu/src/port/parser.ts` ← `src/ts/parser/parser.svelte.ts`의 CBS 코어 발췌(matcher 배선·blockStartMatcher/blockEndMatcher(#if/#when/#each/#func)·risuChatParser 루프). DB·스토어·플랫폼 전역은 CbsPortEnv 브릿지.
+- `packages/risu/src/port/infunctions.ts` ← `src/ts/process/infunctions.ts` 통이식(calcString 등). chatVar는 `chatvar-bridge.ts`로 치환.
+- 유지한 우리 계약: 에셋 매크로는 값이 되지 않고 보존(오버라이드 훅), user/char/screenwidth 등 세션 컨텍스트 값, 미해석 `{{…}}` 소거, 모듈 네임스페이스 정규화 매칭.
+- 폐기한 자체 계약: `#if`의 `:else`(업스트림은 #when 전용 — 테스트 갱신).
 - `packages/risu/src/port/scripts.ts` ← `src/ts/process/scripts.ts`의 `processScriptFull` 전체 의미론(order/actions 메타, `@@emo`/`@@inject`/`@@move_top`/`@@move_bottom`/`@@repeat_back`, `$n`·끝 개행, 치환 후 CBS 재파싱). DB·Svelte 스토어·Lua·트리거·플러그인·dynamicAssets 결합은 `RisuScriptEnv` 훅으로 치환. 캐시(processScriptCache)는 세션 구조 차이로 미이식(후속 성능 항목).
 - 우리 강화(스크립트 수·본문 길이·시간 예산, catastrophic 패턴 스킵, out 위험 태그 정화)는 이식 코드 밖 façade(`card-regex.ts`)에 유지.
 - 치환 토큰 의미론을 업스트림 네이티브(`$&`·$```·`$'`·`$<name>`)로 전환 — 기존의 "토큰 문자 보존" 자체 계약은 폐기(테스트 갱신).

@@ -18,4 +18,35 @@ export function evaluateCbsConditions(source:string,context:CbsConditionContext=
 function token(inner:string,ctx:CbsContext):string|null{if(inner.trimStart().startsWith('?'))return calcString(inner.replace(/^\s*\?\s*/,''));const parts=inner.includes('::')?inner.split('::'):inner.split(':'),fn=name(parts.shift()??''),args=parts;switch(fn){case'raw':case'path':case'img':case'image':case'asset':case'emotion':case'bg':case'bgm':case'audio':case'video':case'videoimg':return`\uE000${fn}::${args.join('::')}\uE001`;case'user':return ctx.userName??'User';case'char':case'bot':return ctx.charName??'Character';case'screenwidth':return String(ctx.screenWidth??0);case'chatindex':return String(ctx.chatIndex??'');case'lastmessageid':return String(ctx.lastMessageId??'');case'br':case'newline':return'\n';case'getvar':return ctx.variables[args[0]??'']??'';case'setvar':ctx.variables[args[0]??'']=args.slice(1).join('::');return'';case'equal':case'is':return String(Number(String(args[0])===String(args[1])));case'notequal':case'isnot':return String(Number(String(args[0])!==String(args[1])));case'greater':return String(Number(compare(args[0]??'',args[1]??'')>0));case'greaterequal':return String(Number(compare(args[0]??'',args[1]??'')>=0));case'less':return String(Number(compare(args[0]??'',args[1]??'')<0));case'lessequal':return String(Number(compare(args[0]??'',args[1]??'')<=0));case'calc':return calcString(args.join('::'));default:return null;}}
 function inline(source:string,ctx:CbsContext){let text=source,guard=0;while(guard++<10_000){const match=/\{\{(?!\s*[#:/])([^{}]*?)}}/.exec(text);if(!match)break;const value=token(match[1]!,ctx);text=text.slice(0,match.index)+(value??'')+text.slice(match.index+match[0].length);}return text;}
 function blocks(source:string,ctx:CbsContext){let text=source,guard=0;while(guard++<5000){const open=/\{\{#if(?:_pure)?(?:\s+|::)([^{}]*)}}/i.exec(text);if(!open)break;let depth=1,closeStart=-1,closeEnd=-1,elseStart=-1,elseEnd=-1;const scan=/\{\{(#if(?:_pure)?(?:\s+|::)[^{}]*|:else|\/(?:if)?)}}/gi;scan.lastIndex=open.index+open[0].length;let item:RegExpExecArray|null;while((item=scan.exec(text))){if(/^#if/i.test(item[1]!))depth++;else if(item[1]!.toLowerCase()===':else'&&depth===1){elseStart=item.index;elseEnd=item.index+item[0].length;}else if(--depth===0){closeStart=item.index;closeEnd=item.index+item[0].length;break;}}if(closeStart<0){text=text.slice(0,open.index);break;}const yes=text.slice(open.index+open[0].length,elseStart<0?closeStart:elseStart),no=elseStart<0?'':text.slice(elseEnd,closeStart),condition=inline(open[1]!,ctx);text=text.slice(0,open.index)+(truthy(condition)?yes:no)+text.slice(closeEnd);}return text.replace(/\{\{\/?(?:if)?}}/gi,'').replace(/\{\{:else}}/gi,'');}
-export function parseCbs(source:string,context:CbsContext):string{if((context.callStack??0)>=20)return'';try{let text=String(source??'');const assets:string[]=[];text=text.replace(ASSET,(value)=>{assets.push(value);return`${OPEN}${assets.length-1}${CLOSE}`;});text=evaluateCbsConditions(text,context);text=inline(text,{...context,callStack:(context.callStack??0)+1});text=evaluateCbsConditions(text,context);text=blocks(text,context);text=inline(text,context);return text.replace(/\{\{[^{}]*}}/g,'').replace(new RegExp(`${OPEN}(\\d+)${CLOSE}`,'g'),(_whole,index:string)=>assets[Number(index)]??'').replace(/\uE000([^\uE001]*)\uE001/g,'{{$1}}');}catch{return String(source??'');}}
+// ADR 0004 M-B: 파싱 본체는 업스트림 전체 이식(port/parser.ts의 risuChatParser)에 위임한다.
+// 유지되는 우리 계약: ① 에셋 매크로는 값이 되지 않고 {{fn::args}}로 보존되어 뒷단(resolveAssetMacros)이
+// 처리한다(안쪽 CBS는 업스트림 루프가 먼저 평가하므로 outfit 변수 결합이 리스와 동일 시점에 완성된다)
+// ② user/char/screenwidth/chatindex/lastmessageid는 세션 컨텍스트가 준 값 ③ 미해석 {{…}}은 소거.
+import { risuChatParser, setCbsPortEnv, overrideCbsFunction } from './port/parser.ts';
+let portReady=false;
+function ensurePortOverrides(){if(portReady)return;portReady=true;
+ for(const fn of['raw','path','img','image','asset','emotion','bg','bgm','audio','video','video-img','videoimg'])overrideCbsFunction(fn,(_str,_arg,args)=>`${fn==='videoimg'?'video-img':fn}::${args.join('::')}`);
+ overrideCbsFunction('user',(_s,arg)=>String((arg as unknown as{__ctx?:CbsContext}).__ctx?.userName??activeParseContext?.userName??'User'));
+ overrideCbsFunction('char',charName);overrideCbsFunction('bot',charName);
+ overrideCbsFunction('screenwidth',()=>String(activeParseContext?.screenWidth??0));
+ overrideCbsFunction('chatindex',()=>String(activeParseContext?.chatIndex??''));
+ overrideCbsFunction('lastmessageid',()=>String(activeParseContext?.lastMessageId??''));
+ // 모듈 네임스페이스는 우리가 발급한다(card-library.moduleNamespace) — 대소문자·구분자 차이를 흡수하는 정규화 매칭 유지.
+ for(const fn of['moduleenabled','module_enabled'])overrideCbsFunction(fn,(_s,_a,args)=>String(Number(moduleEnabled(String(args[0]??''),{activeModules:activeParseContext?.activeModules??[]}))));}
+const charName=()=>String(activeParseContext?.charName??'Character');
+let activeParseContext:CbsContext|null=null;
+export function parseCbs(source:string,context:CbsContext):string{if((context.callStack??0)>=20)return'';
+ const previous=activeParseContext;activeParseContext=context;
+ try{ensurePortOverrides();
+  setCbsPortEnv({
+   getChatVar:(key)=>context.variables[key]??'',
+   setChatVar:(key,value)=>{context.variables[key]=value;},
+   getGlobalChatVar:(key)=>context.variables[key]??'',
+   getUserName:()=>context.userName??'User',
+   getModules:()=>(context.activeModules??[]).map((namespace)=>({namespace,name:namespace})),
+   database:()=>({characters:[{name:context.charName??'Character',type:'character',chats:[{message:[]}],chatPage:0}],aiModel:''}),
+  });
+  const parsed=risuChatParser(String(source??''),{chatID:context.chatIndex??-1,runVar:true,callStack:context.callStack??0});
+  return String(parsed).replace(/\{\{[^{}]*}}/g,'').replace(/([^]*)/g,'{{$1}}');
+ }catch{return String(source??'');}
+ finally{activeParseContext=previous;}}
