@@ -1,6 +1,7 @@
 import { parseCard,readIndexedZipEntry,type CardAsset,type CardFormat,type ParsedCard,type ZipAssetIndex } from '@simbot/card';
 import type { SessionRepository } from '@simbot/persistence';
 import type { CompileResult } from '@simbot/compiler';
+import type { RegexScript } from '@simbot/risu';
 import type { AssetModuleStore,CardBinaryStore } from './card-binary-store';
 
 // 썸네일 굽는 방식이 바뀌면 올린다. 이미 저장된 썸네일은 픽셀이 구워져 있어 CSS로 못 고치므로,
@@ -9,7 +10,7 @@ export const THUMBNAIL_VERSION=2;
 export interface CardLibraryEntry { projectId:string; name:string; format:CardFormat; bytes?:string; binary?:'external'; size?:number; thumbnail?:string; thumbVersion?:number; boundModuleIds?:string[]; addedAt:number; }
 export interface CardLibraryMeta { projectId:string; name:string; format:CardFormat|null; thumbnail?:string; thumbVersion?:number; addedAt:number; missing?:boolean; }
 interface CardLibraryIndex { contract:'simbot-card-library/0.1'; cards:CardLibraryMeta[]; }
-export interface AssetModuleMeta{id:string;name:string;namespace:string;size:number;assetCount:number;fingerprint:string;addedAt:number}
+export interface AssetModuleMeta{id:string;name:string;namespace:string;size:number;assetCount:number;fingerprint:string;addedAt:number;regexScripts?:RegexScript[]}
 interface AssetModuleEntry extends AssetModuleMeta{index:ZipAssetIndex}
 interface AssetModuleIndex{contract:'simbot-asset-module-library/0.1';modules:AssetModuleMeta[]}
 
@@ -30,7 +31,7 @@ export class CardLibrary {
   async saveCompilation(projectId:string,result:CompileResult){await repo<CompileResult>(this.repository).put({id:`cardlib:${projectId}:compiler`,schemaHash:'cardlib-compiler',title:'Engine compilation',updatedAt:Date.now(),payload:structuredClone(result)});}
   async loadCompilation(projectId:string){return (await repo<CompileResult>(this.repository).get(`cardlib:${projectId}:compiler`))?.payload??null;}
   async saveThumbnail(projectId:string,thumbnail:string){const row=await repo<CardLibraryEntry>(this.repository).get(`cardlib:${projectId}`);if(!row)return;row.payload.thumbnail=thumbnail;row.payload.thumbVersion=THUMBNAIL_VERSION;row.updatedAt=Date.now();await repo<CardLibraryEntry>(this.repository).put(row);const index=await this.index(),card=index.cards.find(value=>value.projectId===projectId);if(card){card.thumbnail=thumbnail;card.thumbVersion=THUMBNAIL_VERSION;await this.saveIndex(index);}}
-  async saveAssetModule(blob:Blob,index:ZipAssetIndex,name:string){if(!this.moduleBinaries)throw new Error('asset_module_storage_unavailable');const id=`asset-module:${index.fingerprint.slice(0,24)}`,namespace=moduleNamespace(name,index.fingerprint),entry:AssetModuleEntry={id,name,namespace,size:blob.size,assetCount:index.entries.length,fingerprint:index.fingerprint,addedAt:Date.now(),index};await this.moduleBinaries.put(id,blob);await repo<AssetModuleEntry>(this.repository).put({id:`modulelib:${id}`,schemaHash:'asset-module',title:name,updatedAt:entry.addedAt,payload:entry});const library=await this.moduleIndex();library.modules=[entry,...library.modules.filter(value=>value.id!==id)];await this.saveModuleIndex(library);return entry as AssetModuleMeta;}
+  async saveAssetModule(blob:Blob,index:ZipAssetIndex,name:string,regexScripts:RegexScript[]=[]){if(!this.moduleBinaries)throw new Error('asset_module_storage_unavailable');const id=`asset-module:${index.fingerprint.slice(0,24)}`,namespace=moduleNamespace(name,index.fingerprint),entry:AssetModuleEntry={id,name,namespace,size:blob.size,assetCount:index.entries.length,fingerprint:index.fingerprint,addedAt:Date.now(),index,...(regexScripts.length?{regexScripts}: {})};await this.moduleBinaries.put(id,blob);await repo<AssetModuleEntry>(this.repository).put({id:`modulelib:${id}`,schemaHash:'asset-module',title:name,updatedAt:entry.addedAt,payload:entry});const library=await this.moduleIndex();library.modules=[entry,...library.modules.filter(value=>value.id!==id)];await this.saveModuleIndex(library);return entry as AssetModuleMeta;}
   async listAssetModules(){return(await this.moduleIndex()).modules;}
   async exportAssetModule(moduleId:string){const[row,blob]=await Promise.all([repo<AssetModuleEntry>(this.repository).get(`modulelib:${moduleId}`),this.moduleBinaries?.get(moduleId)]);return row&&blob?{meta:row.payload as AssetModuleMeta,blob}:null;}
   async bindAssetModule(projectId:string,moduleId:string){const card=await repo<CardLibraryEntry>(this.repository).get(`cardlib:${projectId}`),module=await repo<AssetModuleEntry>(this.repository).get(`modulelib:${moduleId}`);if(!card)throw new Error('card_not_found');if(!module)throw new Error('asset_module_not_found');card.payload.boundModuleIds=[...new Set([...(card.payload.boundModuleIds??[]),moduleId])];card.updatedAt=Date.now();await repo<CardLibraryEntry>(this.repository).put(card);}

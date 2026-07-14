@@ -6,7 +6,7 @@ export interface AssetVariant{asset:AssetMacroAsset;variant:number|null;base:str
 
 const supported=new Set(['raw','img','image','asset','emotion']);
 const known=new Set(['raw','path','img','image','video','audio','bgm','bg','emotion','asset','video-img']);
-const pattern=/{{\s*([a-z-]+)\s*::\s*([^{}]+?)\s*}}/gims;
+const pattern=/{{\s*([a-z-]+)\s*(?:::|=)\s*(["'″]?)([^{}]+?)\2\s*}}/gims;
 
 export function normalizeAssetName(value:string){return value.normalize('NFKC').toLowerCase().replace(/[\s./\\]+/g,'-');}
 
@@ -17,16 +17,20 @@ function dataUrl(asset:AssetMacroAsset){
   for(let index=0;index<asset.bytes.length;index+=0x2000)binary+=String.fromCharCode(...asset.bytes.subarray(index,index+0x2000));
   return `data:${asset.mime||'application/octet-stream'};base64,${btoa(binary)}`;
 }
-const bareImg=/<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/gis;
-function assetIndex(assets:readonly AssetMacroAsset[]){const indexed=new Map<string,AssetMacroAsset>();for(const asset of assets){const name=normalizeAssetName(asset.name||asset.type);if(!indexed.has(name))indexed.set(name,asset);if(asset.moduleNamespace){const scoped=normalizeAssetName(`${asset.moduleNamespace}/${asset.name||asset.type}`);if(!indexed.has(scoped))indexed.set(scoped,asset);}}return indexed;}
+const bareImg=/<(?:img|image)\b[^>]*\bsrc\s*=\s*(?:(["'″])([\s\S]*?)\1|([^\s>]+))[^>]*>/gis;
+const equalImg=/<(?:img|image|emotion|asset|raw|bg)\s*=\s*(?:(["'″])([\s\S]*?)\1|([^\s>]+))\s*>/gis;
+const pipeAsset=/\[([^\]\n|]*)\|\s*([^\]\n]+?)\s*]/g;
+function aliases(value:string){const raw=value.trim(),withoutQuery=raw.replace(/[?#].*$/,''),withoutExtension=withoutQuery.replace(/\.[a-z0-9]{2,5}$/i,'');return[raw,withoutQuery,withoutExtension].map(normalizeAssetName);}
+function assetIndex(assets:readonly AssetMacroAsset[]){const indexed=new Map<string,AssetMacroAsset>();for(const asset of assets){for(const name of aliases(asset.name||asset.type))if(name&&!indexed.has(name))indexed.set(name,asset);if(asset.moduleNamespace)for(const name of aliases(`${asset.moduleNamespace}/${asset.name||asset.type}`))if(name&&!indexed.has(name))indexed.set(name,asset);}return indexed;}
 function stableIndex(value:string,length:number){if(!length)return 0;let hash=2166136261;for(let index=0;index<value.length;index++){hash^=value.charCodeAt(index);hash=Math.imul(hash,16777619);}return(hash>>>0)%length;}
 function variantOf(asset:AssetMacroAsset):AssetVariant{const name=normalizeAssetName(asset.name||asset.type),match=/^(.*?)[_-](\d+)$/.exec(name);return{asset,variant:match?Number(match[2]):null,base:match?.[1]??name};}
-export function resolveNamedAsset(reference:string,assets:readonly AssetMacroAsset[],options:AssetResolveOptions={}):AssetMacroAsset|null{const wanted=normalizeAssetName(reference),exact=assetIndex(assets).get(wanted);if(exact)return exact;const variants=assets.map(variantOf).filter(value=>value.variant!==null&&value.base===wanted);if(!variants.length)return null;const owners=Object.entries(options.outfits??{}).filter((entry):entry is[string,number]=>Number.isInteger(entry[1])).sort((a,b)=>normalizeAssetName(b[0]).length-normalizeAssetName(a[0]).length),owner=owners.find(([id])=>{const key=normalizeAssetName(id);return wanted===key||wanted.startsWith(`${key}_`)||wanted.startsWith(`${key}-`);}),declared=options.variantFor?.(reference,variants),variant=owner?.[1]??(Number.isInteger(declared)?declared:null);if(variant!==null){const selected=variants.find(value=>value.variant===variant);if(selected)return selected.asset;}return(variants.find(value=>value.variant===0)??variants[stableIndex(wanted,variants.length)])!.asset;}
-function legacyBare(content:string,assets:readonly AssetMacroAsset[],options:AssetResolveOptions):AssetMacroResult{const warnings:AssetMacroWarning[]=[];return{content:content.replace(bareImg,(original:string,_quote:string,source:string)=>{const name=source.trim();if(/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(name))return original;const asset=resolveNamedAsset(name,assets,options),url=asset&&dataUrl(asset);if(!url){warnings.push({code:'asset_missing',macro:'img',name:asset?.name??name});return'';}return original.replace(source,url);}),warnings};}
+export function resolveNamedAsset(reference:string,assets:readonly AssetMacroAsset[],options:AssetResolveOptions={}):AssetMacroAsset|null{const wantedAliases=aliases(reference),index=assetIndex(assets),exact=wantedAliases.map(name=>index.get(name)).find(Boolean);if(exact)return exact;const wanted=wantedAliases.at(-1)??normalizeAssetName(reference),variants=assets.map(variantOf).filter(value=>value.variant!==null&&value.base===wanted);if(!variants.length)return null;const owners=Object.entries(options.outfits??{}).filter((entry):entry is[string,number]=>Number.isInteger(entry[1])).sort((a,b)=>normalizeAssetName(b[0]).length-normalizeAssetName(a[0]).length),owner=owners.find(([id])=>{const key=normalizeAssetName(id);return wanted===key||wanted.startsWith(`${key}_`)||wanted.startsWith(`${key}-`);}),declared=options.variantFor?.(reference,variants),variant=owner?.[1]??(Number.isInteger(declared)?declared:null);if(variant!==null){const selected=variants.find(value=>value.variant===variant);if(selected)return selected.asset;}return(variants.find(value=>value.variant===0)??variants[stableIndex(wanted,variants.length)])!.asset;}
+function assetImage(name:string,assets:readonly AssetMacroAsset[],options:AssetResolveOptions,macro='img'){const asset=resolveNamedAsset(name,assets,options),url=asset&&dataUrl(asset);return{asset,url,warning:!url?{code:'asset_missing' as const,macro,name:asset?.name??name}:null};}
+function legacyBare(content:string,assets:readonly AssetMacroAsset[],options:AssetResolveOptions):AssetMacroResult{const warnings:AssetMacroWarning[]=[];let output=content.replace(bareImg,(original:string,_quote:string,quoted:string,plain:string)=>{const name=(quoted??plain??'').trim();if(/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#|\?)/i.test(name))return original;const hit=assetImage(name,assets,options);if(!hit.url){warnings.push(hit.warning!);return original;}return original.replace(quoted??plain,hit.url);});output=output.replace(equalImg,(original:string,_quote:string,quoted:string,plain:string)=>{const name=(quoted??plain??'').trim(),hit=assetImage(name,assets,options);if(!hit.url){warnings.push(hit.warning!);return original;}return `<img src="${hit.url}" alt="${name}">`;});output=output.replace(pipeAsset,(original:string,_prefix:string,name:string)=>{const hit=assetImage(name.trim(),assets,options);if(!hit.url)return original;return `<img src="${hit.url}" alt="${name.trim()}">`;});return{content:output,warnings};}
 
 export function resolveAssetMacros(content:string,assets:readonly AssetMacroAsset[],options:AssetResolveOptions&{bare?:boolean}={bare:true}):AssetMacroResult{
   const warnings:AssetMacroWarning[]=[];
-  const resolved=content.replace(pattern,(original:string,rawMacro:string,rawName:string)=>{
+  const resolved=content.replace(pattern,(original:string,rawMacro:string,_quote:string,rawName:string)=>{
     const macro=rawMacro.toLowerCase(),name=rawName.trim();
     if(!known.has(macro)){warnings.push({code:'unsupported_asset_macro',macro,name});return original;}
     if(!supported.has(macro)){warnings.push({code:'unsupported_asset_macro',macro,name});return original;}
@@ -43,7 +47,7 @@ export function resolveAssetMacros(content:string,assets:readonly AssetMacroAsse
 export function compactAssetMacrosForPrompt(content:string,assets:readonly AssetMacroAsset[]=[]):AssetMacroResult{
   const warnings:AssetMacroWarning[]=[];
   const names=new Set(assets.map(asset=>normalizeAssetName(asset.name||asset.type)));
-  const resolved=content.replace(pattern,(original:string,rawMacro:string,rawName:string)=>{
+  const resolved=content.replace(pattern,(original:string,rawMacro:string,_quote:string,rawName:string)=>{
     const macro=rawMacro.toLowerCase(),name=rawName.trim();
     if(!known.has(macro))return original;
     if(!supported.has(macro)){warnings.push({code:'unsupported_asset_macro',macro,name});return original;}

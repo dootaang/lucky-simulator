@@ -61,6 +61,12 @@
 - `Math.random()` 기반 기억 선택(기본 경로에서 배제, seed 모드로만 재현)
 - Risu UI 트리(`HypaV3Modal` 등)
 
+### 2026-07-14 chat asset rendering parity
+
+- RisuAI (GPL-3.0) `src/ts/parser/parser.svelte.ts` `ParseMarkdown`/`parseAdditionalAssets`: ported the asset resolution -> `editdisplay` -> second asset resolution order to `apps/web/src/player/display-macros.ts`. Reference commit: `64818472fe6491ad9e23533c54ffb16b6b90159c`.
+- LogPapa (GPL-3.0-or-later) `core/convert/processImageTags.js` `getImagePatterns`/`processImageTags` and `web/risu-plugin/logpapa-push.js` `RE_EQ_USE`/`collectDisplayRules`/`embedImagesInPlace`: adapted legacy image forms and card/preset/module display-rule collection in `packages/risu/src/asset-macros.ts` and `packages/risu/src/card-regex.ts`. Reference local commit: `696b44b23c51678cbf255152440d0ae181a473ee`.
+- Risu/LogPapa DOM access, global database bindings, plugin permissions, and arbitrary script execution were not imported. Existing bounded regex and HTML sanitization remain the security boundary.
+
 ## Voyage AI
 
 - Phase C 배선 완료(실측 대기). `packages/memory/src/semantic.ts` — Voyage REST embeddings,
