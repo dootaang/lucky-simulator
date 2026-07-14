@@ -5,17 +5,19 @@
   import Icon from '@simbot/ui/Icon.svelte';
   import PassportPanel from './PassportPanel.svelte';
   import NpcGallery from './NpcGallery.svelte';
+  import type { AssetModuleMeta } from './card-library';
   import { toFactLine } from './FactReceipt.svelte';
   import { summarizeEngineState } from './card-library';
 
   interface BindingUi { personas: Persona[]; boundId: string | null; onchange: (id: string | null) => void }
-  let { profile, passport, index, session, version, bindingUi, assets, assetUrlFor, open = false, compiling = false, oncreate, onselect, onrename, onremove, onexport, onimport, oncompile, onsim, oninspect, onedit, onundo, onredo }: {
+  interface ModuleUi { modules: AssetModuleMeta[]; onconnect: () => void; onexport: (id: string) => void; onremove: (id: string) => void }
+  let { profile, passport, index, session, version, bindingUi, moduleUi, assets, assetUrlFor, open = false, compiling = false, oncreate, onselect, onrename, onremove, onexport, onimport, oncompile, onsim, oninspect, onedit, onundo, onredo }: {
     profile: CardRuntimeProfile; passport: CardPassport; index: ChatIndex; session: PlaySession; version: number;
-    bindingUi: BindingUi; assets: CardAsset[]; assetUrlFor: (asset: CardAsset) => string | null; open?: boolean; compiling?: boolean;
+    bindingUi: BindingUi; moduleUi: ModuleUi; assets: CardAsset[]; assetUrlFor: (asset: CardAsset) => string | null; open?: boolean; compiling?: boolean;
     oncreate: () => void; onselect: (id: string) => void; onrename: (id: string) => void; onremove: (id: string) => void;
     onexport: () => void; onimport: (file: File) => void; oncompile: () => void; onsim: () => void; oninspect: () => void; onedit: () => void; onundo: () => void; onredo: () => void;
   } = $props();
-  let tab = $state<'chat' | 'basic' | 'passport'>('chat');
+  let tab = $state<'chat' | 'basic' | 'assets' | 'passport'>('chat');
   let query = $state('');
   let importInput = $state<HTMLInputElement>();
   let facts = $derived.by(() => { void version; return session.lastLogs.map(toFactLine); });
@@ -23,10 +25,11 @@
   let blocked = $derived(facts.filter((fact) => fact.rejected).length);
   let stateRows = $derived.by(() => { void version; return summarizeEngineState(session.runtime.state); });
   let filteredChats = $derived(index.chats.filter((chat) => chat.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
+  function size(value:number){if(value<1024)return`${value} B`;if(value<1024*1024)return`${(value/1024).toFixed(1)} KB`;return`${(value/1024/1024).toFixed(1)} MB`;}
 </script>
 
 <aside class="side" class:open style:display={open?'flex':undefined}>
-  <header><strong>{profile.card.name}</strong><button class="edit-card" onclick={onedit} title="봇카드와 스크립트 편집"><Icon name="pencil" size={14}/><span>봇 편집</span></button><span class="passport-count">{passport.grades.exact.length}/{passport.grades.approx.length}/{passport.grades.preserved.length}</span><div class="tabs"><button class:active={tab==='chat'} onclick={()=>tab='chat'} title="채팅"><Icon name="message" size={15}/><span>채팅</span></button><button class:active={tab==='basic'} onclick={()=>tab='basic'} title="카드 정보"><Icon name="user" size={15}/><span>카드 정보</span></button><button class:active={tab==='passport'} onclick={()=>tab='passport'} title="호환성 여권"><Icon name="badge" size={15}/><span>여권</span></button></div></header>
+  <header><strong>{profile.card.name}</strong><button class="edit-card" onclick={onedit} title="봇카드와 스크립트 편집"><Icon name="pencil" size={14}/><span>봇 편집</span></button><span class="passport-count">{passport.grades.exact.length}/{passport.grades.approx.length}/{passport.grades.preserved.length}</span><div class="tabs"><button class:active={tab==='chat'} onclick={()=>tab='chat'} title="채팅"><Icon name="message" size={15}/><span>채팅</span></button><button class:active={tab==='basic'} onclick={()=>tab='basic'} title="카드 정보"><Icon name="user" size={15}/><span>정보</span></button><button class:active={tab==='assets'} onclick={()=>tab='assets'} title="에셋"><Icon name="box" size={15}/><span>에셋</span></button><button class:active={tab==='passport'} onclick={()=>tab='passport'} title="호환성 여권"><Icon name="badge" size={15}/><span>여권</span></button></div></header>
   {#if tab==='chat'}
     <section class="content chats">
       <button class="new" onclick={oncreate}><Icon name="plus"/> 새 채팅</button>
@@ -37,6 +40,8 @@
     <section class="engine"><div class="engine-head"><strong><Icon name="star" size={12}/> 엔진 확정 · 이번 턴</strong><span>{confirmed}확정 · {blocked}차단</span></div><button class="compile" disabled={compiling} onclick={oncompile}><Icon name="star" size={14}/>{compiling?'엔진 컴파일 중…':passport.mode==='full-sim'?'엔진 재컴파일':'엔진 컴파일'}</button>{#if passport.mode==='full-sim'}<button class="simulate" onclick={onsim}><Icon name="badge" size={14}/> 시뮬레이션 열기</button>{/if}<div class="mode">{passport.mode==='full-sim'?'완전 시뮬':'일반 채팅'}</div>{#if stateRows.length}<dl>{#each stateRows as row}<div><dt>{row.label}</dt><dd>{row.value}</dd></div>{/each}</dl>{/if}{#if facts.length}<ul>{#each facts.slice(0,4) as fact}<li class:rejected={fact.rejected}><Icon name={fact.icon} size={13}/><b>{fact.label}</b><span>{fact.delta??fact.note}</span></li>{/each}</ul>{/if}<button class="inspect" onclick={oninspect}><Icon name="badge" size={14}/> 세션 검사기</button><div class="history"><button disabled={!session.checkpointDepth} onclick={onundo} title="되돌리기"><Icon name="undo"/><span>{session.checkpointDepth}</span></button><button disabled={!session.redoDepth} onclick={onredo} title="다시 실행"><Icon name="redo"/><span>{session.redoDepth}</span></button></div></section>
   {:else if tab==='basic'}
     <section class="content basic"><h3>{profile.card.name}</h3><h4>설명</h4><p>{profile.card.description||'설명 없음'}</p><h4>시나리오</h4><p>{profile.card.scenario||'시나리오 없음'}</p><label>이 카드에 고정할 페르소나<select value={bindingUi.boundId??''} onchange={(event)=>bindingUi.onchange(event.currentTarget.value||null)}><option value="">전역 활성 페르소나 사용</option>{#each bindingUi.personas as persona}<option value={persona.id}>{persona.name}</option>{/each}</select></label><h4>NPC 스프라이트 갤러리</h4>{#if assets.length}<NpcGallery {assets} {assetUrlFor}/>{:else}<p>표시할 이미지 자산이 없습니다.</p>{/if}</section>
+  {:else if tab==='assets'}
+    <section class="content modules"><button class="connect" onclick={moduleUi.onconnect}><Icon name="plus" size={14}/> 에셋 모듈 연결</button><p>이 봇에만 적용할 별도 이미지 ZIP·CharX를 연결합니다.</p>{#if moduleUi.modules.length}{#each moduleUi.modules as module(module.id)}<article title={`${module.assetCount.toLocaleString()}개 이미지 · ${size(module.size)}`}><div><strong>{module.name}</strong><small>{module.assetCount.toLocaleString()}개 이미지 · {size(module.size)}</small></div><button onclick={()=>moduleUi.onexport(module.id)}>원본 내보내기</button><button class="unlink" onclick={()=>moduleUi.onremove(module.id)}>연결 해제</button></article>{/each}{:else}<p class="empty-module">연결된 에셋 모듈이 없습니다.</p>{/if}</section>
   {:else}<section class="content"><PassportPanel {passport}/></section>{/if}
 </aside>
 
@@ -47,4 +52,5 @@
   .compile{width:calc(100% - 20px);display:flex;align-items:center;justify-content:center;gap:6px;margin:8px 10px 4px;padding:8px;border:1px solid #6a8550;border-radius:6px;background:#283321;color:#c7e7aa}.compile:disabled{opacity:.55}
   .simulate{width:calc(100% - 20px);display:flex;align-items:center;justify-content:center;gap:6px;margin:5px 10px;padding:8px;border:1px solid #80652f;border-radius:6px;background:#302817;color:#ebc66f}
   .edit-card{float:right;display:inline-flex;align-items:center;gap:4px;margin-right:8px;padding:3px 6px;border:1px solid #3b414c;border-radius:5px;background:#22262e;color:#aeb6c4;font-size:10px}.edit-card:hover{border-color:#6c98f4;color:#dce6fb}
+  .modules{display:grid;align-content:start;gap:9px}.modules>p{margin:0;color:#929aaa;font-size:11px;line-height:1.5}.connect{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border:1px dashed #60749a;border-radius:7px;background:#1c2431;color:#c9d9f7}.modules article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:10px;border:1px solid #353b46;border-radius:8px;background:#1b1e24}.modules article div{grid-column:1/-1;display:grid;gap:3px;min-width:0}.modules article strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.modules article small{color:#8992a1;font-size:10px}.modules article button{padding:6px 8px;border:1px solid #3d4552;border-radius:5px;background:#252a33;color:#c7ced9;font-size:11px}.modules article .unlink{color:#e3aaa3}.empty-module{padding:16px;text-align:center;border:1px dashed #343a44;border-radius:7px}
 </style>
