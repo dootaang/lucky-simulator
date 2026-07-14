@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildRosterModel, collectMetIds } from './roster-model';
 
+const schemaWithUnlocks = { entities: { npc: { instances: { silvia: { nameKo: '실비아' } } } }, scales: [{ id: 'affinity', default: 60, tiers: [{ range: [0, 150], label: '신뢰' }, { range: [151, 200], label: '애착' }], actionMinimums: { '비밀 공유': 111, '직접 고백': 151, '독점 행동': 191 } }] };
 const schema = { entities: { npc: { instances: { silvia: { nameKo: '실비아' }, adelaine: { nameKo: '아델라인' }, clem: { nameKo: '클렘' } } } }, scales: [{ id: 'affinity', default: 60, tiers: [{ range: [0, 80], label: '중립', brief: '계산적' }, { range: [81, 150], label: '신뢰', brief: '깊은 유대' }] }] };
 
 describe('NPC 로스터 모델', () => {
@@ -24,6 +25,15 @@ describe('NPC 로스터 모델', () => {
   it('티어 스케일이 없는 카드는 이름·태그만 다룬다 (범용 안전)', () => {
     const rows = buildRosterModel({ entities: { npc: { instances: { a: { nameKo: '가' } } } } }, {}, new Set(['a']));
     expect(rows[0]!).toMatchObject({ name: '가', ladder: null });
+  });
+  it('소셜링크 잠금: 해금은 이름 공개, 다음 잠금 하나만 ??? 힌트, 나머지는 숨김 — 전부 공개가 전체를 연다', () => {
+    const rows = buildRosterModel(schemaWithUnlocks, { npcs: { silvia: { affinity: 132 } } }, new Set(['silvia']));
+    expect(rows[0]!.unlocks).toEqual([
+      { label: '비밀 공유', threshold: 111, unlocked: true, remaining: 0 },
+      { label: '???', threshold: 151, unlocked: false, remaining: 19 },
+    ]);
+    const revealed = buildRosterModel(schemaWithUnlocks, { npcs: { silvia: { affinity: 132 } } }, new Set(['silvia']), true);
+    expect(revealed[0]!.unlocks.map((entry) => entry.label)).toEqual(['비밀 공유', '직접 고백', '독점 행동']);
   });
   it('정규화된 배열형 entities([{type,instances:[{id}]}])도 읽는다', () => {
     const rows = buildRosterModel({ entities: [{ type: 'npc', instances: [{ id: 'silvia', nameKo: '실비아' }] }], scales: schema.scales }, { npcs: { silvia: { affinity: 132 } } }, new Set(['silvia']));

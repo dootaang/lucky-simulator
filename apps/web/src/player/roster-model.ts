@@ -3,12 +3,25 @@
 // 사용자가 '전부 공개'를 켜면 해제된다(SPEC-COCKPIT-DESIGN 확정). 티어 이름·구간은 카드 정의를 그대로 쓴다.
 
 export interface RosterLadder { scaleId: string; label: string; value: number; tierMin: number; tierMax: number; next: number | null; brief?: string }
-export interface RosterRow { id: string; name: string; met: boolean; tags: string[]; ladder: RosterLadder | null }
+export interface RosterUnlock { label: string; threshold: number; unlocked: boolean; remaining: number }
+export interface RosterRow { id: string; name: string; met: boolean; tags: string[]; ladder: RosterLadder | null; unlocks: RosterUnlock[] }
 
 const own = (o: unknown, k: string) => !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
 const rec = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const arr = (v: unknown) => (Array.isArray(v) ? v : []);
 const num = (v: unknown, fallback = Number.NaN) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+
+// 소셜링크 잠금(카드의 actionMinimums) — 해금된 행동은 이름을 공개하고, 잠긴 것은 가장 가까운 하나만
+// '??? (문턱 필요)' 힌트로 보여준다. 나머지 잠금은 숨긴다("겪은 만큼만"). 전부 공개 토글이 전체를 연다.
+function unlocksFor(scale: Record<string, unknown>, value: number, revealAll: boolean): RosterUnlock[] {
+  const minimums = rec(scale.actionMinimums);
+  const all = Object.keys(minimums).map((label) => ({ label, threshold: num(minimums[label]) })).filter((entry) => Number.isFinite(entry.threshold)).sort((a, b) => a.threshold - b.threshold)
+    .map((entry) => ({ label: entry.label, threshold: entry.threshold, unlocked: value >= entry.threshold, remaining: Math.max(0, entry.threshold - value) }));
+  if (revealAll) return all;
+  const unlocked = all.filter((entry) => entry.unlocked);
+  const nextLocked = all.find((entry) => !entry.unlocked);
+  return nextLocked ? [...unlocked, { ...nextLocked, label: '???' }] : unlocked;
+}
 
 // per-NPC 스케일 = tiers를 가진 첫 스케일(관례상 affinity). 없으면 로스터는 이름·태그만 보여준다.
 function npcScale(schema: Record<string, unknown>) {
@@ -44,7 +57,8 @@ export function buildRosterModel(schema: Record<string, unknown>, state: Record<
         ladder = { scaleId: String(scale.id ?? 'affinity'), label: String(tier.label ?? ''), value, tierMin: num(range[0]), tierMax, next: value < tierMax ? tierMax + 1 - value : null, ...(tier.brief ? { brief: String(tier.brief) } : {}) };
       }
     }
-    rows.push({ id, name: met ? name : '???', met, tags: met ? tags : [], ladder });
+    const unlocks = met && scale && ladder ? unlocksFor(scale, ladder.value, revealAll) : [];
+    rows.push({ id, name: met ? name : '???', met, tags: met ? tags : [], ladder, unlocks });
   }
   // 만난 인물 먼저, 그 안에서는 호감도 높은 순 — 도감의 진행감을 준다.
   return rows.sort((a, b) => Number(b.met) - Number(a.met) || (b.ladder?.value ?? -1) - (a.ladder?.value ?? -1));
