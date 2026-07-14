@@ -1284,6 +1284,7 @@ export function registerCBS(arg:CBSRegisterArg) {
         callback: (str, matcherArg, args, vars) => {
             const arr = parseArray(args[0])
             const index = Number(args[1])
+            cbsBudget()?.index(index) // 럭키 보안 패치(M-S2a): 희소 배열 인덱스 상한
             if(index >= arr.length){
                 arr[index] = args[2]
             }
@@ -1388,7 +1389,9 @@ export function registerCBS(arg:CBSRegisterArg) {
         callback: (str, matcherArg, args, vars) => {
 
             if(args.length > 0){
-                return str.repeat(Number(args[0]) < 1 ? 1 : Number(args[0]))
+                const times = Number(args[0]) < 1 ? 1 : Number(args[0])
+                cbsBudget()?.repeat(str.length, times) // 럭키 보안 패치(M-S2a): 문자열 반복 폭발 차단
+                return str.repeat(times)
             }
             return '\\n'
         },
@@ -1552,7 +1555,17 @@ export function registerCBS(arg:CBSRegisterArg) {
             const step = arr.length > 2 ? Number(arr[2]) : 1
             let out:string[] = []
 
-            cbsBudget()?.array(Math.max(0, Math.ceil((end - start) / (step || 1)))) // 럭키 보안 패치(M-S2a): range 폭발 차단
+            // 럭키 보안 패치(M-S2a): step이 0·음수·NaN이면 i가 커지지 않아 i<end가 영원히 참 — 무한 루프다.
+            // 생성량 계산(step||1)과 반복 조건(step)이 어긋나 예산 검사를 통과한 뒤 UI가 멈추던 구멍.
+            if(!Number.isFinite(step) || step <= 0){
+                cbsBudget()?.array(Number.POSITIVE_INFINITY) // 반드시 예산 오류로 끝난다
+            }
+            // NaN 경계는 업스트림과 같이 빈 배열이다(i<NaN이 거짓이라 애초에 돌지 않는다) — 여기서만 조용히 통과.
+            if(Number.isNaN(start) || Number.isNaN(end)){
+                return makeArray([])
+            }
+            // end가 Infinity면 (end-start)/step도 Infinity → 예산이 잡는다. 업스트림에선 이게 무한 루프였다.
+            cbsBudget()?.array(Math.max(0, Math.ceil((end - start) / step)))
             for(let i=start;i<end;i+=step){
                 out.push(i.toString())
             }

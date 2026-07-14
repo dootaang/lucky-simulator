@@ -3,10 +3,10 @@
 // evalInline, expandBlocks, renderRisu), derived from RisuAI
 // src/ts/parser/parser.svelte.ts (risuChatParser/matcher). Asset markers are
 // deliberately preserved for asset-macros.ts, avoiding a second resolver.
-import{CbsBudget,CbsBudgetExceeded,withCbsBudget}from'./security/budget.ts';
+import{CbsBudget,withCbsBudget}from'./security/budget.ts';
 export interface CbsConditionContext{activeModules?:readonly string[]}
-// 예산 초과는 조용히 넘어가지 않는다 — 진단에 남긴다(M-S3 '차단된 효과 기록'의 선행).
-let lastBudgetBreach:string|null=null;export function lastCbsBudgetBreach(){return lastBudgetBreach;}
+// 예산 초과는 조용히 넘어가지 않는다 — 호출자가 넘긴 예산 객체(context.budget)에 경고가 쌓인다.
+// 모듈 전역에 마지막 오류만 남기면 이전 렌더의 경고가 다음 렌더에 끈적하게 따라붙어 진단이 거짓말을 한다.
 // ADR 0004 M-S0 — 렌더는 영수증이지 거래가 아니다. parseCbs는 기본 읽기 전용이며,
 // setvar/addvar류의 쓰기는 스크래치 복사본에만 반영되고 폐기된다(세션 변수 불변).
 // 상태를 실제로 바꾸는 것은 명시적 트리거 트랜잭션뿐이다(mutable:true — 세션만 사용).
@@ -58,5 +58,5 @@ export function parseCbs(source:string,context:CbsContext):string{if((context.ca
   // 업스트림 자체 게이트: setvar 계열은 runVar가 참일 때만 실행된다. 표시 경로에서는 끈다(이중 방어).
   const parsed=withCbsBudget(context.budget??new CbsBudget(),()=>risuChatParser(String(source??''),{chatID:context.chatIndex??-1,runVar:context.mutable===true,callStack:context.callStack??0}));
   return String(parsed).replace(/\{\{[^{}]*}}/g,'').replace(/([^]*)/g,'{{$1}}');
- }catch(error){if(error instanceof CbsBudgetExceeded)lastBudgetBreach=error.reason;return String(source??'');}
+ }catch{return String(source??'');} // 예산 초과 포함 — 실패는 안전한 원문으로 되돌린다(경고는 context.budget.breaches에 남는다)
  finally{activeParseContext=previousContext;restoreCbsPortEnv(previousEnv);}}

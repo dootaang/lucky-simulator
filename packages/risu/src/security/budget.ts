@@ -7,6 +7,7 @@
 export class CbsBudgetExceeded extends Error { constructor(public readonly reason: string) { super(`cbs_budget_exceeded: ${reason}`); } }
 
 export interface CbsBudgetLimits { input: number; output: number; ops: number; eachItems: number; depth: number; softMs: number }
+export interface CbsBudgetBreach { limit: string; actual: number; allowed: number }
 // 실측(판타지시뮬봇 5종)으로 보정한 값. 정상 카드가 걸리면 상한을 올리기 전에 무엇이 비싼지 먼저 확인한다.
 //   벨라돈나 첫 메시지 163,901자가 정규식 치환(out 39,868자)을 거치며 343,553자로 부푼다 → input은
 //   정규식 확장 *후* 크기 기준이어야 한다. card-regex의 MAX_TEXT(1,000,000)와 같은 축척으로 맞춘다.
@@ -17,19 +18,26 @@ export const DEFAULT_CBS_LIMITS: CbsBudgetLimits = { input: 1_000_000, output: 2
 
 export class CbsBudget {
   #ops = 0; #items = 0; #started = Date.now(); #soft = false;
+  // 경고는 이 예산 객체에 담긴다 — 모듈 전역이면 이전 렌더의 오류가 다음 렌더에 끈적하게 따라붙는다.
+  readonly breaches: CbsBudgetBreach[] = [];
   constructor(readonly limits: CbsBudgetLimits = DEFAULT_CBS_LIMITS) {}
   get softExceeded() { return this.#soft; }
   get ops() { return this.#ops; }
-  input(length: number) { if (length > this.limits.input) throw new CbsBudgetExceeded(`input ${length} > ${this.limits.input}`); }
-  output(length: number) { if (length > this.limits.output) throw new CbsBudgetExceeded(`output ${length} > ${this.limits.output}`); }
-  depth(level: number) { if (level > this.limits.depth) throw new CbsBudgetExceeded(`depth ${level} > ${this.limits.depth}`); }
+  #fail(limit: string, actual: number, allowed: number): never { const breach = { limit, actual, allowed }; this.breaches.push(breach); throw new CbsBudgetExceeded(`${limit} ${actual} > ${allowed}`); }
+  input(length: number) { if (length > this.limits.input) this.#fail('input', length, this.limits.input); }
+  output(length: number) { if (length > this.limits.output) this.#fail('output', length, this.limits.output); }
+  depth(level: number) { if (level > this.limits.depth) this.#fail('depth', level, this.limits.depth); }
+  // 희소 배열 인덱스(arrayassert)는 원소 하나로 직렬화 때 수십억 칸을 만든다 — 인덱스 자체를 막는다.
+  index(at: number) { if (!Number.isFinite(at) || at < 0 || at > this.limits.eachItems) this.#fail('array index', Number.isFinite(at) ? at : Number.MAX_SAFE_INTEGER, this.limits.eachItems); }
+  // 문자열 반복(cbr 등)은 작은 입력 하나로 거대한 문자열을 만든다 — 만들기 전에 곱해서 검사한다.
+  repeat(unit: number, times: number) { if (!Number.isFinite(times) || times < 0) this.#fail('repeat count', Number.isFinite(times) ? times : Number.MAX_SAFE_INTEGER, this.limits.output); this.output(unit * times); }
   // 모든 CBS 함수 호출이 여기를 지난다 — 명령 수가 주 기준이고, 시간은 여기서만 관측된다(중단 아님).
-  op() { this.#ops += 1; if (this.#ops > this.limits.ops) throw new CbsBudgetExceeded(`ops ${this.#ops} > ${this.limits.ops}`); if (!this.#soft && Date.now() - this.#started > this.limits.softMs) this.#soft = true; }
+  op() { this.#ops += 1; if (this.#ops > this.limits.ops) this.#fail('ops', this.#ops, this.limits.ops); if (!this.#soft && Date.now() - this.#started > this.limits.softMs) this.#soft = true; }
   // 배열 생성 프리미티브(range 등)는 #each에 닿기도 전에 단 한 번의 연산으로 폭발한다.
   // 명령 수 예산은 이걸 못 막는다 — 호출은 1회이기 때문이다. 그래서 원소 수를 따로 센다.
-  array(count: number) { this.#items += count; if (this.#items > this.limits.eachItems) throw new CbsBudgetExceeded(`array elements ${this.#items} > ${this.limits.eachItems}`); }
+  array(count: number) { if (!Number.isFinite(count) || count < 0) this.#fail('array elements', Number.MAX_SAFE_INTEGER, this.limits.eachItems); this.#items += count; if (this.#items > this.limits.eachItems) this.#fail('array elements', this.#items, this.limits.eachItems); }
   // #each는 항목 수 × 본문 길이만큼 폭발한다. 누적으로 세야 블록을 잘게 쪼개는 우회를 막는다.
-  each(items: number, bodyLength: number) { this.#items += items; if (this.#items > this.limits.eachItems) throw new CbsBudgetExceeded(`each items ${this.#items} > ${this.limits.eachItems}`); this.output(items * bodyLength); }
+  each(items: number, bodyLength: number) { this.#items += items; if (this.#items > this.limits.eachItems) this.#fail('each items', this.#items, this.limits.eachItems); this.output(items * bodyLength); }
 }
 
 let active: CbsBudget | null = null;

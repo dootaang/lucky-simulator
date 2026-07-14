@@ -218,26 +218,31 @@ const legacyBlockMatcher = (p1:string,matcherArg:matcherArg) => {
 type blockMatch = 'ignore'|'parse'|'nothing'|'ifpure'|'pure'|'each'|'function'|'pure-display'|'normalize'|'escape'|'newif'|'newif-falsy'
 
 function parseArray(p1:string): unknown[]{
+    // 럭키 보안 패치(M-S2a): 배열이 태어나는 공통 관문. split/spread/arraypush… 모두 여기를 지난다.
+    const guard = (arr:unknown[]) => { cbsBudget()?.array(arr.length); return arr }
     try {
         const arr = JSON.parse(p1)
         if(Array.isArray(arr)){
-            return arr
+            return guard(arr)
         }
-        return p1.split('§')
+        return guard(p1.split('§'))
     } catch (error) {
-        return p1.split('§')
+        return guard(p1.split('§'))
     }
 }
 
 function parseDict(p1 :string): {[key:string]: unknown}{
     try {
-        return JSON.parse(p1)
+        const dict = JSON.parse(p1)
+        cbsBudget()?.array(Object.keys(dict ?? {}).length) // 럭키 보안 패치(M-S2a): 사전 키 수 상한
+        return dict
     } catch (error) {
         return {}
     }
 }
 
 function makeArray(p1: unknown[]): string{
+    cbsBudget()?.array(p1.length) // 럭키 보안 패치(M-S2a): 직렬화 전에 원소 수를 막는다 — 희소 배열은 stringify에서 폭발한다
     return JSON.stringify(p1.map((f) => {
         if(typeof(f) === 'string'){
             return f.replace(/::/g, '\\u003A\\u003A')
@@ -901,6 +906,7 @@ export function risuChatParser(da:string, arg:{
         commentMode = false
     }
     if(nested.length === 1){
+        cbsBudget()?.output(nested[0].length) // 럭키 보안 패치(M-S2a): 최종 출력 안전망
         return nested[0]
     }
     let result = ''
@@ -909,6 +915,7 @@ export function risuChatParser(da:string, arg:{
         dat += nested.shift()
         result = dat + result
     }
+    cbsBudget()?.output(nested[0].length + result.length) // 럭키 보안 패치(M-S2a): 최종 출력 안전망
     return nested[0] + result
 }
 
