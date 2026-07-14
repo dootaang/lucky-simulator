@@ -4,7 +4,10 @@
 // src/ts/parser/parser.svelte.ts (risuChatParser/matcher). Asset markers are
 // deliberately preserved for asset-macros.ts, avoiding a second resolver.
 export interface CbsConditionContext{activeModules?:readonly string[]}
-export interface CbsContext extends CbsConditionContext{userName?:string;charName?:string;chatIndex?:number;lastMessageId?:number;screenWidth?:number;variables:Record<string,string>;callStack?:number;}
+// ADR 0004 M-S0 — 렌더는 영수증이지 거래가 아니다. parseCbs는 기본 읽기 전용이며,
+// setvar/addvar류의 쓰기는 스크래치 복사본에만 반영되고 폐기된다(세션 변수 불변).
+// 상태를 실제로 바꾸는 것은 명시적 트리거 트랜잭션뿐이다(mutable:true — 세션만 사용).
+export interface CbsContext extends CbsConditionContext{userName?:string;charName?:string;chatIndex?:number;lastMessageId?:number;screenWidth?:number;variables:Record<string,string>;callStack?:number;mutable?:boolean;}
 const ASSET=/\{\{\s*(?:raw|path|img|image|asset|emotion|bg|bgm|audio|video|video-img)\s*::[^{}]*?}}/gi;
 const OPEN='cbsAssetToken',CLOSE='TokenEnd';
 export function calcString(input:string):string{const s=String(input??'');let i=0;const skip=()=>{while(/\s/.test(s[i]??''))i++;};const atom=():number=>{skip();if(s[i]==='('){i++;const value=compare();skip();if(s[i]===')')i++;return value;}let j=i;while(/[0-9.]/.test(s[j]??''))j++;if(j>i){const value=Number.parseFloat(s.slice(i,j));i=j;return Number.isFinite(value)?value:0;}while(i<s.length&&!/[-+*/%()<>=\s]/.test(s[i]!))i++;return 0;};const unary=():number=>{skip();if(s[i]==='-'){i++;return-unary();}if(s[i]==='+'){i++;return unary();}return atom();};const pow=():number=>{const left=unary();skip();if(s.slice(i,i+2)==='**'){i+=2;return Math.pow(left,pow());}return left;};const mul=():number=>{let value=pow();for(;;){skip();if(s[i]==='*'&&s[i+1]!=='*'){i++;value*=pow();}else if(s[i]==='/'){i++;const right=pow();value=right===0?0:value/right;}else if(s[i]==='%'){i++;const right=pow();value=right===0?0:value%right;}else return value;}};const add=():number=>{let value=mul();for(;;){skip();if(s[i]==='+'){i++;value+=mul();}else if(s[i]==='-'){i++;value-=mul();}else return value;}};function compare(){const left=add();skip();const op=['==','!=','>=','<=','>','<'].find(value=>s.startsWith(value,i));if(!op)return left;i+=op.length;const right=add();return op==='=='?Number(left===right):op==='!='?Number(left!==right):op==='>='?Number(left>=right):op==='<='?Number(left<=right):op==='>'?Number(left>right):Number(left<right);}try{const value=compare();return Number.isFinite(value)?String(value):'0';}catch{return'0';}}
@@ -22,7 +25,7 @@ function blocks(source:string,ctx:CbsContext){let text=source,guard=0;while(guar
 // 유지되는 우리 계약: ① 에셋 매크로는 값이 되지 않고 {{fn::args}}로 보존되어 뒷단(resolveAssetMacros)이
 // 처리한다(안쪽 CBS는 업스트림 루프가 먼저 평가하므로 outfit 변수 결합이 리스와 동일 시점에 완성된다)
 // ② user/char/screenwidth/chatindex/lastmessageid는 세션 컨텍스트가 준 값 ③ 미해석 {{…}}은 소거.
-import { risuChatParser, setCbsPortEnv, overrideCbsFunction } from './port/parser.ts';
+import { risuChatParser, setCbsPortEnv, getCbsPortEnv, restoreCbsPortEnv, overrideCbsFunction } from './port/parser.ts';
 let portReady=false;
 function ensurePortOverrides(){if(portReady)return;portReady=true;
  for(const fn of['raw','path','img','image','asset','emotion','bg','bgm','audio','video','video-img','videoimg'])overrideCbsFunction(fn,(_str,_arg,args)=>`${fn==='videoimg'?'video-img':fn}::${args.join('::')}`);
@@ -36,17 +39,21 @@ function ensurePortOverrides(){if(portReady)return;portReady=true;
 const charName=()=>String(activeParseContext?.charName??'Character');
 let activeParseContext:CbsContext|null=null;
 export function parseCbs(source:string,context:CbsContext):string{if((context.callStack??0)>=20)return'';
- const previous=activeParseContext;activeParseContext=context;
+ const previousContext=activeParseContext,previousEnv=getCbsPortEnv();
+ // 기본 읽기 전용: 카드가 표시 중 쓰기를 시도하면 스크래치에만 남고 버려진다. 세션 변수 객체는 절대 건드리지 않는다.
+ const store:Record<string,string>=context.mutable===true?context.variables:{...context.variables};
+ activeParseContext=context;
  try{ensurePortOverrides();
   setCbsPortEnv({
-   getChatVar:(key)=>context.variables[key]??'',
-   setChatVar:(key,value)=>{context.variables[key]=value;},
-   getGlobalChatVar:(key)=>context.variables[key]??'',
+   getChatVar:(key)=>store[key]??'',
+   setChatVar:(key,value)=>{store[key]=value;},
+   getGlobalChatVar:(key)=>store[key]??'',
    getUserName:()=>context.userName??'User',
    getModules:()=>(context.activeModules??[]).map((namespace)=>({namespace,name:namespace})),
    database:()=>({characters:[{name:context.charName??'Character',type:'character',chats:[{message:[]}],chatPage:0}],aiModel:''}),
   });
-  const parsed=risuChatParser(String(source??''),{chatID:context.chatIndex??-1,runVar:true,callStack:context.callStack??0});
+  // 업스트림 자체 게이트: setvar 계열은 runVar가 참일 때만 실행된다. 표시 경로에서는 끈다(이중 방어).
+  const parsed=risuChatParser(String(source??''),{chatID:context.chatIndex??-1,runVar:context.mutable===true,callStack:context.callStack??0});
   return String(parsed).replace(/\{\{[^{}]*}}/g,'').replace(/([^]*)/g,'{{$1}}');
  }catch{return String(source??'');}
- finally{activeParseContext=previous;}}
+ finally{activeParseContext=previousContext;restoreCbsPortEnv(previousEnv);}}

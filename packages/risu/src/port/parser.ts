@@ -27,6 +27,8 @@ export interface CbsPortEnv {
 }
 const defaultEnv: CbsPortEnv = { database: () => ({ characters: [] }), selectedCharID: () => 0, getChatVar: () => '', setChatVar: () => {}, getGlobalChatVar: () => '', getUserName: () => 'user', getPersonaPrompt: () => '', getModules: () => [], getModuleLorebooks: () => [], getModelInfo: () => ({}), callInternalFunction: () => '', findCharacterbyId: () => ({ name: 'Unknown Character' }), pickHashRand: () => 0 };
 let env: CbsPortEnv = defaultEnv;
+export function getCbsPortEnv(): CbsPortEnv { return env; }
+export function restoreCbsPortEnv(previous: CbsPortEnv) { env = previous; setChatVarBridge({ get: env.getChatVar, getGlobal: env.getGlobalChatVar }); }
 export function setCbsPortEnv(next: Partial<CbsPortEnv>) { env = { ...defaultEnv, ...next }; setChatVarBridge({ get: env.getChatVar, getGlobal: env.getGlobalChatVar }); }
 // 업스트림 전역 이름을 env로 잇는 브릿지 — 발췌 본문이 그대로 컴파일되게 한다.
 const getChatVar = (key: string) => env.getChatVar(key);
@@ -902,31 +904,12 @@ export function risuChatParser(da:string, arg:{
     return nested[0] + result
 }
 
-export function applyMarkdownToNode(node: Node) {
-    if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent;
-        if (text) {
-            let markdown = renderMarkdown(md, text);
-            if (markdown !== text) {
-                const span = (globalThis as any).document?.createElement?.bind((globalThis as any).document) ?? (() => null as any)('span');
-                span.innerHTML = markdown;
-                
-                // inherit inline style from the parent node
-                const parentStyle = (node.parentNode as HTMLElement)?.style;
-                if(parentStyle){
-                    for(let i=0;i<parentStyle.length;i++){
-                        span.style.setProperty(parentStyle[i], parentStyle.getPropertyValue(parentStyle[i]))
-                    }   
-                }
-                (node as Element)?.replaceWith(span);
-                return
-            }
-        }
-    } else {
-        for (const child of node.childNodes) {
-            applyMarkdownToNode(child);
-        }
-    }
+// ── 봉인됨 (ADR 0004 M-S0) ────────────────────────────────────────────────
+// 업스트림 applyMarkdownToNode는 innerHTML로 DOM을 직접 만든다. 럭키의 XSS 경계는
+// "모든 카드 HTML은 최종 sanitizeHtml을 통과한다"이므로 이 우회 경로는 영구 봉인한다.
+// 카드 표현이 더 필요하면 문자열 파이프라인 + 살균기로 해결하고, 이 함수를 되살리지 말 것.
+export function applyMarkdownToNode(_node: unknown): never {
+  throw new Error('applyMarkdownToNode_sealed: 카드 HTML은 반드시 sanitizeHtml을 통과해야 한다 (ADR 0004 M-S0)');
 }
 
 // ── 이식 경계 훅 (업스트림에 없음) ──────────────────────────────────────────
