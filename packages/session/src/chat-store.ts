@@ -17,6 +17,7 @@ export class ChatStore {
   async remove(chatId:string){const index=await this.list(),position=index.chats.findIndex((chat)=>chat.chatId===chatId);if(position<0)throw new Error(`chat_not_found:${chatId}`);index.chats.splice(position,1);if(index.activeChatId===chatId)index.activeChatId=index.chats[0]?.chatId??null;await this.#save(index);await this.#repository.delete(`${this.#projectId}:chat:${chatId}`);}
   async setActive(chatId:string){const index=await this.list();this.#required(index,chatId);index.activeChatId=chatId;await this.#save(index);}
   async touch(chatId:string,turn:number){const index=await this.list(),chat=this.#required(index,chatId);chat.turn=Math.max(0,Math.trunc(turn));chat.updatedAt=Date.now();await this.#save(index);}
+  async syncTurn(chatId:string,turn:number){const index=await this.list(),chat=this.#required(index,chatId),next=Math.max(0,Math.trunc(turn));if(chat.turn===next)return;chat.turn=next;await this.#save(index);}
   #required(index:ChatIndex,chatId:string){const chat=index.chats.find((entry)=>entry.chatId===chatId);if(!chat)throw new Error(`chat_not_found:${chatId}`);return chat;}
   #empty():ChatIndex{return{contract:'simbot-chat-index/0.1',projectId:this.#projectId,chats:[],activeChatId:null};}
   #indexId(){return`${this.#projectId}:chatindex`;}

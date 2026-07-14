@@ -2,7 +2,7 @@
   import type { PlaySession,ChatMessage } from '@simbot/session';
   import type { CardAsset } from '@simbot/card';
   import Icon from '@simbot/ui/Icon.svelte';
-  import { renderDisplayContent } from './display-macros';
+  import {prepareDisplayContent,renderDisplayContent} from './display-macros';
   import { toFactLine } from './FactReceipt.svelte';
   import { presentNarrativeIssues } from './narrative-issues';
   import {buildNpcClusters,extractAssetSpeakers} from './npc-gallery';
@@ -38,7 +38,7 @@
   function speakersFor(message:ChatMessage){return session.resolveSpeakers(message.speakers??[]);}
   let spriteGroups=$derived(buildNpcClusters(assets));
   const speakerKey=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9가-힣]+/g,'');
-  function stageSpeakersFor(message:ChatMessage){if(message.role!=='assistant')return[];const inline=new Set(extractAssetSpeakers(message.content,spriteGroups).map(item=>speakerKey(item.npcId)));return speakersFor(message).filter(item=>!inline.has(speakerKey(item.npcId))&&!!portraitFor(item.npcId,item.emotion,item.outfit));}
+  function stageSpeakersFor(message:ChatMessage){if(message.role!=='assistant')return[];const options=assetOptions(),prepared=prepareDisplayContent(message.content,userName,cardName,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1,options.activeModules),inline=new Set(extractAssetSpeakers(prepared,spriteGroups).map(item=>speakerKey(item.npcId)));return speakersFor(message).filter(item=>!inline.has(speakerKey(item.npcId))&&!!portraitFor(item.npcId,item.emotion,item.outfit));}
   function avatarFor(message:ChatMessage){return message.role==='user'?userPortrait:botPortrait;}
 </script>
 
