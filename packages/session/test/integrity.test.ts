@@ -39,6 +39,8 @@ describe('session integrity',()=>{
     const target=new PlaySession({id:'s',runtime:runtime(),preset,card:{name:'Guide'},provider});
     expect(()=>target.restore(tampered)).toThrow(/session_corrupt/);
   });
+
+  it('변조된 연속성 변경 제안도 거부한다',async()=>{const session=new PlaySession({id:'s',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){return{text:'done',memories:[{text:'후보'}],continuityPatch:{confirmMemoryIds:['narrative:0:m2:0']}};}}});await session.send('train');const tampered=structuredClone(session.snapshot());tampered.continuityPatches![0]!.resolveMemoryIds.push('injected');const target=new PlaySession({id:'s',runtime:runtime(),preset,card:{name:'Guide'},provider});expect(()=>target.restore(tampered)).toThrow(/session_corrupt/);});
 });
 
 describe('memory migration compatibility',()=>{

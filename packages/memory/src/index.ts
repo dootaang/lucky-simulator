@@ -31,4 +31,5 @@ export * from './embedding-cache.ts';
 export * from './planner.ts';
 export * from './semantic.ts';
 export * from './narrative-verifier.ts';
+export * from './continuity.ts';
 export * from './providers/fixed.ts';

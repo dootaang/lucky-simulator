@@ -88,7 +88,7 @@ WP0 결과 때문에 원 작업지시서의 범위를 다음처럼 조정한다.
 1. **WP1 확대**: 사건 원장·영속 undo/redo에 세션 고정 persona/preset, import 상한, PromptRun 보존 정책, `SessionBundle` 통합/폐기 결정을 포함한다.
 2. **WP2 유지**: 원장 위에 관리 행동 자동 서사화와 실패 폴백을 복구한다.
 3. **WP3 유지**: 메시지별 화자·감정과 대안/리롤 동기화를 복구한다.
-4. **WP3A 추가 — 기억 연속성 패리티**: `factRefs`, `continuityPatch`, scene/viewer 공급, 사건 근거 폐기를 연결한다.
+4. **WP3A 완료 (`2026-07-14`) — 기억 연속성 패리티**: `factRefs`, `continuityPatch` 사용자 검토, scene/viewer 공급, 사건 근거 폐기를 현행 세션·저장·검사기에 연결했다.
 5. **WP3B 추가 — Risu 로어 패리티**: 확률·case-sensitive·recursion·source 우선순위를 복구한다. Tesselia 카나리아의 선행 조건이다.
 6. **WP4~WP6 유지**: 반응형 패널/페르소나 아바타 → 응답 도구막대/메시지별 대안 → 에셋 모듈 메뉴 이전 순서. WP3A/3B의 실제 의존성에 따라 세부 순서는 조정할 수 있다.
 
