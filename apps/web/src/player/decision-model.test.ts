@@ -24,6 +24,15 @@ describe('결정 카드 모델', () => {
     expect(full[0]!.options.map((option) => option.label)).toEqual(['거절']);
     expect(full[0]!.desc).toBe('빈 객실 없음');
   });
+  it('티어 승급 로그는 특별한 장면 제안 카드가 되고, 강등은 카드를 만들지 않는다', () => {
+    const up = { ok: true, event: 'scale_delta', target: 'silvia', scale: 'affinity', tierChanged: { from: { label: '신뢰', range: [81, 150] }, to: { label: '애착', range: [151, 180], brief: '감정적 의존' } } };
+    const down = { ok: true, event: 'scale_delta', target: 'clem', tierChanged: { from: { label: '호의', range: [81, 110] }, to: { label: '중립', range: [51, 80] } } };
+    const cards = buildDecisionCards(() => null, { logs: [up, down], turn: 7, nameFor: (id) => (id === 'silvia' ? '실비아' : id) });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!).toMatchObject({ key: 'tier:7:silvia:애착', icon: 'heart', title: '관계가 깊어졌다', desc: '실비아: 신뢰 → 애착 — 감정적 의존', dismissible: true });
+    expect(cards[0]!.options[0]!).toMatchObject({ mode: 'scene', label: '특별한 장면 열기' });
+    expect(cards[0]!.options[0]!.intent).toContain("실비아와의 관계가 방금 '애착' 단계");
+  });
   it('여관 셀렉터가 없는 카드(순수 채팅·타 장르)는 빈 배열 — 캡슐 자체가 안 뜬다', () => {
     expect(buildDecisionCards(() => null)).toEqual([]);
     expect(buildDecisionCards(() => { throw new Error('unknown_selector'); })).toEqual([]);

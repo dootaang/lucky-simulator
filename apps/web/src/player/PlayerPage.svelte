@@ -51,7 +51,7 @@
   function setRosterReveal(value:boolean){rosterReveal=value;try{localStorage.setItem('simbot.roster.revealAll',value?'1':'0');}catch{/* 저장 불가 무시 */}}
   let rosterUi=$derived.by(()=>{void version;const rows=session?buildRosterModel(runtime.project.schema as Record<string,unknown>,runtime.state as Record<string,unknown>,collectMetIds(session.messages),rosterReveal):[];return{rows,portraitFor,revealAll:rosterReveal,onreveal:setRosterReveal};});
   // 조종대: 엔진이 결정을 기다리는 것만 캡슐로. full-sim에서만 계산한다.
-  let decisionCards=$derived.by(()=>{void version;return passport?.mode==='full-sim'?buildDecisionCards((id)=>runtime.select(id)):[];});
+  let decisionCards=$derived.by(()=>{void version;return passport?.mode==='full-sim'&&session?buildDecisionCards((id)=>runtime.select(id),{logs:session.lastLogs,turn:session.turn,nameFor:(id)=>String(session?.resolveSpeakers([{npcId:id}])[0]?.name??id)}):[];});
   // 계기판은 엔진 상태의 파생 뷰다 — version이 오를 때만 다시 계산(SidePanel stateRows와 동일 패턴).
   let hudModel=$derived.by(()=>{void version;return buildHudModel(runtime.project.schema as Record<string,unknown>,runtime.state as Record<string,unknown>);});
   let promptUi=$derived({presets,active:activePreset,onselect:(id:string)=>void selectPreset(id),onchange:(p:PromptPreset)=>void changePreset(p),onnew:()=>void newPreset(),onclone:()=>void clonePreset(),onrename:()=>void renamePreset(),onremove:()=>void removePreset(),onimport:(f:File)=>void importPresetFile(f),onexport:exportPreset});

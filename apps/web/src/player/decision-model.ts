@@ -4,8 +4,8 @@
 // 카드가 해소되면(상태 변화) 캡슐은 사라지고 사실 영수증·서사가 기록으로 남는다.
 import type { SimulationActionMode } from './simulation-action';
 
-export interface DecisionOption { label: string; id: string; params: Record<string, unknown>; mode: SimulationActionMode; kind: 'primary' | 'ghost' }
-export interface DecisionCardModel { key: string; icon: 'alert' | 'star' | 'bed'; title: string; desc: string; options: DecisionOption[]; more: string }
+export interface DecisionOption { label: string; id: string; params: Record<string, unknown>; mode: SimulationActionMode; kind: 'primary' | 'ghost'; intent?: string }
+export interface DecisionCardModel { key: string; icon: 'alert' | 'star' | 'bed' | 'heart'; title: string; desc: string; options: DecisionOption[]; more: string; dismissible?: boolean }
 
 const rec = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const arr = (v: unknown) => (Array.isArray(v) ? v.map(rec) : []);
@@ -15,10 +15,30 @@ function safeSelect(select: (id: string) => unknown, id: string): unknown {
   try { return select(id); } catch { return null; } // 미등록 셀렉터(타 장르·순수 채팅)는 결정 없음으로 취급
 }
 
-export function buildDecisionCards(select: (id: string) => unknown): DecisionCardModel[] {
-  const traffic = rec(safeSelect(select, 'inn/traffic'));
-  if (!Object.keys(traffic).length) return [];
+// 티어 승급 = 서사 이벤트(조종석 슬라이스 5). 직전 턴 로그의 tierChanged 승급을 "특별한 장면" 제안 카드로.
+// 발생 시점은 엔진이, 장면 내용은 LLM이 — 이 제품의 분업 그대로. 강등은 카드 없이 경고 칩만(대칭 설계).
+function tierCards(logs: ReadonlyArray<Record<string, unknown>>, turn: number, nameFor: (id: string) => string): DecisionCardModel[] {
   const cards: DecisionCardModel[] = [];
+  for (const log of logs) {
+    if (log.ok !== true || log.event !== 'scale_delta') continue;
+    const tier = rec(log.tierChanged), from = rec(tier.from), to = rec(tier.to);
+    if (!to.label) continue;
+    const range = (v: unknown) => (Array.isArray(v) ? v : []);
+    const fromStart = num(range(from.range)[0], Number.NaN), toStart = num(range(to.range)[0], Number.NaN);
+    if (Number.isFinite(fromStart) && Number.isFinite(toStart) && toStart <= fromStart) continue; // 강등은 칩만
+    const target = String(log.target ?? ''), name = nameFor(target) || target, label = String(to.label);
+    cards.push({ key: `tier:${turn}:${target}:${label}`, icon: 'heart', title: '관계가 깊어졌다', desc: `${name}: ${String(from.label ?? '')} → ${label}${to.brief ? ` — ${String(to.brief)}` : ''}`, more: '', dismissible: true,
+      options: [{ label: '특별한 장면 열기', id: 'tier_scene', params: {}, mode: 'scene', kind: 'primary', intent: `${name}와의 관계가 방금 '${label}' 단계에 접어들었다. 그 변화가 서로에게 느껴지는 특별한 장면을 짧게 열어라.` }] });
+  }
+  return cards;
+}
+
+export interface DecisionContext { logs?: ReadonlyArray<Record<string, unknown>>; turn?: number; nameFor?: (id: string) => string }
+
+export function buildDecisionCards(select: (id: string) => unknown, context: DecisionContext = {}): DecisionCardModel[] {
+  const cards: DecisionCardModel[] = tierCards(context.logs ?? [], context.turn ?? 0, context.nameFor ?? ((id) => id));
+  const traffic = rec(safeSelect(select, 'inn/traffic'));
+  if (!Object.keys(traffic).length) return cards;
   const incident = rec(traffic.incident);
   if (Object.keys(incident).length) {
     cards.push({ key: `incident:${String(incident.id)}`, icon: 'alert', title: String(incident.label ?? '돌발 사건'), desc: String(incident.desc ?? ''), more: '',

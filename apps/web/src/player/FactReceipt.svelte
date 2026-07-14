@@ -15,7 +15,7 @@
   };
 
   export interface FactLine { key: string; icon: string; label: string; delta: string | null; after: string | null; note: string; rejected: boolean; }
-  export function factIconName(icon:string){return({['🍚']:'food',['🍶']:'drink',['🪵']:'box',['🪙']:'coin',['❤️']:'heart',['⭐']:'star',['🛏️']:'bed',['🚪']:'bed',['🌙']:'moon',['🤝']:'user',['👋']:'user',['⚙️']:'settings',['🚫']:'blocked'}as const)[icon as '🍚']??'settings';}
+  export function factIconName(icon:string){return({['🍚']:'food',['🍶']:'drink',['🪵']:'box',['🪙']:'coin',['❤️']:'heart',['⭐']:'star',['✨']:'star',['⚠️']:'alert',['🛏️']:'bed',['🚪']:'bed',['🌙']:'moon',['🤝']:'user',['👋']:'user',['⚙️']:'settings',['🚫']:'blocked'}as const)[icon as '🍚']??'settings';}
 
   // 엔진 로그 한 줄 → 사람이 읽는 영수증 한 줄. 알 수 없는 형태도 안전하게 요약한다.
   export function toFactLine(log: Log, index: number): FactLine {
@@ -37,9 +37,12 @@
     if (event === 'scale_delta') {
       const tier = log.tierChanged as Record<string, Record<string, unknown>> | undefined;
       const from = s(tier?.from?.label), to = s(tier?.to?.label);
+      // 티어 통과는 특별한 순간 — 승급(새 구간의 시작이 더 높음)은 ✨, 강등은 ⚠로 구분한다(조종석 슬라이스 5).
+      const fromStart = n((tier?.from?.range as unknown[] | undefined)?.[0]), toStart = n((tier?.to?.range as unknown[] | undefined)?.[0]);
+      const promoted = fromStart != null && toStart != null ? toStart > fromStart : true;
       const tierNote = tier && (from || to) ? `${from} → ${to}` : reason;
       const capped = log.capped === true ? '오늘 상한 도달' : tierNote;
-      return { key: `${index}`, icon: '❤️', label: `${s(log.target)} ${s(log.scale)}`, delta: deltaStr(n(log.delta)), after: after != null ? fmt(after) : null, note: capped, rejected: false };
+      return { key: `${index}`, icon: tier && (from || to) ? (promoted ? '✨' : '⚠️') : '❤️', label: `${s(log.target)} ${s(log.scale)}`, delta: deltaStr(n(log.delta)), after: after != null ? fmt(after) : null, note: capped, rejected: false };
     }
     if (event === 'exp_gain') {
       const ups = Array.isArray(log.levelUps) ? log.levelUps : [];
