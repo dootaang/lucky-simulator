@@ -20,6 +20,9 @@ describe('speaker resolver',()=>{
   it('focuses the last entry when none is requested',()=>{
     expect(resolveSpeakerList(schema,state,[{npcId:'aria'},{npcId:'boris'}]).map((entry)=>entry.focus)).toEqual([false,true]);
   });
+  it('keeps a message-owned outfit instead of repainting history with the current outfit',()=>{
+    expect(resolveSpeakerList(schema,state,[{npcId:'aria',emotion:'smile',outfit:0}])[0]).toMatchObject({npcId:'aria',emotion:'smile',outfit:0});
+  });
   it('drops model-invented speakers when the card declares its NPC roster',()=>{
     expect(resolveSpeakerList(schema,state,[{npcId:'YSP'},{npcId:'aria'}]).map((entry)=>entry.npcId)).toEqual(['aria']);
   });

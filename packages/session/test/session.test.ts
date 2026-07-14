@@ -36,6 +36,11 @@ describe('card tag translation channel',()=>{
   it('keeps the original assistant text when no translator is injected',async()=>{const session=new PlaySession({id:'plain',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){return{text:'plain [ysp_gold::50]'};}}});await session.send('play');expect(session.messages.at(-1)?.content).toBe('plain [ysp_gold::50]');});
 });
 describe('asset speaker extraction',()=>{
+  it('seals the engine-owned outfit into the response speaker record',async()=>{
+    const value=new ProjectRuntime({projectId:'speaker-outfit',schema:{entities:[{type:'npc',instances:[{id:'silvia',name:'Silvia'}]}],initialState:{npcs:{silvia:{outfit:2}}}},screens:[],navigation:[],content:{},featureToggles:{},moduleIds:[]}),session=new PlaySession({id:'speaker-outfit',runtime:value,preset,card:{name:'Guide'},provider:{async complete(){return{text:'hello',speakers:[{npcId:'silvia',emotion:'default'}]};}}});
+    await session.send('인사한다');
+    expect(session.messages.at(-1)?.speakers).toEqual([{npcId:'silvia',emotion:'default',outfit:2}]);
+  });
   it('uses deterministic card image commands when a prose provider has no speaker metadata',async()=>{
     const session=new PlaySession({id:'sprite-speaker',runtime:runtime(),preset,card:{name:'Guide'},speakerExtractor:(text)=>text.includes('silvia_smile')?[{npcId:'silvia',emotion:'smile',focus:true}]:[],provider:{async complete(){return{text:'<img src="silvia_smile"> 반가워요.'};}}});
     await session.send('인사한다');

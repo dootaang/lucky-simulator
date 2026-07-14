@@ -23,7 +23,7 @@ export interface ResolvedSpeaker {
   asset?: unknown;
 }
 
-export interface SpeakerReference { npcId?: unknown; emotion?: unknown; focus?: boolean; }
+export interface SpeakerReference { npcId?: unknown; emotion?: unknown; outfit?: unknown; focus?: boolean; }
 export interface ResolvedSpeakerEntry { npcId: string; name: string; emotion?: string; outfit?: number; focus: boolean; }
 
 export function normalized(value: unknown): string {
@@ -98,7 +98,8 @@ export function resolveSpeakerList(schema: unknown, state: unknown, items: reado
     if (!speaker || (declaresNpcs(schema)&&!speaker.npc)) continue;
     const existing = byId.get(speaker.id);
     if (existing) { if (item.focus === true) existing.requestedFocus = true; continue; }
-    const entry: ResolvedSpeakerEntry & { requestedFocus: boolean } = { npcId: speaker.id, name: speaker.name, focus: false, requestedFocus: item.focus === true, ...(speaker.emotion === undefined ? {} : { emotion: speaker.emotion }), ...(speaker.outfit === undefined ? {} : { outfit: speaker.outfit }) };
+    const requestedOutfit=Number(item.outfit),outfit=Number.isFinite(requestedOutfit)?requestedOutfit:speaker.outfit;
+    const entry: ResolvedSpeakerEntry & { requestedFocus: boolean } = { npcId: speaker.id, name: speaker.name, focus: false, requestedFocus: item.focus === true, ...(speaker.emotion === undefined ? {} : { emotion: speaker.emotion }), ...(outfit === undefined ? {} : { outfit }) };
     byId.set(speaker.id, entry);
     resolved.push(entry);
     if (resolved.length === 3) break;
