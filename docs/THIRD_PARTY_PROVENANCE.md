@@ -110,6 +110,10 @@ isu`. 이식 파일은 업스트림 경로를 미러링해 diff 추적한다.
 - `packages/risu/src/port/scripts.ts` ← `src/ts/process/scripts.ts`의 `processScriptFull` 전체 의미론(order/actions 메타, `@@emo`/`@@inject`/`@@move_top`/`@@move_bottom`/`@@repeat_back`, `$n`·끝 개행, 치환 후 CBS 재파싱). DB·Svelte 스토어·Lua·트리거·플러그인·dynamicAssets 결합은 `RisuScriptEnv` 훅으로 치환. 캐시(processScriptCache)는 세션 구조 차이로 미이식(후속 성능 항목).
 - 우리 강화(스크립트 수·본문 길이·시간 예산, catastrophic 패턴 스킵, out 위험 태그 정화)는 이식 코드 밖 façade(`card-regex.ts`)에 유지.
 - 치환 토큰 의미론을 업스트림 네이티브(`$&`·$```·`$'`·`$<name>`)로 전환 — 기존의 "토큰 문자 보존" 자체 계약은 폐기(테스트 갱신).
+- `packages/risu/src/worker/lua.ts` — RisuAI `src/ts/process/scriptings.ts`의 `getChatVar`/`setChatVar` API 이름과
+  호출 계약만 참고해 독립 구현했다. 업스트림의 네트워크·LLM·저장소·채팅 편집 API 구현은 복사하지 않고
+  명시적 차단 목록으로만 둔다. Lua VM은 wasmoon 1.16.0(MIT, https://github.com/ceifa/wasmoon)을 사용한다.
+  제품 배선은 비활성이고 테스트에서만 역량 플래그를 켠다.
 
 ## Risu 표시 파이프라인 이식
 
