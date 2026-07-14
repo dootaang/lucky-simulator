@@ -1,6 +1,6 @@
 import { tagCompatibilityGrades } from './ysp-translate.ts';
 
-interface ParsedCard { name:string; card:Record<string,unknown>; embeddedModules?:string[]; modules?:Array<{regex?:unknown[];lorebook?:unknown[];defaultVariables?:Record<string,string>;raw?:Record<string,unknown>}>; sourceBytes?:Uint8Array; }
+interface ParsedCard { name:string; card:Record<string,unknown>; assets?:Array<{name?:string;type?:string;mime?:string}>; embeddedModules?:string[]; modules?:Array<{name?:string;regex?:unknown[];lorebook?:unknown[];defaultVariables?:Record<string,string>;raw?:Record<string,unknown>}>; sourceBytes?:Uint8Array; }
 interface RuntimeProject { projectId:string; schema:Record<string,unknown>; screens:Record<string,unknown>[]; navigation:Record<string,unknown>[]; content:Record<string,unknown>; featureToggles:Record<string,unknown>; moduleIds?:string[]; }
 export interface CardCompileArtifact {schema:Record<string,unknown>;moduleIds:string[];screens?:Record<string,unknown>[];navigation?:Record<string,unknown>[];}
 
@@ -42,7 +42,8 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
   const cardName=text(data.name)||parsed.name||'Imported card';
   const regexScripts=extractRegexScripts(parsed),risuExtension=(data.extensions&&typeof data.extensions==='object'?((data.extensions as Record<string,unknown>).risuai):null),defaultVariables={...variableMap((risuExtension&&typeof risuExtension==='object'?(risuExtension as Record<string,unknown>).defaultVariables:null)??data.defaultVariables??data.default_variables)},backgroundHtml=[text(risuExtension&&typeof risuExtension==='object'?(risuExtension as Record<string,unknown>).backgroundHTML:''),...(parsed.modules??[]).map(module=>text(module.raw?.backgroundEmbedding))].filter(Boolean).join('\n');
   for(const module of parsed.modules??[])Object.assign(defaultVariables,module.defaultVariables??variableMap(module.raw?.defaultVariables??module.raw?.default_variables));
-  const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks};
+  const activeModules=[...new Set((parsed.modules??[]).flatMap((module,index)=>[module.raw?.id,module.raw?.namespace,module.raw?.name,module.name,parsed.embeddedModules?.[index]].map(text).filter(Boolean)))],assetCommands=[...new Set((parsed.assets??[]).filter(asset=>String(asset.mime??'').startsWith('image/')).map(asset=>text(asset.name??asset.type).replace(/[_-]\d+$/,'')).filter(Boolean))];
+  const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks,activeModules,assetCommands};
   const project:RuntimeProject={
     // 이름 슬러그만 쓰면 동명 카드 2장이 라이브러리·채팅을 서로 덮어쓴다(감사 #8) — 원본 바이트 해시로 유일화.
     projectId:`card:${slug(cardName)}:${hashBytes(parsed.sourceBytes??new TextEncoder().encode(cardName))}`,

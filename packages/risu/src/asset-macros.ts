@@ -52,3 +52,4 @@ export function compactAssetMacrosForPrompt(content:string,assets:readonly Asset
   });
   return{content:resolved,warnings};
 }
+export function stripPromptImageMarkup(content:string):string{let text=String(content??'').replace(/<img\b[^>]*>/gi,'');for(let pass=0;pass<4;pass++)text=text.replace(/<(div|span|figure)\b[^>]*>\s*<\/\1>/gi,'');return text.replace(/\n{3,}/g,'\n\n').trim();}
