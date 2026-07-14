@@ -5,15 +5,18 @@
   import Icon from '@simbot/ui/Icon.svelte';
   import PassportPanel from './PassportPanel.svelte';
   import NpcGallery from './NpcGallery.svelte';
+  import NpcRoster from './NpcRoster.svelte';
+  import type { RosterRow } from './roster-model';
   import type { AssetModuleMeta } from './card-library';
   import { toFactLine } from './FactReceipt.svelte';
   import { summarizeEngineState } from './card-library';
 
   interface BindingUi { personas: Persona[]; boundId: string | null; onchange: (id: string | null) => void }
+  interface RosterUi { rows: RosterRow[]; portraitFor: (npcId: string, emotion?: string) => string | null; revealAll: boolean; onreveal: (value: boolean) => void }
   interface ModuleUi { modules: AssetModuleMeta[]; onconnect: () => void; onexport: (id: string) => void; onremove: (id: string) => void }
-  let { profile, passport, index, session, version, bindingUi, moduleUi, assets, assetUrlFor, open = false, compiling = false, oncreate, onselect, onrename, onremove, onexport, onimport, oncompile, onsim, oninspect, onedit, onundo, onredo }: {
+  let { profile, passport, index, session, version, bindingUi, moduleUi, rosterUi, assets, assetUrlFor, open = false, compiling = false, oncreate, onselect, onrename, onremove, onexport, onimport, oncompile, onsim, oninspect, onedit, onundo, onredo }: {
     profile: CardRuntimeProfile; passport: CardPassport; index: ChatIndex; session: PlaySession; version: number;
-    bindingUi: BindingUi; moduleUi: ModuleUi; assets: CardAsset[]; assetUrlFor: (asset: CardAsset) => string | null; open?: boolean; compiling?: boolean;
+    bindingUi: BindingUi; moduleUi: ModuleUi; rosterUi: RosterUi; assets: CardAsset[]; assetUrlFor: (asset: CardAsset) => string | null; open?: boolean; compiling?: boolean;
     oncreate: () => void; onselect: (id: string) => void; onrename: (id: string) => void; onremove: (id: string) => void;
     onexport: () => void; onimport: (file: File) => void; oncompile: () => void; onsim: () => void; oninspect: () => void; onedit: () => void; onundo: () => void; onredo: () => void;
   } = $props();
@@ -39,7 +42,7 @@
     </section>
     <section class="engine"><div class="engine-head"><strong><Icon name="star" size={12}/> 엔진 확정 · 이번 턴</strong><span>{confirmed}확정 · {blocked}차단</span></div><button class="compile" disabled={compiling} onclick={oncompile}><Icon name="star" size={14}/>{compiling?'엔진 컴파일 중…':passport.mode==='full-sim'?'엔진 재컴파일':'엔진 컴파일'}</button>{#if passport.mode==='full-sim'}<button class="simulate" onclick={onsim}><Icon name="badge" size={14}/> 시뮬레이션 열기</button>{/if}<div class="mode">{passport.mode==='full-sim'?'완전 시뮬':'일반 채팅'}</div>{#if stateRows.length}<dl>{#each stateRows as row}<div><dt>{row.label}</dt><dd>{row.value}</dd></div>{/each}</dl>{/if}{#if facts.length}<ul>{#each facts.slice(0,4) as fact}<li class:rejected={fact.rejected}><Icon name={fact.icon} size={13}/><b>{fact.label}</b><span>{fact.delta??fact.note}</span></li>{/each}</ul>{/if}<button class="inspect" onclick={oninspect}><Icon name="badge" size={14}/> 세션 검사기</button><div class="history"><button disabled={!session.checkpointDepth} onclick={onundo} title="되돌리기"><Icon name="undo"/><span>{session.checkpointDepth}</span></button><button disabled={!session.redoDepth} onclick={onredo} title="다시 실행"><Icon name="redo"/><span>{session.redoDepth}</span></button></div></section>
   {:else if tab==='basic'}
-    <section class="content basic"><h3>{profile.card.name}</h3><h4>설명</h4><p>{profile.card.description||'설명 없음'}</p><h4>시나리오</h4><p>{profile.card.scenario||'시나리오 없음'}</p><label>이 카드에 고정할 페르소나<select value={bindingUi.boundId??''} onchange={(event)=>bindingUi.onchange(event.currentTarget.value||null)}><option value="">전역 활성 페르소나 사용</option>{#each bindingUi.personas as persona}<option value={persona.id}>{persona.name}</option>{/each}</select></label><h4>NPC 스프라이트 갤러리</h4>{#if assets.length}<NpcGallery {assets} {assetUrlFor}/>{:else}<p>표시할 이미지 자산이 없습니다.</p>{/if}</section>
+    <section class="content basic"><h3>{profile.card.name}</h3><h4>설명</h4><p>{profile.card.description||'설명 없음'}</p><h4>시나리오</h4><p>{profile.card.scenario||'시나리오 없음'}</p><label>이 카드에 고정할 페르소나<select value={bindingUi.boundId??''} onchange={(event)=>bindingUi.onchange(event.currentTarget.value||null)}><option value="">전역 활성 페르소나 사용</option>{#each bindingUi.personas as persona}<option value={persona.id}>{persona.name}</option>{/each}</select></label>{#if rosterUi.rows.length}<NpcRoster rows={rosterUi.rows} portraitFor={rosterUi.portraitFor} revealAll={rosterUi.revealAll} onreveal={rosterUi.onreveal}/>{/if}<h4>NPC 스프라이트 갤러리</h4>{#if assets.length}<NpcGallery {assets} {assetUrlFor}/>{:else}<p>표시할 이미지 자산이 없습니다.</p>{/if}</section>
   {:else if tab==='assets'}
     <section class="content modules"><button class="connect" onclick={moduleUi.onconnect}><Icon name="plus" size={14}/> 에셋 모듈 연결</button><p>이 봇에만 적용할 별도 이미지 ZIP·CharX를 연결합니다.</p>{#if moduleUi.modules.length}{#each moduleUi.modules as module(module.id)}<article title={`${module.assetCount.toLocaleString()}개 이미지 · ${size(module.size)}`}><div><strong>{module.name}</strong><small>{module.assetCount.toLocaleString()}개 이미지 · {size(module.size)}</small></div><button onclick={()=>moduleUi.onexport(module.id)}>원본 내보내기</button><button class="unlink" onclick={()=>moduleUi.onremove(module.id)}>연결 해제</button></article>{/each}{:else}<p class="empty-module">연결된 에셋 모듈이 없습니다.</p>{/if}</section>
   {:else}<section class="content"><PassportPanel {passport}/></section>{/if}
