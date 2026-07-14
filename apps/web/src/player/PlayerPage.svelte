@@ -11,6 +11,7 @@
   import SidePanel from './SidePanel.svelte';
   import DiagnosticsPanel from './DiagnosticsPanel.svelte';
   import {diagnostics} from './diagnostics.svelte.ts';
+  import {createTurnTracer} from './turn-trace.ts';
   import MessageList from './MessageList.svelte';
   import InputBar from './InputBar.svelte';
   import SessionInspector from './SessionInspector.svelte';
@@ -66,6 +67,10 @@
     addEventListener('error',onError);addEventListener('unhandledrejection',onRejection);
     return()=>{removeEventListener('error',onError);removeEventListener('unhandledrejection',onRejection);};
   });
+  // 턴이 끝날 때마다 새 프롬프트 런을 콘솔로 흘려보낸다(정보 레벨). 어느 경로로 턴이 끝나든
+  // — 대화·다시 굴리기·이어쓰기·관리 행동 — promptRuns에 남으므로 호출부마다 심을 필요가 없다.
+  const trace=createTurnTracer();
+  $effect(()=>{void version;trace(session,profile?.card.name??'(카드 없음)');});
   $effect(()=>{diagnostics.setSecrets([settings.apiKey,settings.voyageKey,...Object.values(settings.auxSlots??{}).map(slot=>slot?.apiKey)]);});
   // 화면의 오류 토스트는 닫으면 사라진다. 사고 기록은 남아야 한다 — 같은 오류를 진단에도 적는다.
   // 기록은 평범한 배열에 담기고 UI 알림만 미뤄지므로 이 effect가 렌더 루프를 만들지 않는다.
