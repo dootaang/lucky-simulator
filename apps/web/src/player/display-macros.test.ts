@@ -1,0 +1,3 @@
+import{describe,expect,it,vi}from'vitest';vi.mock('@simbot/ui/sanitize-html',()=>({sanitizeHtml:(source:string)=>source}));import{renderDisplayContent}from'./display-macros';
+
+describe('display asset compatibility',()=>{it('resolves a bare Risu image name before sanitizing the message',()=>{const result=renderDisplayContent('<img src="YSP_default">','User','Card',[{name:'YSP_default',type:'image',mime:'image/png',bytes:Uint8Array.of(1,2,3)}]);expect(result.html).toContain('src="data:image/png;base64,AQID"');expect(result.html).not.toContain('src="YSP_default"');expect(result.warnings).toEqual([]);});});
