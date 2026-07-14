@@ -24,6 +24,7 @@ const alertError = (message: unknown) => __env().alert('error', String(message))
 const alertNormal = (message: unknown) => __env().alert('normal', String(message));
 const alertInput = async (message: unknown) => __env().alertInput(String(message));
 const alertSelect = async (options: string[]) => __env().alertSelect(options);
+const runtimeRandom = () => __env().random();
 const parseChatML = (_text: string) => null; // ChatML 프롬프트 임포트는 미지원 — null이면 업스트림이 안전 폴백
 const processMultiCommand = async (_command: string) => ''; // 명령 매크로는 후속(위험 표면) — 무해화
 const HypaProcesser = class { async addText(_t: string[]) {} async similaritySearch(_q: string) { return []; } }; // 임베딩 유사 매칭 무해화
@@ -2044,7 +2045,7 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
                     let min = effect.minType === 'value' ? Number(risuChatParser(effect.min,{chara:char})) : Number(getVar(risuChatParser(effect.min,{chara:char})))
                     let max = effect.maxType === 'value' ? Number(risuChatParser(effect.max,{chara:char})) : Number(getVar(risuChatParser(effect.max,{chara:char})))
 
-                    let output = Math.floor(Math.random() * (max - min + 1) + min)
+                    let output = Math.floor(runtimeRandom() * (max - min + 1) + min)
                     setVar(risuChatParser(effect.outputVar, {chara:char}), output.toString())
                     break
                 }

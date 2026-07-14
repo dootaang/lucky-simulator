@@ -24,9 +24,11 @@ export interface CbsPortEnv {
   callInternalFunction: (args: string[]) => string;
   findCharacterbyId: (id: string) => character;
   pickHashRand: (cid: number, word: string) => number;
+  random: () => number;
+  now: () => number;
   renderMarkdown?: (text: string) => string;
 }
-const defaultEnv: CbsPortEnv = { database: () => ({ characters: [] }), selectedCharID: () => 0, getChatVar: () => '', setChatVar: () => {}, getGlobalChatVar: () => '', getUserName: () => 'user', getPersonaPrompt: () => '', getModules: () => [], getModuleLorebooks: () => [], getModelInfo: () => ({}), callInternalFunction: () => '', findCharacterbyId: () => ({ name: 'Unknown Character' }), pickHashRand: () => 0 };
+const defaultEnv: CbsPortEnv = { database: () => ({ characters: [] }), selectedCharID: () => 0, getChatVar: () => '', setChatVar: () => {}, getGlobalChatVar: () => '', getUserName: () => 'user', getPersonaPrompt: () => '', getModules: () => [], getModuleLorebooks: () => [], getModelInfo: () => ({}), callInternalFunction: () => '', findCharacterbyId: () => ({ name: 'Unknown Character' }), pickHashRand: () => 0, random: Math.random, now: Date.now };
 let env: CbsPortEnv = defaultEnv;
 export function getCbsPortEnv(): CbsPortEnv { return env; }
 export function restoreCbsPortEnv(previous: CbsPortEnv) { env = previous; setChatVarBridge({ get: env.getChatVar, getGlobal: env.getGlobalChatVar }); }
@@ -112,6 +114,8 @@ function initMatcher(){
         getModules: getModules,
         getModuleLorebooks: getModuleLorebooks,
         pickHashRand: pickHashRand,
+        random: () => env.random(),
+        now: () => env.now(),
         getSelectedCharID: () => {
             return get(selectedCharID)
         },
@@ -162,7 +166,7 @@ function matcher (p1:string,matcherArg:matcherArg,vars:{[key:string]:string}|nul
 }
 
 const dateTimeFormat = (main:string, time = 0) => {
-    const date = time === 0 ? (new Date()) : (new Date(time))
+    const date = time === 0 ? (new Date(env.now())) : (new Date(time))
     if(!main){
         return ''
     }

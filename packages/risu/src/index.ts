@@ -18,3 +18,4 @@ export * from './worker/contract.ts';
 export * from './worker/execute.ts';
 export * from './worker/entry.ts';
 export * from './worker/client.ts';
+export * from './worker/determinism.ts';

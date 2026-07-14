@@ -33,6 +33,8 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
     getModules: () => [],
     getModuleLorebooks: () => [],
     pickHashRand: () => Math.random(),
+    random: Math.random,
+    now: Date.now,
     getSelectedCharID: () => 0,
     callInternalFunction: (args: string[]) => {return ''},
     isTauri: false,
@@ -106,6 +108,8 @@ export type CBSRegisterArg = {
     getModules: () => RisuModule[],
     getModuleLorebooks: () => loreBook[],
     pickHashRand: (seed: number, hash: string) => number,
+    random: () => number,
+    now: () => number,
     getSelectedCharID: () => number,
     getModelInfo: (model: string) => LLMModel
     callInternalFunction: (args: string[]) => string,
@@ -134,6 +138,8 @@ export function registerCBS(arg:CBSRegisterArg) {
         getModules, 
         getModuleLorebooks, 
         pickHashRand, 
+        random,
+        now,
         getSelectedCharID, 
         isTauri, 
         isNodeServer, 
@@ -507,7 +513,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'unixtime',
         callback: (str, matcherArg, args, vars) => {
-            const now = new Date()
+            const now = new Date(arg.now())
             return (now.getTime() / 1000).toFixed(0)
         },
         alias: [],
@@ -517,7 +523,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'time',
         callback: (str, matcherArg, args, vars) => {
-            const now = new Date()
+            const now = new Date(arg.now())
             return `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`
         },
         alias: [],
@@ -527,7 +533,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'isotime',
         callback: (str, matcherArg, args, vars) => {
-            const now = new Date()
+            const now = new Date(arg.now())
             return `${now.getUTCHours()}:${now.getUTCMinutes()}:${now.getUTCSeconds()}`
         },
         alias: [],
@@ -537,7 +543,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'isodate',
         callback: (str, matcherArg, args, vars) => {
-            const now = new Date()
+            const now = new Date(arg.now())
             return `${now.getUTCFullYear()}-${now.getUTCMonth() + 1}-${now.getUTCDate()}`
         },
         alias: [],
@@ -622,7 +628,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                 return "[Cannot get time, message was sent in older version]"
             }
 
-            const now = new Date()
+            const now = new Date(arg.now())
 
             let duration = now.getTime() - lastMessage.time
 
@@ -1581,7 +1587,7 @@ export function registerCBS(arg:CBSRegisterArg) {
         callback: (str, matcherArg, args, vars) => {
 
             if(args.length === 0){
-                const now = new Date()
+            const now = new Date(arg.now())
                 return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`
             }
             const secondParam = args[1]
@@ -1603,7 +1609,7 @@ export function registerCBS(arg:CBSRegisterArg) {
         callback: (str, matcherArg, args, vars) => {
 
             if(args.length === 0){
-                const now = new Date()
+            const now = new Date(arg.now())
                 return `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`
             }
             const secondParam = args[1]
@@ -1833,7 +1839,7 @@ export function registerCBS(arg:CBSRegisterArg) {
             if(isNaN(min) || isNaN(max)){
                 return 'NaN'
             }
-            return (Math.floor(Math.random() * (max - min + 1)) + min).toString()
+            return (Math.floor(random() * (max - min + 1)) + min).toString()
         },
         alias: [],
         description: 'Generates a random integer between min and max values (inclusive). Returns "NaN" if arguments are not valid numbers.\n\nUsage:: {{randint::1::10}} → random number 1-10',
@@ -1850,7 +1856,7 @@ export function registerCBS(arg:CBSRegisterArg) {
             }
             let total = 0
             for(let i = 0; i < num; i++){
-                total += Math.floor(Math.random() * sides) + 1
+                total += Math.floor(random() * sides) + 1
             }
             return total.toString()
         },
@@ -2040,7 +2046,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'random',
         callback: (str, matcherArg, args, vars) => {
-            return randomPickImpl(str, matcherArg, args, Math.random())
+            return randomPickImpl(str, matcherArg, args, random())
         },
         alias: [],
         description: 'Returns a random number between 0 and 1 if no arguments. With one argument, returns a random element from the provided array or string split by commas/colons. With multiple arguments, returns a random argument.\n\nUsage:: {{random}} or {{random::a,b,c}} → "b"',
@@ -2081,7 +2087,7 @@ export function registerCBS(arg:CBSRegisterArg) {
             }
             let total = 0
             for(let i = 0; i < num; i++){
-                total += Math.floor(Math.random() * sides) + 1
+                total += Math.floor(random() * sides) + 1
             }
             return total.toString()
         },

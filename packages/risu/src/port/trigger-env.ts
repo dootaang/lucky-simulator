@@ -10,6 +10,8 @@ export interface TriggerPortEnv {
   alert: (kind: 'error' | 'normal', message: string) => void;
   alertInput: (message: string) => Promise<string>;
   alertSelect: (options: string[]) => Promise<string>;
+  random: () => number;
+  now: () => number;
 }
 const defaultEnv: TriggerPortEnv = {
   getDatabase: () => ({ characters: [], templateDefaultVariables: '' }),
@@ -21,6 +23,8 @@ const defaultEnv: TriggerPortEnv = {
   alert: () => {},
   alertInput: async () => '',
   alertSelect: async () => '',
+  random: Math.random,
+  now: Date.now,
 };
 let env: TriggerPortEnv = defaultEnv;
 export function setTriggerPortEnv(next: Partial<TriggerPortEnv>) { env = { ...defaultEnv, ...next }; }

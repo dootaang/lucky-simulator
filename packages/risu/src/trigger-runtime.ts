@@ -22,6 +22,8 @@ export interface CardTriggerInput {
   defaultVariables?: string;
   activeModules?: readonly string[];
   alert?: (kind: 'error' | 'normal', message: string) => void;
+  random?: () => number;
+  now?: () => number;
 }
 // display 모드의 setvar는 업스트림에서 휘발성(tempVars)이다 — 매 렌더 실행이 상태를 오염시키지 않게 하는 안전 설계.
 // 그래서 variables에는 반영하지 않고 ephemeral로 따로 돌려준다.
@@ -44,6 +46,8 @@ export async function runCardTriggers(input: CardTriggerInput): Promise<CardTrig
     setDatabase: () => {},
     getModuleTriggers: () => [...moduleActive],
     alert: input.alert ?? (() => {}),
+    random: input.random ?? Math.random,
+    now: input.now ?? Date.now,
   };
   // 트리거 내부의 risuChatParser({{getvar}} 등)도 같은 변수·이름을 보게 한다.
   const cbsEnv={
@@ -53,6 +57,8 @@ export async function runCardTriggers(input: CardTriggerInput): Promise<CardTrig
     getUserName: () => input.userName ?? 'User',
     getModules: () => (input.activeModules ?? []).map((namespace) => ({ namespace, name: namespace })),
     database: () => database,
+    random: input.random ?? Math.random,
+    now: input.now ?? Date.now,
   };
   type TriggerReturn = { displayData?: string; stopSending?: boolean; tempVars?: Record<string, string> } | null | undefined;
   let result: TriggerReturn = null;
