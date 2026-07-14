@@ -116,3 +116,13 @@ test('모델이 매크로 없이 쓴 에셋 이름 이미지도 렌더된다', a
   expect(result.src.startsWith('data:image/png;base64,')).toBe(true); // 진짜 이미지로 해석됨
   expect(result.relative).toBe(false);                                 // 상대경로가 남지 않음(404·깨진 아이콘 방지)
 });
+
+test('감정 명령이 현재 의상 AVIF로 해석된 뒤에도 이미지로 남는다',async({page})=>{
+  const result=await page.evaluate(async()=>{
+    const risu=await import('/@fs/C:/freetalk/simbot-simulator/packages/risu/src/asset-macros.ts')as{resolveAssetMacros(v:string,a:readonly{name:string;type:string;mime:string;bytes:Uint8Array|null}[],o:{outfits:Record<string,number>}):{content:string}};
+    const markdown=await import('/@fs/C:/freetalk/simbot-simulator/packages/ui/src/markdown.ts')as{renderMarkdownWithHtml(v:string):string};
+    const sanitizer=await import('/@fs/C:/freetalk/simbot-simulator/packages/ui/src/sanitize-html.ts')as{sanitizeHtml(v:string):string};
+    const assets=[{name:'silvia_default_0',type:'emotion',mime:'image/avif',bytes:new Uint8Array([1])},{name:'silvia_default_2',type:'emotion',mime:'image/avif',bytes:new Uint8Array([2])}],resolved=risu.resolveAssetMacros('<img src="silvia_default">',assets,{outfits:{silvia:2}}),out=sanitizer.sanitizeHtml(markdown.renderMarkdownWithHtml(resolved.content)),host=document.createElement('div');host.innerHTML=out;return{count:host.querySelectorAll('img').length,src:host.querySelector('img')?.getAttribute('src')??'',raw:out.includes('silvia_default')};
+  });
+  expect(result).toEqual({count:1,src:'data:image/avif;base64,Ag==',raw:false});
+});

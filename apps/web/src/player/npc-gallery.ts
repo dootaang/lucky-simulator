@@ -1,4 +1,5 @@
 import type{CardAsset}from'@simbot/card';
+import{resolveNamedAsset}from'@simbot/risu';
 
 export interface NpcSprite{asset:CardAsset;emotion:string;variant:number|null;command:string}
 export interface NpcCluster{charId:string;sprites:NpcSprite[];emotions:string[]}
@@ -21,8 +22,8 @@ export function buildNpcClusters(assets:readonly CardAsset[]):NpcCluster[]{
   return[...groups].map(([charId,sprites])=>({charId,sprites,emotions:[...new Set(sprites.map(sprite=>sprite.emotion))].sort((a,b)=>emotionRank(a)-emotionRank(b)||a.localeCompare(b))})).sort((a,b)=>a.charId.localeCompare(b.charId));
 }
 
-export function selectNpcSprite(group:NpcCluster,emotion:string){const wanted=key(emotion),choices=group.sprites.filter(sprite=>key(sprite.emotion)===wanted);return choices[stableIndex(`${group.charId}:${emotion}`,choices.length)]??group.sprites.find(sprite=>key(sprite.emotion)==='default')??group.sprites[0]??null;}
-export function findNpcSprite(groups:readonly NpcCluster[],npcId:string,emotion='default'){const wanted=key(npcId),group=groups.find(value=>key(value.charId)===wanted);return group?selectNpcSprite(group,emotion):null;}
+export function selectNpcSprite(group:NpcCluster,emotion:string,outfit?:number){const wanted=key(emotion),choices=group.sprites.filter(sprite=>key(sprite.emotion)===wanted);if(!choices.length&&wanted!=='default')return selectNpcSprite(group,'default',outfit);const command=choices[0]?.command,asset=command?resolveNamedAsset(command,choices.map(value=>value.asset),outfit===undefined?{}:{outfits:{[group.charId]:outfit}}):null;return choices.find(value=>value.asset===asset)??group.sprites[0]??null;}
+export function findNpcSprite(groups:readonly NpcCluster[],npcId:string,emotion='default',outfit?:number){const wanted=key(npcId),group=groups.find(value=>key(value.charId)===wanted);return group?selectNpcSprite(group,emotion,outfit):null;}
 
 export function extractAssetSpeakers(text:string,groups:readonly NpcCluster[]){
   const commands=[...String(text??'').matchAll(/<img(?:\s+src)?\s*=\s*["']([^"']+)["'][^>]*>/gi)].map(match=>match[1]!.trim()),result:Array<{npcId:string;emotion?:string;focus?:boolean}>=[];
@@ -31,4 +32,3 @@ export function extractAssetSpeakers(text:string,groups:readonly NpcCluster[]){
 }
 
 function emotionRank(value:string){const index=['default','neutral','normal','smile'].indexOf(value.toLowerCase());return index<0?4:index;}
-function stableIndex(value:string,length:number){if(!length)return 0;let hash=2166136261;for(let index=0;index<value.length;index++){hash^=value.charCodeAt(index);hash=Math.imul(hash,16777619);}return(hash>>>0)%length;}

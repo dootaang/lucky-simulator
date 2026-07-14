@@ -13,7 +13,7 @@
   import { classifyWidgetValue, structuredEntries } from './widget-model.ts';
   import {declaredActionMode,type SimulationActionHandler} from './simulation-action';
 
-  let { runtime, version, session = null, portraitFor = () => null, busy=false,onaction=null,onchange = () => {} }: { runtime: ProjectRuntime; version: number; session?: PlaySession|null; portraitFor?: (npcId:string,emotion?:string)=>string|null;busy?:boolean;onaction?:SimulationActionHandler|null; onchange?:()=>void } = $props();
+  let { runtime, version, session = null, portraitFor = () => null, busy=false,onaction=null,onchange = () => {} }: { runtime: ProjectRuntime; version: number; session?: PlaySession|null; portraitFor?: (npcId:string,emotion?:string,outfit?:number)=>string|null;busy?:boolean;onaction?:SimulationActionHandler|null; onchange?:()=>void } = $props();
   let active=$state(''),selection=$state<Record<string,unknown>>({}),lastLog=$state<unknown[]>([]),revision=$state(0),pending=$state(false);
   $effect(()=>{revision=version;});
   let project=$derived(runtime.project),context=$derived({state:runtime.state,schema:project.schema,content:project.content,selection,featureToggles:project.featureToggles});

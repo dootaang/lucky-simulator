@@ -37,6 +37,7 @@ function npcEntities(schema: unknown): RuntimeObject[] {
   const block = entities.find((entry) => entry && typeof entry === 'object' && (entry as RuntimeObject).type === 'npc') as RuntimeObject | undefined;
   return Array.isArray(block?.instances) ? block.instances.filter((entry): entry is RuntimeObject => Boolean(entry) && typeof entry === 'object') : [];
 }
+function declaresNpcs(schema:unknown):boolean{return!!schema&&typeof schema==='object'&&Array.isArray((schema as RuntimeObject).entities)&&((schema as RuntimeObject).entities as unknown[]).some(entry=>!!entry&&typeof entry==='object'&&(entry as RuntimeObject).type==='npc');}
 
 export function aliasesOf(npc: RuntimeObject | null | undefined): unknown[] {
   if (!npc) return [];
@@ -94,7 +95,7 @@ export function resolveSpeakerList(schema: unknown, state: unknown, items: reado
   for (const item of Array.isArray(items) ? items : []) {
     if (!item || typeof item !== 'object') continue;
     const speaker = resolveSpeaker(schema, state, item.npcId, { ...options, requestedEmotion: item.emotion });
-    if (!speaker) continue;
+    if (!speaker || (declaresNpcs(schema)&&!speaker.npc)) continue;
     const existing = byId.get(speaker.id);
     if (existing) { if (item.focus === true) existing.requestedFocus = true; continue; }
     const entry: ResolvedSpeakerEntry & { requestedFocus: boolean } = { npcId: speaker.id, name: speaker.name, focus: false, requestedFocus: item.focus === true, ...(speaker.emotion === undefined ? {} : { emotion: speaker.emotion }), ...(speaker.outfit === undefined ? {} : { outfit: speaker.outfit }) };

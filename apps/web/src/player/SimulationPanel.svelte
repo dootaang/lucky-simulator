@@ -5,7 +5,7 @@
   import OverlayGuard from '@simbot/ui/OverlayGuard.svelte';
   import ScreenRenderer from './ScreenRenderer.svelte';
   import type {SimulationActionHandler} from './simulation-action';
-  let {runtime,version,session,portraitFor,busy=false,onaction,onchange=()=>{},onclose}:{runtime:ProjectRuntime;version:number;session:PlaySession;portraitFor:(npcId:string,emotion?:string)=>string|null;busy?:boolean;onaction:SimulationActionHandler;onchange?:()=>void;onclose:()=>void}=$props();
+  let {runtime,version,session,portraitFor,busy=false,onaction,onchange=()=>{},onclose}:{runtime:ProjectRuntime;version:number;session:PlaySession;portraitFor:(npcId:string,emotion?:string,outfit?:number)=>string|null;busy?:boolean;onaction:SimulationActionHandler;onchange?:()=>void;onclose:()=>void}=$props();
 </script>
 <OverlayGuard label="시뮬레이션" {onclose} dock>
   <div class="panel">

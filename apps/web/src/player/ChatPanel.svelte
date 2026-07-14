@@ -3,7 +3,7 @@
   import SpeakerStage from '@simbot/ui/SpeakerStage.svelte';
   import type { PlaySession } from '@simbot/session';
   import FactReceipt from './FactReceipt.svelte';
-  let {session,version=0,onchange,portraitFor=()=>null}:{session:PlaySession;version?:number;onchange:()=>void;portraitFor?:(npcId:string,emotion?:string)=>string|null}=$props();
+  let {session,version=0,onchange,portraitFor=()=>null}:{session:PlaySession;version?:number;onchange:()=>void;portraitFor?:(npcId:string,emotion?:string,outfit?:number)=>string|null}=$props();
   let input=$state(''),busy=$state(false),error=$state(''),revision=$state(0);
   let messages=$derived.by(()=>{revision;version;return session.messages;});
   async function send(){if(!input.trim()||busy)return;const value=input;input='';busy=true;error='';revision+=1;try{await session.send(value);onchange();}catch(reason){error=reason instanceof Error?reason.message:String(reason);}finally{busy=false;revision+=1;}}
