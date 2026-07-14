@@ -11,7 +11,8 @@
   let traffic=$derived.by(()=>{version;const value=select('inn/traffic');return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};}),quests=$derived.by(()=>{version;return rows(select('inn/quests'));}),rooms=$derived.by(()=>{version;return rows(select('inn/rooms'));});
   let lodging=$derived(rows(traffic.lodging)),mail=$derived(rows(traffic.mail)),waves=$derived(rows(traffic.waves));
   let facilities=$derived(entities('facility')),npcs=$derived(entities('npc')),resources=$derived(rows(schema.resources).filter(value=>value.id!=='gold'));
-  async function run(id:string,params:Record<string,unknown>={}){lastLog=(session?await session.dispatchEngineEvent(id,params):runtime.dispatch(id,params)).log as Record<string,unknown>[];onchange();}
+  const LEDGER_EVENTS=new Set(['purchase_batch','upgrade','hire','set_wage','mail_open']);
+  async function run(id:string,params:Record<string,unknown>={}){if(session){const result=LEDGER_EVENTS.has(id)?await session.runLedgerAction(id,params):await session.runManagementTurn(id,params);lastLog=('log'in result?result.log:result.logs) as Record<string,unknown>[];}else lastLog=runtime.dispatch(id,params).log as Record<string,unknown>[];onchange();}
   function purchase(){const items=resources.map(value=>({resource:value.id,qty:Math.trunc(quantities[String(value.id)]??0)})).filter(value=>value.qty>0);if(items.length)run('purchase_batch',{items});}
   function staffEntry(id:string){return rows(engineState.staff).find(value=>value.npcId===id);}
 </script>
