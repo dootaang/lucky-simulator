@@ -11,16 +11,19 @@ import {diagnostics} from './diagnostics.svelte.ts';
 type Run=PlaySession['promptRuns'][number];
 const KIND:Record<string,string>={send:'대화',reroll:'다시 굴리기',continue:'이어쓰기',management:'관리 행동'};
 const ms=(value:number|undefined)=>value===undefined?'(모름)':`${Math.round(value)}ms`;
+export function summarizeWarningCodes(warnings:readonly{code:string}[]){if(!warnings.length)return'없음';const counts=new Map<string,number>();for(const warning of warnings)counts.set(warning.code,(counts.get(warning.code)??0)+1);return[...counts].map(([code,count])=>count>1?`${code} ×${count}`:code).join(', ');}
 
 export function traceRun(run:Run,card:string,chat:string,message:number|null){
   const where={card,chat,message,turn:run.turn} as const;
   const kind=KIND[run.kind]??run.kind,key=`run:${chat}:${run.id}`;
 
   // ① 프롬프트 조립 — 실제로 모델에 뭐가 갔는지. 원문은 담지 않는다(대화 내용이므로). 구조만 남긴다.
+  // 경고는 나열하지 않고 종류별로 센다 — 용사여관은 미지원 매크로 경고만 수천 개라 나열하면
+  // 복사본이 그 경고로 도배되고, 정작 "몇 종류가 몇 번"이라는 답은 사라진다.
   if(diagnostics.enabled('info')&&run.prompt){
     const roles=new Map<string,number>();for(const item of run.prompt.messages)roles.set(item.role,(roles.get(item.role)??0)+1);
     diagnostics.record({...where,level:'info',kind:'provider',code:'prompt_built',key:`${key}:prompt`,summary:`프롬프트 조립 · ${kind}`,
-      detail:{'메시지':`${run.prompt.messages.length}개`,'역할 구성':[...roles].map(([role,count])=>`${role} ${count}`).join(', '),'프롬프트 해시':run.promptHash??'(없음)','조립 경고':run.prompt.warnings.length?run.prompt.warnings.map(warning=>warning.code).join(', '):'없음'}});
+      detail:{'메시지':`${run.prompt.messages.length}개`,'역할 구성':[...roles].map(([role,count])=>`${role} ${count}`).join(', '),'프롬프트 해시':run.promptHash??'(없음)','조립 경고':summarizeWarningCodes(run.prompt.warnings)}});
   }
 
   // ② 모델 응답 — 느린지, 잘렸는지("length"면 답이 중간에 끊긴 것이다), 토큰이 얼마나 들었는지.

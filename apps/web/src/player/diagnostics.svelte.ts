@@ -64,7 +64,8 @@ class Diagnostics{
     const head=`# 럭키★시뮬레이터 진단 (${new Date().toISOString()})\n범위: ${scopeLabel??(chat?`현재 채팅(${chat})`:'전체')} · 사건 ${events.length}건\n`;
     return head+events.map(event=>{
       const rows=Object.entries(event.detail).map(([field,value])=>`  ${field}: ${value}`).join('\n');
-      return `\n## [${diagnosticLevelLabel[event.level]}·${diagnosticLabel[event.kind]}] ${event.summary}${event.status==='pending'?' (진행 중)':''}\n  코드: ${event.code}${event.turn===null?'':` · 턴 ${event.turn}`}\n  카드: ${event.card}\n  채팅: ${event.chat}${event.message===null?'':` · 메시지 ${event.message}`}\n${rows}`;
+      // 사건별 시각이 없으면 복사본만으로 "오늘 문제"와 "지난주 잔재"를 구분할 수 없다(2026-07-15 스모크에서 실제로 겪음).
+      return `\n## [${diagnosticLevelLabel[event.level]}·${diagnosticLabel[event.kind]}] ${event.summary}${event.status==='pending'?' (진행 중)':''}\n  코드: ${event.code}${event.turn===null?'':` · 턴 ${event.turn}`} · 시각 ${new Date(event.at).toISOString()}\n  카드: ${event.card}\n  채팅: ${event.chat}${event.message===null?'':` · 메시지 ${event.message}`}\n${rows}`;
     }).join('\n');
   }
 }

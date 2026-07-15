@@ -39,6 +39,14 @@
       return;
     }
     if(warning.code==='cbs_budget_exceeded'){diagnostics.record({...where,level:'warn',kind:'cbs',code:'cbs_budget_exceeded',summary:`CBS 예산 초과: ${warning.macro}`,detail:{'상한 종류':warning.macro,'실제 > 상한':warning.name,'결과':'파싱을 접고 원문을 표시함'}});return;}
+    if(warning.code==='unsupported_asset_macro'){
+      // 실행 안 함은 정책이지 고장이 아니다. setvar류는 에셋 층이 먼저 봤을 뿐 CBS가 곧 소비한다 —
+      // 오류로 적으면 메시지마다 같은 소음이 쌓여 진짜 오류를 묻는다. 채팅당 매크로별 한 번만, 정보로.
+      // 단 video/bgm류는 카드가 쓰는 기능을 우리가 아직 못 그리는 것이므로 경고로 남긴다.
+      const assetLike=['video','bgm','audio','video-img','path'].includes(warning.macro);
+      diagnostics.record({...where,key:`macro:${session.id}:${warning.macro}:${warning.name}`,level:assetLike?'warn':'info',kind:assetLike?'asset':'cbs',code:'macro_preserved',summary:`미지원 매크로 보존: ${warning.macro}`,detail:{'명령':`{{${warning.macro}::${warning.name}}}`,'처리':assetLike?'아직 지원하지 않는 에셋 기능 — 원문을 보존함':'실행하지 않고 보존함(안전 부분집합 정책) — 표시 단계에서 CBS가 소비하면 화면에는 남지 않는다'}});
+      return;
+    }
     diagnostics.record({...where,kind:'asset',code:warning.code,summary:`${warning.macro} 처리 실패: ${warning.name}`,detail:{'명령':warning.macro,'이름':warning.name}});
   }
   function rendered(message:ChatMessage){const result=renderDisplayContent(message.content,userName,cardName,assets,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1,assetOptions());for(const warning of result.warnings){report(message,warning);if(warning.code==='asset_missing')onassetneeded(warning.name);}return result.html;}
