@@ -1,5 +1,6 @@
 import type { ParsedCard } from '@simbot/card';
 import { inspectGameRuntimeSchema } from '@simbot/contracts';
+import { screenPresetsFor } from '@simbot/modules';
 import type { ModelProvider } from '@simbot/session';
 import { createSimPack, sha256Hex, type SimPackProject } from '@simbot/simpack';
 import { buildCompilerPrompt,buildRepairPrompt } from './compiler-prompt.ts';
@@ -19,12 +20,6 @@ function resolveModules(source:string,diagnosis:ReturnType<typeof diagnoseCard>)
   const ids=[...(inn?['genre.inn']:[]),...diagnosis.suggestedModules.filter(id=>KNOWN_MODULES.has(id)&&!(inn&&id==='rpg.quests'))];
   return[...new Set(ids)];
 }
-function screensFor(moduleIds:string[]){
-  const screens:Record<string,unknown>[]=[];
-  if(moduleIds.includes('genre.inn'))screens.push({id:'management',title:'여관 경영',layout:'dashboard',regions:{main:[{widget:'inn-management'}]}});
-  if(moduleIds.includes('genre.hunter'))screens.push({id:'hunter',title:'헌터 활동',layout:'dashboard',regions:{hud:[{widget:'detail-panel',source:'engine:hunter/status'}],main:[{widget:'quest-board',source:'state.hunter'}]}});
-  return screens;
-}
 export async function compileCard({parsed,provider,signal}:CompileCardOptions):Promise<CompileResult>{
   const mined=mineCard(parsed),prompt=buildCompilerPrompt(parsed,mined),diagnosis=diagnoseCard(parsed,mined,prompt.coverage),source=JSON.stringify(parsed.card),moduleIds=resolveModules(source,diagnosis),attempts:CompileAttempt[]=[];
   let repair:string|null=null,last:unknown;
@@ -35,8 +30,8 @@ export async function compileCard({parsed,provider,signal}:CompileCardOptions):P
       attempts.push({attempt:index+1,raw,issues:validationMessages});
       if(validationMessages.length){repair=buildRepairPrompt(raw,validationMessages);last=new Error(validationMessages.join('; '));continue;}
       patched.schema._compiler={version:'0.2'};
-      const screens=screensFor(moduleIds),issues=[...normalized.issues,...semantic.filter(value=>value.level!=='error')],warnings=[...mined.warnings,...diagnosis.issues.map(value=>value.message),...issues.map(value=>value.message),...patched.unmatchedMinedValues.map(value=>`채굴했으나 연결 못함: ${value.path} — ${value.reason}`)];
-      return{compilerVersion:'0.2',schema:patched.schema,moduleIds,screens,navigation:screens.map(screen=>({id:screen.id,screenId:screen.id,label:screen.title})),patches:patched.patches,unmatchedMinedValues:patched.unmatchedMinedValues,issues,warnings,attempts,diagnosis,rulebookUsed:prompt.coverage.rulebookText};
+      const presets=screenPresetsFor(moduleIds),issues=[...normalized.issues,...semantic.filter(value=>value.level!=='error')],warnings=[...mined.warnings,...diagnosis.issues.map(value=>value.message),...issues.map(value=>value.message),...patched.unmatchedMinedValues.map(value=>`채굴했으나 연결 못함: ${value.path} — ${value.reason}`)];
+      return{compilerVersion:'0.2',schema:patched.schema,moduleIds,screens:presets.screens,navigation:presets.navigation,patches:patched.patches,unmatchedMinedValues:patched.unmatchedMinedValues,issues,warnings,attempts,diagnosis,rulebookUsed:prompt.coverage.rulebookText};
     }catch(error){last=error;if(error instanceof DOMException&&error.name==='AbortError')throw error;repair=null;}
   }
   const detail=last instanceof Error?last.message:'compiler_json_invalid';

@@ -93,6 +93,9 @@ importers:
       '@simbot/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@simbot/modules':
+        specifier: workspace:*
+        version: link:../modules
       '@simbot/risu':
         specifier: workspace:*
         version: link:../risu
