@@ -12,6 +12,32 @@
   const REJECT_REASON: Record<string, string> = {
     unregistered_model_event: '엔진에 없는 이벤트라 무시',
     model_event_not_allowed: 'LLM이 직접 바꿀 수 없는 값 — 엔진이 차단',
+    encounter_active: '이미 전투 중',
+    no_enemies: '상대가 없음',
+    invalid_enemy_hp: '적 HP가 올바르지 않음',
+    player_hp_pool_missing: '플레이어 HP가 없음',
+    no_encounter: '진행 중인 전투가 없음',
+    no_encounter_to_end: '끝낼 전투가 없음',
+    encounter_unresolved: '전투가 아직 끝나지 않음',
+    player_dead: '쓰러진 상태',
+    combat_number_not_allowed: '전투 수치 직접 지정 불가',
+    unknown_combat_action: '알 수 없는 전투 행동',
+    unknown_target: '대상을 찾을 수 없음',
+    target_dead: '이미 쓰러진 대상',
+    unknown_skill: '알 수 없는 기술',
+    unknown_enemy: '적을 찾을 수 없음',
+    enemy_dead: '이미 쓰러진 적',
+    item_number_not_allowed: '아이템 수치 직접 지정 불가',
+    unknown_item: '알 수 없는 아이템',
+    insufficient_stock: '재고 부족',
+    out_of_stock: '재고 없음',
+    no_pool: '회복할 능력치가 없음',
+    pool_full: '이미 최대치',
+    in_combat: '전투 중에는 이용 불가',
+    empty_purchase_batch: '구매 품목이 없음',
+    unknown_resource: '알 수 없는 품목',
+    invalid_qty: '수량이 올바르지 않음',
+    insufficient_gold: '골드 부족',
   };
 
   export interface FactLine { key: string; icon: string; label: string; delta: string | null; after: string | null; note: string; rejected: boolean; }
@@ -22,7 +48,8 @@
     const event = s(log.event), reason = s(log.reason);
     if (log.ok === false) {
       const why = s(log.reason);
-      return { key: `${index}`, icon: '🚫', label: event || '거부된 이벤트', delta: null, after: null, note: REJECT_REASON[why] ?? why, rejected: true };
+      const whyText = REJECT_REASON[why] ?? (why.startsWith('insufficient_') ? `${why.slice('insufficient_'.length).toLocaleUpperCase()} 부족` : why);
+      return { key: `${index}`, icon: '🚫', label: event || '거부된 이벤트', delta: null, after: null, note: whyText, rejected: true };
     }
     const before = n(log.before), after = n(log.after);
     const deltaStr = (d: number | null): string | null => (d == null ? null : signed(d));
@@ -56,6 +83,109 @@
     }
     if (event === 'hire' || event === 'fire') {
       return { key: `${index}`, icon: event === 'hire' ? '🤝' : '👋', label: event === 'hire' ? '고용' : '해고', delta: null, after: null, note: s(log.npcId), rejected: false };
+    }
+    if (event === 'start_encounter') {
+      const enemies = Array.isArray(log.enemies) ? log.enemies as Log[] : [];
+      const first = s(enemies[0]?.name);
+      const summary = first ? (enemies.length > 1 ? `${first} 외 ${enemies.length - 1}` : first) : '';
+      return { key: `${index}`, icon: '⭐', label: '전투 개시', delta: null, after: null, note: summary, rejected: false };
+    }
+    if (event === 'combat_action') {
+      const action = s(log.action);
+      if (action === 'defend') return { key: `${index}`, icon: '❤️', label: '방어 태세', delta: null, after: null, note: '', rejected: false };
+      if (action === 'flee') {
+        const fled = log.fled === true;
+        return { key: `${index}`, icon: fled ? '⭐' : '⚠️', label: `도주 ${fled ? '성공' : '실패'}`, delta: null, after: null, note: '', rejected: false };
+      }
+      if (action === 'attack' || action === 'skill') {
+        const foe = log.enemy as Log | undefined;
+        const target = s(foe?.name) || s(log.target);
+        const skill = s(log.skill);
+        const hit = log.hit === true;
+        const critical = s(log.tier) === 'critical_success';
+        const hp = n((foe?.hp as Log | undefined)?.cur);
+        const notes = [hit ? (critical ? '치명타' : '명중') : '빗나감', log.cleared === true ? '적 전멸' : ''].filter(Boolean);
+        return { key: `${index}`, icon: hit ? '⭐' : '⚠️', label: `${target || '대상'} · ${action === 'skill' ? (skill || '기술') : '공격'}`, delta: hit ? deltaStr(n(log.damage) == null ? null : -n(log.damage)!) : null, after: hp != null ? `HP ${fmt(hp)}` : null, note: notes.join(' · '), rejected: false };
+      }
+    }
+    if (event === 'enemy_turn') {
+      const results = Array.isArray(log.results) ? log.results as Log[] : [];
+      const hits = results.filter((result) => result.hit === true);
+      const damage = hits.reduce((total, result) => total + (n(result.damage) ?? 0), 0);
+      const hp = n((log.playerHp as Log | undefined)?.cur);
+      return { key: `${index}`, icon: log.playerDead === true ? '⚠️' : '❤️', label: `적 반격 · ${hits.length}회 명중 · 피해`, delta: damage ? signed(-damage) : null, after: hp != null ? `HP ${fmt(hp)}` : null, note: log.playerDead === true ? '쓰러짐' : '', rejected: false };
+    }
+    if (event === 'end_encounter') {
+      const outcome = ({ victory: '승리', fled: '도주', defeat: '패배', ended: '종료' } as Record<string, string>)[s(log.outcome)] ?? '종료';
+      const ups = Array.isArray(log.levelUps) ? log.levelUps : [];
+      const notes = [`경험치 ${signed(n(log.expGained) ?? 0)}`, `골드 ${signed(n(log.goldGained) ?? 0)}`];
+      if (ups.length) notes.push(`레벨 업 → Lv.${ups[ups.length - 1]}`);
+      const revivedHp = n(log.revivedHp);
+      if (revivedHp != null) notes.push(`HP ${fmt(revivedHp)}로 부활`);
+      return { key: `${index}`, icon: outcome === '승리' ? '⭐' : '⚠️', label: `전투 ${outcome}`, delta: null, after: null, note: notes.join(' · '), rejected: false };
+    }
+    if (event === 'use_item') {
+      const pool = s(log.pool);
+      const remaining = n(log.remaining);
+      return { key: `${index}`, icon: '❤️', label: `${s(log.itemId)}${pool ? ` · ${pool}` : ''}`, delta: deltaStr(n(log.amount)), after: after != null ? fmt(after) : null, note: remaining != null ? `남은 ${fmt(remaining)}` : '', rejected: false };
+    }
+    if (event === 'sale') {
+      const consumed = log.consumed as Log | undefined;
+      const stock = consumed ? Object.entries(consumed).map(([id, value]) => `${RESOURCE_LABEL[id] ?? id} -${fmt(n(value) ?? 0)}`).join(' · ') : '';
+      return { key: `${index}`, icon: '🪙', label: `${s(log.menuName)} ×${fmt(n(log.qty) ?? 0)}`, delta: deltaStr(n(log.goldDelta)), after: null, note: stock, rejected: false };
+    }
+    if (event === 'buy_item') {
+      const owned = n(log.owned);
+      return { key: `${index}`, icon: '🪙', label: `${s(log.menuName)} ×${fmt(n(log.qty) ?? 0)}`, delta: deltaStr(n(log.goldDelta)), after: null, note: owned != null ? `보유 ${fmt(owned)}` : '', rejected: false };
+    }
+    if (event === 'purchase' || event === 'purchase_batch') {
+      const items = Array.isArray(log.items) ? log.items as Log[] : [];
+      const single = `${s(log.resource)} ×${fmt(n(log.qty) ?? 0)}`;
+      const itemNote = items.map((item) => `${s(item.resource)} ×${fmt(n(item.qty) ?? 0)}`).join(' · ');
+      return { key: `${index}`, icon: '🪙', label: event === 'purchase' ? single : `품목 ${items.length}종 구매`, delta: deltaStr(n(log.goldDelta)), after: null, note: event === 'purchase_batch' ? itemNote : '', rejected: false };
+    }
+    if (event === 'upgrade') {
+      return { key: `${index}`, icon: '⭐', label: `${s(log.facility)} Lv.${fmt(n(log.level) ?? 0)}`, delta: deltaStr(n(log.goldDelta)), after: null, note: '', rejected: false };
+    }
+    if (event === 'attempt_quest') {
+      const text = s(log.text);
+      if (text) return { key: `${index}`, icon: '⭐', label: '의뢰 조우', delta: null, after: null, note: text, rejected: false };
+      const success = log.success === true;
+      const roll = n(log.roll);
+      const tier = s(log.tier);
+      const tierNote = tier === 'critical_success' ? '대성공' : tier === 'critical_failure' ? '대실패' : '';
+      return { key: `${index}`, icon: success ? '⭐' : '⚠️', label: `${s(log.name) || s(log.questId)} · ${success ? '성공' : '실패'}`, delta: deltaStr(n(log.goldDelta)), after: null, note: [`굴림 ${roll == null ? '-' : fmt(roll)}`, tierNote].filter(Boolean).join(' · '), rejected: false };
+    }
+    if (event === 'reward') {
+      return { key: `${index}`, icon: '🪙', label: '의뢰 보상', delta: deltaStr(n(log.goldDelta)), after: after != null ? fmt(after) : null, note: s(log.reason) || s(log.questId), rejected: false };
+    }
+    if (event === 'lodging_accept') {
+      return { key: `${index}`, icon: '🛏️', label: `${s(log.roomNo)}호 숙박 수락`, delta: deltaStr(n(log.goldDelta)), after: null, note: s(log.requestId), rejected: false };
+    }
+    if (event === 'lodging_reject') {
+      return { key: `${index}`, icon: '🚪', label: '숙박 거절', delta: null, after: null, note: s(log.requestId), rejected: false };
+    }
+    if (event === 'traffic_wave') {
+      if (log.skipped === true) return { key: `${index}`, icon: '🚪', label: '영업 건너뜀', delta: null, after: null, note: s(log.wave), rejected: false };
+      if (log.awaitingChoice === true) return { key: `${index}`, icon: '⚠️', label: '영업 사건 발생', delta: null, after: null, note: s(log.label), rejected: false };
+      const served = n(log.served), customers = n(log.customers), stockout = n(log.stockout);
+      return { key: `${index}`, icon: '🪙', label: `영업${served != null ? ` · ${fmt(served)}명 응대` : ''}`, delta: deltaStr(n(log.revenue)), after: null, note: [s(log.wave), customers != null ? `방문 ${fmt(customers)}` : '', stockout != null ? `미응대 ${fmt(stockout)}` : ''].filter(Boolean).join(' · '), rejected: false };
+    }
+    if (event === 'incident_choice') {
+      const wave = log.wave as Log | undefined;
+      const waveRevenue = n(wave?.revenue), shortfall = n(log.goldShortfall);
+      return { key: `${index}`, icon: '🪙', label: '영업 사건 해결', delta: deltaStr(n(log.goldDelta)), after: null, note: [s(log.choice), waveRevenue != null ? `영업 매출 ${signed(waveRevenue)}` : '', shortfall ? `미지급 ${fmt(shortfall)}` : ''].filter(Boolean).join(' · '), rejected: false };
+    }
+    if (event === 'lodging_review') {
+      const requests = Array.isArray(log.requests) ? log.requests as Log[] : [];
+      return { key: `${index}`, icon: '🛏️', label: '숙박 문의 확인', delta: null, after: `${fmt(requests.length)}건`, note: '', rejected: false };
+    }
+    if (event === 'mail_check') {
+      const letters = Array.isArray(log.letters) ? log.letters : [];
+      return { key: `${index}`, icon: '⭐', label: '우편 확인', delta: null, after: `${fmt(letters.length)}건`, note: '', rejected: false };
+    }
+    if (event === 'mail_open') {
+      return { key: `${index}`, icon: '🪙', label: s(log.type) === 'reward' ? '우편 보상' : '의뢰 우편', delta: deltaStr(n(log.goldDelta)), after: null, note: s(log.axis), rejected: false };
     }
     // 알 수 없는 성공 이벤트: 델타/애프터가 있으면 그것만, 아니면 이벤트명.
     return { key: `${index}`, icon: '⚙️', label: event || '엔진 처리', delta: deltaStr(n(log.amount) ?? n(log.delta)), after: after != null ? fmt(after) : null, note: reason, rejected: false };
