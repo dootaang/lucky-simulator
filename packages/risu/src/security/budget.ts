@@ -11,7 +11,7 @@ export interface CbsBudgetBreach { limit: string; actual: number; allowed: numbe
 // 실측(판타지시뮬봇 5종)으로 보정한 값. 정상 카드가 걸리면 상한을 올리기 전에 무엇이 비싼지 먼저 확인한다.
 //   벨라돈나 첫 메시지 163,901자가 정규식 치환(out 39,868자)을 거치며 343,553자로 부푼다 → input은
 //   정규식 확장 *후* 크기 기준이어야 한다. card-regex의 MAX_TEXT(1,000,000)와 같은 축척으로 맞춘다.
-//   실측 9종(DOMINIUM·Tesselia·오렌티아·Isekai RE·벨라돈나·MORTAL·루미나·Merry Sisters·Rote):
+//   실측 9종(대형 정규식 카드·Tesselia·오렌티아·Isekai RE·벨라돈나·MORTAL·루미나·Merry Sisters·Rote):
 //   하드·소프트 초과 0건, 최대 명령 수 2,222(Merry Sisters), 최대 35ms → ops 20,000은 9배 여유.
 //   저사양 모바일 실측은 M-S1/S2 배선 후 다시 잰다.
 export const DEFAULT_CBS_LIMITS: CbsBudgetLimits = { input: 1_000_000, output: 2_000_000, ops: 20_000, eachItems: 5_000, depth: 32, softMs: 250 };

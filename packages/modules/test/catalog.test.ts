@@ -19,4 +19,11 @@ describe('module-owned screen presets', () => {
     ]);
     expect(JSON.stringify(presets.screens)).not.toContain('combat-console');
   });
+
+  it('ignores schema for existing presets and adds one declared text-panel screen',()=>{
+    expect(screenPresetsFor(['genre.inn'],{textPanels:[{id:'ignored',kind:'panel',fields:['값']}]})).toEqual(screenPresetsFor(['genre.inn']));
+    const presets=screenPresetsFor(['sim.text-panels'],{textPanels:[{id:'status',kind:'panel',fields:['이름'],source:'상태'},{id:'news',kind:'feed',fields:['뉴스'],source:'소식'}]});
+    expect(presets.screens).toEqual([{id:'text-panels',title:'상태창',layout:'dashboard',regions:{main:[{widget:'detail-panel',title:'상태',source:'state.panels.status.fields'},{widget:'detail-panel',title:'소식',source:'state.panels.news'}]}}]);
+    expect(presets.navigation).toEqual([{id:'text-panels',screenId:'text-panels',label:'상태창'}]);
+  });
 });

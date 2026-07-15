@@ -16,7 +16,7 @@ export { createVoyageProvider } from '@simbot/memory';
 // 카드 태그 채널이 dispatch할 수 있는 이벤트의 명시적 허용목록(방어 심층).
 // 번역기는 지금 이 8종만 내지만, 번역기가 넓어져도 세션이 조용히 채널을 열어주지 않도록 여기서 고정한다.
 // (LLM은 본문 태그를 자유롭게 쓸 수 있으므로 이 채널의 상한이 곧 LLM의 상태 조작 상한이다.)
-export const CARD_TAG_EVENTS=new Set<string>(['gold_delta','resource_delta','scale_delta','checkin','checkout','day_end','hire','fire']);
+export const CARD_TAG_EVENTS=new Set<string>(['gold_delta','resource_delta','scale_delta','checkin','checkout','day_end','hire','fire','panel_sync']);
 export interface MessageChip{ok:boolean;text:string;kind?:string;}
 export interface ChatMessage{id:string;index:number;role:'user'|'assistant';content:string;createdAt:string;origin?:'model'|'greeting'|'user'|'engine'|'ledger';translation?:string;facts?:Record<string,unknown>[];chips?:MessageChip[];speakers?:SpeakerReference[];}
 export interface ProposedEvent{id:string;params?:Record<string,unknown>;}
