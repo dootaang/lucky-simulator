@@ -27,3 +27,25 @@ describe('text panel extraction',()=>{
     expect(extractTextPanels([{type:'editdisplay',in:chain(['이름','상태'])}])[0]).toMatchObject({id:'panel-1',kind:'panel'});
   });
 });
+
+describe('실카드 이스케이프·탐욕 캡처 변형 (지휘자 수술 고정)', () => {
+  it('라벨 안 \\s* 이스케이프는 공백 하나로 정규화되고 체인이 끊기지 않는다', () => {
+    const pattern = String.raw`이름:\s*([^|]+?)\s*\|\s*일자\s*정보:\s*([^|]+?)\s*\|\s*수주한\s*최근\s*임무:\s*([^|]+?)\s*\|`;
+    const panels = extractTextPanels([{in: pattern, type: 'editdisplay', comment: 'Status Panel'}]);
+    expect(panels).toHaveLength(1);
+    expect(panels[0]!.fields).toEqual(['이름', '일자 정보', '수주한 최근 임무']);
+  });
+  it('비탐욕(?) 없는 탐욕 캡처 체인도 패널로 추출된다', () => {
+    const pattern = String.raw`함선명:\s*([^|]+)\s*\|\s*주요\s*무장:\s*([^|]+)\s*\|\s*연료:\s*([^|]+)\s*\|`;
+    const panels = extractTextPanels([{in: pattern, type: 'editdisplay', comment: 'Ship Panel'}]);
+    expect(panels).toHaveLength(1);
+    expect(panels[0]!.fields).toEqual(['함선명', '주요 무장', '연료']);
+  });
+  it('\\s* 라벨을 가진 단일 필드 피드도 추출된다', () => {
+    const pattern = String.raw`\|\s*연방\s*뉴스:\s*([^|]+?)\s*\|`;
+    const panels = extractTextPanels([{in: pattern, type: 'editdisplay', comment: 'IBS'}]);
+    expect(panels).toHaveLength(1);
+    expect(panels[0]!.kind).toBe('feed');
+    expect(panels[0]!.fields).toEqual(['연방 뉴스']);
+  });
+});

@@ -11,16 +11,19 @@ export interface TextPanelRegexScript {
   comment?: string;
 }
 
-const CAPTURE_MARKERS = [String.raw`\s*([^|]+?)\s*\|`, String.raw`\s*([^\|]+?)\s*\|`];
+const CAPTURE_MARKERS = [String.raw`\s*([^|]+?)\s*\|`, String.raw`\s*([^\|]+?)\s*\|`, String.raw`\s*([^|]+)\s*\|`, String.raw`\s*([^\|]+)\s*\|`]; // 탐욕/비탐욕 캡처 모두 실카드에 존재
+
 const DISPLAY_TYPES = new Set(['editdisplay', 'edit_display', 'display', 'editoutput', 'edit_output', 'output']);
 
 interface FieldCapture { label: string; labelStart: number; end: number; }
 
 function literalLabel(prefix: string): { label: string; start: number } | null {
-  const match = /((?:[\p{L}\p{N}\p{M}_./·-]|\\[/.()[\]{}+*?^$-])(?:[\p{L}\p{N}\p{M} _./·-]|\\[/.()[\]{}+*?^$-])*)\s*:\s*$/u.exec(prefix);
+  // 실카드 정규식은 라벨 단어 사이 공백을 \s* 이스케이프로 쓴다(예: 일자\s*정보:) —
+  // 이를 라벨 경계로 오인하면 체인이 쪼개지고 라벨이 잘린다(실측). 토큰의 일부로 허용하고 공백 하나로 정규화한다.
+  const match = /((?:[\p{L}\p{N}\p{M}_./·-]|\\[/.()[\]{}+*?^$-])(?:[\p{L}\p{N}\p{M} _./·-]|\\s[*+]?|\\[/.()[\]{}+*?^$-])*)\s*:\s*$/u.exec(prefix);
   if (!match || match.index == null) return null;
   const raw = match[1]!.trim();
-  const label = raw.replace(/\\([/.()[\]{}+*?^$-])/g, '$1');
+  const label = raw.replace(/\\s[*+]?/g, ' ').replace(/\\([/.()[\]{}+*?^$-])/g, '$1').replace(/\s+/g, ' ').trim();
   return label ? { label, start: match.index + match[0].indexOf(match[1]!) } : null;
 }
 
