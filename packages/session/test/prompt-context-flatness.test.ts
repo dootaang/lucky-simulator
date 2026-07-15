@@ -1,0 +1,14 @@
+import{describe,expect,it}from'vitest';
+import{estimateTokens,type PromptPreset}from'@simbot/risu';
+import{ProjectRuntime}from'@simbot/runtime';
+import{PlaySession,type ModelProvider}from'../src/index.ts';
+
+const source={source:'user' as const,path:'prompt-context-flatness'},fixedBlock='Fixed card and system instructions stay in every request. '.repeat(40),preset:PromptPreset={contract:'prompt-preset/0.1',id:'context-flatness',name:'context flatness',compatibilityMode:'simpack',version:1,raw:null,settings:{assistantPrefill:'',sendNames:false,sendChatAsSystem:false},blocks:[{id:'fixed',type:'plain',name:'fixed',enabled:true,role:'system',text:fixedBlock,source},{id:'chat',type:'chat',name:'chat',enabled:true,rangeStart:-1000,rangeEnd:'end',source}]};
+const runtime=()=>new ProjectRuntime({projectId:'context-flatness',schema:{initialState:{}},screens:[],navigation:[],content:{},featureToggles:{},moduleIds:[]});
+const tokens=(messages:Array<{content:string}>)=>messages.reduce((sum,message)=>sum+estimateTokens(message.content),0);
+
+describe('prompt context budget',()=>{
+  it('keeps a 300-turn prompt flat while retaining the latest user message',async()=>{const promptTokens:number[]=[],response=`fixed-response ${'r'.repeat(1000)}`;let turn=0;const provider:ModelProvider={async complete({prompt}){turn+=1;const latest=`turn-${turn} ${'u'.repeat(1000)}`;promptTokens.push(tokens(prompt.messages));expect(prompt.messages.some(message=>message.role==='user'&&message.content===latest)).toBe(true);return{text:response};}},session=new PlaySession({id:'bounded-context',runtime:runtime(),provider,preset,card:{name:'C'},maxContext:24000,historyWindow:1000});for(let index=1;index<=300;index+=1)await session.send(`turn-${index} ${'u'.repeat(1000)}`);const fixedBlockTokens=estimateTokens(fixedBlock),margin=64;expect(promptTokens).toHaveLength(300);expect(promptTokens[299]!).toBeLessThanOrEqual(promptTokens[49]!*1.1);expect(Math.max(...promptTokens)).toBeLessThanOrEqual(fixedBlockTokens+24000+margin);for(const sample of[50,100,250,300])expect(promptTokens[sample-1]).toBeGreaterThan(0);},30_000);
+
+  it('does not truncate chat when maxContext is 0',async()=>{const prompts:Array<Array<{role:string;content:string}>>=[],response=`unlimited-response ${'r'.repeat(10000)}`,provider:ModelProvider={async complete({prompt}){prompts.push(prompt.messages.map(message=>({...message})));return{text:response};}},session=new PlaySession({id:'unlimited-context',runtime:runtime(),provider,preset,card:{name:'C'},maxContext:0,historyWindow:1000});for(let turn=1;turn<=6;turn+=1)await session.send(`unlimited-turn-${turn} ${'u'.repeat(10000)}`);const last=prompts.at(-1)!;expect(tokens(last)).toBeGreaterThan(24000);expect(last.filter(message=>message.role!=='system')).toHaveLength(11);expect(last.some(message=>message.role==='user'&&message.content.startsWith('unlimited-turn-1 '))).toBe(true);});
+});
