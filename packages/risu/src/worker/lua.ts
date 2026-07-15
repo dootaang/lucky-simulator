@@ -1,3 +1,4 @@
+/// <reference path="../assets.d.ts" />
 import{RUNTIME_LIMITS}from'../security/runtime-budget.ts';
 import type{RuntimeWarning,RuntimeWorkerLuaRequest,VariablePatch}from'./contract.ts';
 
@@ -18,7 +19,7 @@ export interface LuaExecutionResult{patch:VariablePatch[];warnings:RuntimeWarnin
 export async function executeLua(request:RuntimeWorkerLuaRequest,onReady:()=>void=()=>{}):Promise<LuaExecutionResult>{
  if(request.capabilities?.lua!==true)return{patch:[],warnings:[{code:'runtime_lua_disabled',message:'lua_capability_disabled'}]};
  const variables=new Map(Object.entries(request.snapshot.variables)),warnings:RuntimeWarning[]=[];let blocked='';
- const{LuaFactory}=await import('wasmoon'),engine=await new LuaFactory().createEngine({openStandardLibs:true,injectObjects:false,enableProxy:false,traceAllocations:true});
+ const loaded=await import('wasmoon'),LuaFactory=loaded.LuaFactory??(loaded as unknown as{default?:{LuaFactory?:typeof loaded.LuaFactory}}).default?.LuaFactory??(globalThis as unknown as{wasmoon?:{LuaFactory?:typeof loaded.LuaFactory}}).wasmoon?.LuaFactory;if(!LuaFactory)throw new Error('runtime_lua_factory_missing');const browserWasmUri=typeof(globalThis as{location?:unknown}).location==='object'?(await import('wasmoon/dist/glue.wasm?url')).default:undefined,engine=await new LuaFactory(browserWasmUri).createEngine({openStandardLibs:true,injectObjects:false,enableProxy:false,traceAllocations:true});/* ?url 임포트는 Vite 전용 — 정적 임포트로 두면 플레인 Node(런타임 카나리아)가 @simbot/risu를 임포트하지 못한다. 브라우저 분기 안 동적 임포트만 허용. */
  engine.global.setMemoryMax(RUNTIME_LIMITS.luaMemoryBytes);
  const get=(key:unknown)=>variables.get(String(key))??'';
  const set=(key:unknown,value:unknown)=>{const name=String(key);if(!safeKey(name))throw new Error('runtime_lua_unsafe_variable');variables.set(name,String(value??''));};

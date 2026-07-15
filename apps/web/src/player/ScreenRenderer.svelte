@@ -9,6 +9,7 @@
   import { evaluateCondition, resolveValue, type ProjectRuntime } from '@simbot/runtime';
   import type { PlaySession } from '@simbot/session';
   import ChatPanel from './ChatPanel.svelte';
+  import CombatConsole from './CombatConsole.svelte';
   import InnManagement from './InnManagement.svelte';
   import { classifyWidgetValue, structuredEntries } from './widget-model.ts';
   import {declaredActionMode,type SimulationActionHandler} from './simulation-action';
@@ -20,6 +21,7 @@
   let screens=$derived(project.screens.filter((item)=>evaluateCondition(item.visibleWhen,context)));
   let navigation=$derived(project.navigation.filter(item=>evaluateCondition(item.visibleWhen,context)));
   let screen=$derived(screens.find((item)=>item.id===(active||navigation[0]?.screenId))??screens[0]);
+  let combatConsole=$derived.by(()=>{revision;try{const value=runtime.select('combat/console');return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;}catch{return null;}});
   let hasSide=$derived(!!screen&&Object.entries((screen.regions??{}) as Record<string,Record<string,unknown>[]>).some(([region,widgets])=>['hud','side','actions'].includes(region)&&widgets.some(widget=>evaluateCondition(widget.visibleWhen,context))));
   function source(widget:Record<string,unknown>){revision;const value=widget.source;if(typeof value==='string'&&value.startsWith('engine:')){try{return runtime.select(value.slice(7));}catch{return null;}}if(typeof value==='string'&&value.startsWith('state.'))return value.split('.').slice(1).reduce<unknown>((current,key)=>current&&typeof current==='object'&&key!=='__proto__'&&key!=='constructor'&&key!=='prototype'&&Object.prototype.hasOwnProperty.call(current,key)?(current as Record<string,unknown>)[key]:undefined,runtime.state);return value;}
   async function act(action:Record<string,unknown>){if(pending||busy)return;const event=(action.event??action)as Record<string,unknown>,id=String(event.id??'');if(!id)return;const params=resolveValue(event.params??{},context)as Record<string,unknown>;pending=true;try{if(onaction)lastLog=await onaction({id,params,mode:declaredActionMode(action)});else lastLog=runtime.dispatch(id,params).log;revision+=1;onchange();}finally{pending=false;}}
@@ -32,6 +34,7 @@
 {#if navigation.length>1}<nav class="screen-nav" aria-label="프로젝트 화면">{#each navigation as item}<Button variant={(active||navigation[0]?.screenId)===item.screenId?'primary':'ghost'} onclick={()=>active=String(item.screenId)}>{String(item.label??item.id)}</Button>{/each}</nav>{/if}
 {#if screen}
   <section class={`screen layout-${String(screen.layout??'dashboard')}`} class:single-column={!hasSide}><h1>{String(screen.title??screen.id)}</h1>
+    {#if combatConsole?.present}<div class="combat-interrupt"><CombatConsole {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/></div>{/if}
     {#each Object.entries((screen.regions??{}) as Record<string,Record<string,unknown>[]>) as [region,widgets]}<div class={`region region-${region}`}>
       {#each widgets as widget}{#if evaluateCondition(widget.visibleWhen,context)}
         {@const model=classifyWidgetValue(source(widget),String(widget.title??widget.label??'상태'))}
@@ -40,6 +43,8 @@
             {#if session}<ChatPanel {session} version={revision} {portraitFor} onchange={()=>revision+=1}/>{:else}<div class="chat"><p>플레이 세션을 준비하고 있습니다.</p>{#if lastLog.length}<dl class="structured">{#each structuredEntries(lastLog) as entry}<div><dt>{entry.key}</dt><dd>{entry.value}</dd></div>{/each}</dl>{/if}</div>{/if}
           {:else if widget.widget==='inn-management'}
             <InnManagement {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
+          {:else if widget.widget==='combat-console'}
+            <CombatConsole {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
           {:else if widget.widget==='action-group'}
             <div class="actions">{#each asList(widget.actions) as action}<Button disabled={busy||pending||action.enabled===false} onclick={()=>act(action)}>{String(action.label??action.id)}</Button>{/each}</div>
           {:else if widget.widget==='decision-card'}
@@ -60,4 +65,4 @@
 {:else}<Panel title="화면 없음"><p>이 프로젝트에는 표시 가능한 화면 선언이 없습니다.</p></Panel>{/if}
 </div>
 
-<style>.renderer{container-type:inline-size;min-width:0;overflow-x:hidden}.screen-nav,.actions,.cards{display:flex;gap:var(--space-2);flex-wrap:wrap}.screen-nav{margin-bottom:var(--space-4)}.screen{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,var(--sidebar-width));gap:var(--space-4)}.screen.single-column{grid-template-columns:minmax(0,1fr)}.screen>h1{grid-column:1/-1;margin:0}.region{display:flex;min-width:0;flex-direction:column;gap:var(--space-4)}.region-main{grid-column:1}.region-hud,.region-side,.region-actions{grid-column:2}.single-column .region{grid-column:1}.chat{min-height:18rem}.structured{display:grid;gap:var(--space-2);margin:0}.structured>div{display:grid;grid-template-columns:minmax(6rem,auto) minmax(0,1fr);gap:var(--space-3);padding:var(--space-2);border-bottom:1px solid var(--color-line)}.structured dt{font-weight:700}.structured dd{margin:0;overflow-wrap:anywhere}@container (max-width:52rem){.screen{grid-template-columns:minmax(0,1fr)}.region-main,.region-hud,.region-side,.region-actions{grid-column:1}}@media(max-width:800px){.screen{grid-template-columns:minmax(0,1fr)}.region-main,.region-hud,.region-side,.region-actions{grid-column:1}}</style>
+<style>.renderer{container-type:inline-size;min-width:0;overflow-x:hidden}.screen-nav,.actions,.cards{display:flex;gap:var(--space-2);flex-wrap:wrap}.screen-nav{margin-bottom:var(--space-4)}.screen{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,var(--sidebar-width));gap:var(--space-4)}.screen.single-column{grid-template-columns:minmax(0,1fr)}.screen>h1,.combat-interrupt{grid-column:1/-1}.screen>h1{margin:0}.region{display:flex;min-width:0;flex-direction:column;gap:var(--space-4)}.region-main{grid-column:1}.region-hud,.region-side,.region-actions{grid-column:2}.single-column .region{grid-column:1}.chat{min-height:18rem}.structured{display:grid;gap:var(--space-2);margin:0}.structured>div{display:grid;grid-template-columns:minmax(6rem,auto) minmax(0,1fr);gap:var(--space-3);padding:var(--space-2);border-bottom:1px solid var(--color-line)}.structured dt{font-weight:700}.structured dd{margin:0;overflow-wrap:anywhere}@container (max-width:52rem){.screen{grid-template-columns:minmax(0,1fr)}.region-main,.region-hud,.region-side,.region-actions{grid-column:1}}@media(max-width:800px){.screen{grid-template-columns:minmax(0,1fr)}.region-main,.region-hud,.region-side,.region-actions{grid-column:1}}</style>

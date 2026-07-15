@@ -8,6 +8,7 @@ const isolationHeaders={
 
 export default defineConfig({
   plugins:[svelte()],
+  optimizeDeps:{exclude:['wasmoon','@sqlite.org/sqlite-wasm']},
   server:{headers:isolationHeaders},
   preview:{headers:isolationHeaders},
   build:{target:'es2022',sourcemap:true},
