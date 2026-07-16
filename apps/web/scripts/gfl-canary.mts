@@ -7,8 +7,10 @@ import{compileKnownCard}from'@simbot/compiler';
 import{cardToRuntimeProject}from'@simbot/risu';
 import{ProjectRuntime}from'@simbot/runtime';
 
-const cardPath=resolve(process.argv[2]??'../../소녀전선/소녀전선_잔불.png');
-const modulePath=resolve(process.argv[3]??'../../소녀전선/소녀전선 에셋 모듈.charx');
+// pnpm run이 스크립트에 '--' 구분자를 그대로 넘긴다 — 파일 경로로 오인하지 않게 걸러낸다(다른 카나리아와 동일).
+const args=process.argv.slice(2).filter(value=>value!=='--');
+const cardPath=resolve(args[0]??'../../소녀전선/소녀전선_잔불.png');
+const modulePath=resolve(args[1]??'../../소녀전선/소녀전선 에셋 모듈.charx');
 const started=performance.now(),parsed=parseCard(new Uint8Array(await readFile(cardPath)),cardPath),compiled=compileKnownCard(parsed);
 assert(compiled,'실카드가 인증된 소녀전선 구조로 탐지되지 않았습니다.');
 const profile=cardToRuntimeProject(parsed,compiled),runtime=new ProjectRuntime(profile.project,20260717);

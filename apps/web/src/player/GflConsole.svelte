@@ -16,7 +16,7 @@
 <div class="gfl" aria-label="소녀전선 지휘 콘솔">
   <header class="status"><div><span>DAY</span><b>{String(status.day??1)}</b></div><div><span>TIME</span><b>{String(status.time??8)}:00</b></div><div><span>FUNDS</span><b>{Number(status.funds??0).toLocaleString()}</b></div><div><span>RESOURCES</span><b>{Number(status.resources??0).toLocaleString()}</b></div><div><span>DOLLS</span><b>{String(status.dolls??0)}</b></div></header>
   {#if !status.started}
-    <section class="boot"><p class="code">G&K TACTICAL COMMAND NETWORK</p><h2>소녀전선: 잔불</h2><p>원본 카드의 설정과 이미지를 Lucky 결정론 엔진으로 변환했습니다. 게임 수치는 엔진이 확정하고 AI는 장면과 대사를 연출합니다.</p><div><button onclick={()=>act('gfl/start',{mode:'commander'})}>지휘관으로 시작</button><button onclick={()=>act('gfl/start',{mode:'doll'})}>전술인형으로 시작</button></div></section>
+    <section class="boot"><p class="code">G&K TACTICAL COMMAND NETWORK</p><h2>소녀전선: 잔불</h2><p>원본 카드의 설정과 이미지를 Lucky 결정론 엔진으로 변환했습니다. 게임 수치는 엔진이 확정하고 AI는 장면과 대사를 연출합니다. 원본에서 회수한 값과 Lucky가 보정한 규칙의 목록은 진단 콘솔에서 확인할 수 있습니다.</p><div><button onclick={()=>act('gfl/start',{mode:'commander'})}>지휘관으로 시작</button><button onclick={()=>act('gfl/start',{mode:'doll'})}>전술인형으로 시작</button></div></section>
   {:else}
     <nav>{#each [['base','기지'],['dolls','인형'],['echelon','제대'],['operation','작전'],['factory','제조·수복'],['shop','상점·장비']] as item}<button class:active={tab===item[0]} onclick={()=>tab=item[0]as typeof tab}>{item[1]}</button>{/each}</nav>
     <div class="workspace">
