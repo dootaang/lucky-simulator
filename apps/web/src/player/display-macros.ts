@@ -21,4 +21,17 @@ export interface CbsBudgetWarning{code:'cbs_budget_exceeded';macro:string;name:s
 export type DisplayWarning=AssetMacroWarning|CbsBudgetWarning;
 function budgetWarnings(budget:CbsBudget):CbsBudgetWarning[]{return budget.breaches.map(breach=>({code:'cbs_budget_exceeded' as const,macro:breach.limit,name:`${breach.actual} > ${breach.allowed}`}));}
 function uniqueWarnings(values:readonly DisplayWarning[]){const seen=new Set<string>();return values.filter(value=>{const key=`${value.code}\u0001${value.macro}\u0001${value.name}`;if(seen.has(key))return false;seen.add(key);return true;});}
-export function renderDisplayContent(content:string,user:string,char:string,assets:readonly AssetMacroAsset[],scripts:readonly RegexScript[]=[],variables:Record<string,string>={},chatIndex=0,lastMessageId=0,assetOptions:DisplayAssetOptions={}):{html:string;warnings:DisplayWarning[]}{const budget=new CbsBudget(),first=resolveAssetMacros(content,assets,assetOptions),prepared=prepareDisplayContent(first.content,user,char,scripts,variables,chatIndex,lastMessageId,assetOptions.activeModules,budget),second=resolveAssetMacros(prepared,assets,assetOptions);return{html:sanitizeHtml(renderMarkdown(second.content)),warnings:uniqueWarnings([...first.warnings,...second.warnings,...budgetWarnings(budget)])};}
+// 카드 <style>은 버리지 않고 배경 HTML과 같은 규칙으로 가둬서 살린다(오너 승인 2026-07-16):
+// 잔여 CBS 제거 → @import 제거 → 외부 url() 중화 → fixed/sticky 중화 → @scope로 카드 표면에 격리.
+// 마크다운 앞에서 뽑아야 한다 — 마크다운이 CSS 본문 줄들을 <p>로 감싸 규칙을 부수기 때문이다.
+const styleTree=/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
+function safeCss(css:string){return css.replace(/\{\{[\s\S]*?}}/g,'').replace(/@import\b[^;]*;?/gi,'').replace(/url\(\s*(['"]?)(?!data:|blob:)[^)]+\1\s*\)/gi,'none').replace(/\bposition\s*:\s*(fixed|sticky)\b/gi,'position:relative');}
+// 순서는 업스트림 Risu와 같다: 카드 정규식·CBS를 '원문'에 먼저 돌리고 에셋 이름 해석은 맨 마지막이다.
+// 에셋을 먼저 풀면 <img="이름">이 <img src="…">로 바뀌어 그 문법에 매칭되는 카드 정규식(캐릭터 카드·
+// 상태창 UI)이 통째로 죽는다 — DOMINIUM 실측으로 확인한 회귀. {{img::}}·{{raw::}}·<img="">는 CBS를
+// 그대로 통과하므로(포트 계약) 마지막 한 번의 해석으로 충분하다.
+export function renderDisplayContent(content:string,user:string,char:string,assets:readonly AssetMacroAsset[],scripts:readonly RegexScript[]=[],variables:Record<string,string>={},chatIndex=0,lastMessageId=0,assetOptions:DisplayAssetOptions={}):{html:string;warnings:DisplayWarning[]}{
+  const budget=new CbsBudget(),prepared=prepareDisplayContent(content,user,char,scripts,variables,chatIndex,lastMessageId,assetOptions.activeModules,budget),resolved=resolveAssetMacros(prepared,assets,assetOptions);
+  const styles:string[]=[];const body=resolved.content.replace(styleTree,(_whole,css:string)=>{const clean=safeCss(css).trim();if(clean&&!styles.includes(clean))styles.push(clean);return'';});
+  const scoped=styles.length?`<style>@scope (.lucky-card-surface){${styles.join('\n')}}</style>`:'';
+  return{html:scoped+sanitizeHtml(renderMarkdown(body)),warnings:uniqueWarnings([...resolved.warnings,...budgetWarnings(budget)])};}

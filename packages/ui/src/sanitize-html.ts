@@ -2,6 +2,15 @@ const allowedTags=new Set(['div','span','p','br','hr','img','b','strong','i','em
 const dropTree=new Set(['script','style','iframe','object','embed','form','input','textarea','button','select','option','template','svg','math']);
 const globalAttributes=new Set(['class','alt','title','colspan','rowspan']);
 
+// 안전 CSS 부분집합 (오너 승인 2026-07-16) — 카드의 표현 CSS는 리스 패리티의 큰 표면이라 통째로 버리지
+// 않는다. 단 CSS는 표현까지만이다: 실행(expression)·네트워크(외부 url)·타 기술(behavior)·화면 전체를
+// 덮는 배치(fixed/sticky)는 위험 축이므로, 실행·네트워크 축이 보이면 속성값 전체를 버리고(부분 구제로
+// 우회를 만들지 않는다) 배치·외부 url은 안전값으로 중화한다. <style> 태그의 처리는 표시 계층(display-macros·
+// background-render)이 @scope로 가두는 몫이고, 여기는 인라인 style 속성만 책임진다.
+function safeStyleValue(value:string){
+  if(/expression\s*\(|javascript\s*:|vbscript\s*:|@import\b|behavior\s*:|-moz-binding\b/i.test(value))return'';
+  return value.replace(/url\(\s*(['"]?)(?!data:|blob:)[^)]*\1\s*\)/gi,'none').replace(/\bposition\s*:\s*(fixed|sticky)\b/gi,'position:relative');
+}
 function safeUrl(value:string,kind:'image'|'link'){
   const trimmed=value.trim();
   try{
@@ -25,7 +34,8 @@ export function sanitizeHtml(source:string){
     const clean=output.createElement(tag);
     for(const attribute of Array.from(original.attributes)){
       const name=attribute.name.toLowerCase();
-      if(name.startsWith('on')||name==='style')continue;
+      if(name.startsWith('on'))continue;
+      if(name==='style'){const value=safeStyleValue(attribute.value);if(value)clean.setAttribute('style',value);continue;}
       if(globalAttributes.has(name))clean.setAttribute(name,attribute.value);
       else if(tag==='img'&&name==='src'){const value=safeUrl(attribute.value,'image');if(value)clean.setAttribute('src',value);}
       else if(tag==='a'&&name==='href'){const value=safeUrl(attribute.value,'link');if(value)clean.setAttribute('href',value);}
