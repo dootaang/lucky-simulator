@@ -11,6 +11,7 @@
   import ChatPanel from './ChatPanel.svelte';
   import CombatConsole from './CombatConsole.svelte';
   import InnManagement from './InnManagement.svelte';
+  import GflConsole from './GflConsole.svelte';
   import { classifyWidgetValue, structuredEntries } from './widget-model.ts';
   import {declaredActionMode,type SimulationActionHandler} from './simulation-action';
 
@@ -43,6 +44,8 @@
             {#if session}<ChatPanel {session} version={revision} {portraitFor} onchange={()=>revision+=1}/>{:else}<div class="chat"><p>플레이 세션을 준비하고 있습니다.</p>{#if lastLog.length}<dl class="structured">{#each structuredEntries(lastLog) as entry}<div><dt>{entry.key}</dt><dd>{entry.value}</dd></div>{/each}</dl>{/if}</div>{/if}
           {:else if widget.widget==='inn-management'}
             <InnManagement {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
+          {:else if widget.widget==='gfl-console'}
+            <GflConsole {runtime} {version} {busy} {onaction} {portraitFor} onchange={()=>revision+=1}/>
           {:else if widget.widget==='combat-console'}
             <CombatConsole {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
           {:else if widget.widget==='action-group'}

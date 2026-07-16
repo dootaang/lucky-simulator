@@ -18,6 +18,7 @@ export function registryFor(project:RuntimeProject):RegistryAssembly{
   for(const id of requested){
     if(id==='genre.inn'||id==='genre.inn.traffic')expanded.push(...LEGACY_CORE_MODULE_IDS,'genre.inn','genre.inn.traffic');
     else if(id==='genre.hunter')expanded.push(...LEGACY_CORE_MODULE_IDS,'genre.hunter');
+    else if(id==='genre.gfl')expanded.push(...LEGACY_CORE_MODULE_IDS,'genre.gfl');
     else expanded.push(id);
   }
   const registered=new Set<string>(),visiting=new Set<string>();

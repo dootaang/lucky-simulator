@@ -11,13 +11,14 @@ import { patchSchemaWithMined, type SchemaPatch, type UnmatchedMinedValue } from
 import { normalizeCompiledSchema,validateCompiledSemantics,type CompileIssue } from './schema-normalize.ts';
 import { extractTextPanels } from './text-panels.ts';
 export * from './compiler-prompt.ts';export * from './diagnosis.ts';export * from './lua-mine.ts';export * from './schema-patch.ts';export * from './schema-normalize.ts';export * from './text-panels.ts';
+export * from './known-cards.ts';
 
 export interface CompileAttempt{attempt:number;raw:string;issues:string[];}
 export interface CompileDiagnosis extends ReturnType<typeof diagnoseCard>{textPanels:ReturnType<typeof extractTextPanels>;}
 export interface CompileResult{compilerVersion:'0.2';schema:Record<string,unknown>;moduleIds:string[];screens:Record<string,unknown>[];navigation:Record<string,unknown>[];patches:SchemaPatch[];unmatchedMinedValues:UnmatchedMinedValue[];issues:CompileIssue[];warnings:string[];attempts:CompileAttempt[];diagnosis:CompileDiagnosis;rulebookUsed:string;}
 export interface CompileCardOptions{parsed:ParsedCard;provider:ModelProvider;signal?:AbortSignal;}
 function parseOutput(text:string){const clean=text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');const start=clean.indexOf('{'),end=clean.lastIndexOf('}');if(start<0||end<=start)throw new Error('compiler_json_invalid');const value=JSON.parse(clean.slice(start,end+1)) as unknown;if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('compiler_schema_invalid');return value as Record<string,unknown>;}
-const KNOWN_MODULES=new Set(['core.stats','core.inventory','core.equipment','core.progression','core.jobs','core.location','core.time','core.factions','rpg.quests','rpg.shop','rpg.crafting','rpg.loot','rpg.party','combat.turnbased','genre.inn','genre.inn.traffic','genre.hunter']);
+const KNOWN_MODULES=new Set(['core.stats','core.inventory','core.equipment','core.progression','core.jobs','core.location','core.time','core.factions','rpg.quests','rpg.shop','rpg.crafting','rpg.loot','rpg.party','combat.turnbased','genre.inn','genre.inn.traffic','genre.hunter','genre.gfl']);
 export function resolveModules(source:string,diagnosis:ReturnType<typeof diagnoseCard>){
   const matched=genreTemplates().filter(template=>template.detect(source)),excluded=new Set(matched.flatMap(template=>template.excludes??[]));
   const ids=[...matched.map(template=>template.id),...diagnosis.suggestedModules.filter(id=>KNOWN_MODULES.has(id)&&!excluded.has(id))];

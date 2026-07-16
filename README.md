@@ -6,7 +6,7 @@
 
 리스에서 시뮬봇을 오래 굴리면 LLM이 숫자를 잊거나 지어내 상태가 무너집니다. 럭키★엔진은 상태(골드·자원·호감도·날짜)를 **엔진이 소유**하고, LLM이 본문에 남긴 태그를 엔진 이벤트로 번역해 확정합니다. 그래서 300턴을 돌려도 **디싱크 0**이고, 되돌리기는 글이 아니라 **상태를 통째로 복원**합니다. 확정된 사실은 매 턴 **★사실 영수증**으로 보여줍니다.
 
-- 브랜드 규범: [docs/BRANDING.md](docs/BRANDING.md) · 정체성: [ADR 0002](docs/adr/0002-lucky-simulator-risu-compatible-player.md) · 로드맵: [docs/ROADMAP.md](docs/ROADMAP.md)
+- 브랜드 규범: [docs/BRANDING.md](docs/BRANDING.md) · 정체성: [ADR 0002](docs/adr/0002-lucky-simulator-risu-compatible-player.md) · 로드맵: [docs/ROADMAP.md](docs/ROADMAP.md) · [소녀전선 지원](docs/GIRLS-FRONTLINE.md)
 
 ## 현재 구조
 

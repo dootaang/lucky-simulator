@@ -54,5 +54,9 @@ export function genreTemplates():GenreTemplate[]{
       id:'genre.hunter',
       detect(source){return hunterSignatures.filter(pattern=>pattern.test(source)).length>=2;},
     },
+    {
+      id:'genre.gfl',
+      detect(source){return/소녀전선|girls.?frontline/i.test(source)&&/(?:ITEM_DATA|DOLL_CLASS|MISSION_DATA|전술인형|제대)/i.test(source);},
+    },
   ];
 }

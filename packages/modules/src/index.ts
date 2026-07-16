@@ -2,6 +2,7 @@ export * from './support.ts';
 export * from './common.ts';
 export * from './advanced.ts';
 export * from './hunter.ts';
+export * from './gfl.ts';
 export * from './combat.ts';
 export * from './inn.ts';
 export * from './inn-traffic.ts';

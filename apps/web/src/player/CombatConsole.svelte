@@ -25,6 +25,7 @@
   async function run(id:string,params:Record<string,unknown>={},events?:Array<{id:string;params:Record<string,unknown>}>){if(pending||busy)return;pending=true;lastLog=[];try{if(onaction)lastLog=await onaction({id,params,mode:'narrated',...(events?{events}:{})});else{const queue=events??[{id,params}];lastLog=queue.flatMap(event=>runtime.dispatch(event.id,event.params).log as Record<string,unknown>[]);}onchange();}finally{pending=false;}}
   const turn=(first:{id:string;params:Record<string,unknown>})=>run(first.id,first.params,[first,{id:'enemy_turn',params:{}}]);
   function endLabel(outcome:ConsoleModel['end']['outcome']){return outcome==='victory'?'전투 종료 (승리)':outcome==='fled'?'전투 종료 (도주)':outcome==='defeat'?'전투 종료 (패배)':'전투 종료';}
+  function finish(){const gfl=(runtime.state.gfl&&typeof runtime.state.gfl==='object'?runtime.state.gfl:{})as Record<string,unknown>,sortie=(gfl.sortie&&typeof gfl.sortie==='object'?gfl.sortie:{})as Record<string,unknown>;return run(sortie.active?'gfl/sortie/finish':'end_encounter');}
 </script>
 
 {#if model.present}
@@ -43,7 +44,7 @@
 
   {#if items.length}<section aria-label="소모품"><h3>소모품 🧪</h3><div class="actions">{#each items as item}<button disabled={busy||pending||!model.canAct} onclick={()=>turn({id:'use_item',params:{itemId:item.id}})}>{String(item.label??item.id)} · 보유 {item.owned}{#if item.effect} · {String(item.effect.pool??'')} +{String(item.effect.amount??'')}{/if}</button>{/each}</div></section>{/if}
 
-  {#if model.end.available}<section class="ending"><button disabled={busy||pending} onclick={()=>run('end_encounter')}>{endLabel(model.end.outcome)}</button></section>{/if}
+  {#if model.end.available}<section class="ending"><button disabled={busy||pending} onclick={finish}>{endLabel(model.end.outcome)}</button></section>{/if}
   {#if status}<p class:failed={lastLog.some(row=>row.ok===false)} class="status" aria-live="polite">{status}</p>{/if}
 </div>
 {/if}
