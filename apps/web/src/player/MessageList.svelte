@@ -3,14 +3,14 @@
   import type { CardAsset } from '@simbot/card';
   import Icon from '@simbot/ui/Icon.svelte';
   import {prepareDisplayContent,renderDisplayContent} from './display-macros';
-  import {explainAssetLookup} from '@simbot/risu';
+  import {explainAssetLookup,type AssetMacroAsset} from '@simbot/risu';
   import {diagnostics} from './diagnostics.svelte.ts';
   import { toFactLine } from './FactReceipt.svelte';
   import { presentNarrativeIssues } from './narrative-issues';
   import {buildNpcClusters,extractAssetSpeakers} from './npc-gallery';
   import {tick} from 'svelte';
 
-  let {session,version,scrollRequest=0,greetings=[],cardName,userName='나',userPortrait=null,botPortrait=null,model,waiting=false,assets=[],assetWidth=32,portraitFor,onassetneeded=()=>{},onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;scrollRequest?:number;greetings?:string[];cardName:string;userName?:string;userPortrait?:string|null;botPortrait?:string|null;model:string;waiting?:boolean;assets?:CardAsset[];assetWidth?:number;portraitFor:(id:string,emotion?:string,outfit?:number)=>string|null;onassetneeded?:(name:string)=>void;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
+  let {session,version,scrollRequest=0,greetings=[],cardName,userName='나',userPortrait=null,botPortrait=null,model,waiting=false,assets=[],assetWidth=32,portraitFor,assetUrlFor=null,onassetneeded=()=>{},onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;scrollRequest?:number;greetings?:string[];cardName:string;userName?:string;userPortrait?:string|null;botPortrait?:string|null;model:string;waiting?:boolean;assets?:CardAsset[];assetWidth?:number;portraitFor:(id:string,emotion?:string,outfit?:number)=>string|null;assetUrlFor?:((asset:CardAsset)=>string|null)|null;onassetneeded?:(name:string)=>void;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
   let editing=$state<string|null>(null),draft=$state(''),rerolling=$state(false),translating=$state<string|null>(null),translationShown=$state<Record<string,boolean>>({}),detailsFor=$state<string|null>(null),greetingIndex=$state(0),lastSessionId=$state(''),live=$state(0),menuFor=$state<string|null>(null),issuesOpen=$state(false),bottom=$state<HTMLElement>(),pinned=true,previousCount=0,previousWaiting=false,previousRequest=0;
   $effect(()=>{void version;if(lastSessionId!==session.id){lastSessionId=session.id;greetingIndex=Math.max(0,greetings.indexOf(session.messages[0]?.content??''));issuesOpen=false;cancel();}});
   $effect(()=>session.subscribe(()=>{live+=1;}));
@@ -22,7 +22,9 @@
   const guard=(work:()=>Promise<void>)=>work().catch(e=>onerror(e instanceof Error?e.message:String(e)));
   function name(message:ChatMessage){return message.role==='user'?userName:cardName;}
   export function displayMacros(content:string,user:string,char:string){return content.replace(/{{\s*user\s*}}/gi,user).replace(/{{\s*char\s*}}/gi,char);}
-  function assetOptions(){const value=session.runtime.state.npcs,outfits:Record<string,number>={};if(value&&typeof value==='object'&&!Array.isArray(value))for(const[id,npc]of Object.entries(value as Record<string,unknown>)){const outfit=npc&&typeof npc==='object'&&!Array.isArray(npc)?Number((npc as Record<string,unknown>).outfit):Number.NaN;if(Number.isInteger(outfit))outfits[id]=outfit;}const declared=session.runtime.project.content.activeModules;return{outfits,activeModules:[...(session.runtime.project.moduleIds??[]),...(Array.isArray(declared)?declared.map(String):[])]};}
+  function assetOptions(){const value=session.runtime.state.npcs,outfits:Record<string,number>={};if(value&&typeof value==='object'&&!Array.isArray(value))for(const[id,npc]of Object.entries(value as Record<string,unknown>)){const outfit=npc&&typeof npc==='object'&&!Array.isArray(npc)?Number((npc as Record<string,unknown>).outfit):Number.NaN;if(Number.isInteger(outfit))outfits[id]=outfit;}const declared=session.runtime.project.content.activeModules;
+  // 객체 URL 공급이 있으면 base64 인라인 대신 쓴다 — 대형 카드의 CBS 예산 붕괴를 막는다(display-macros 참조).
+  return{outfits,activeModules:[...(session.runtime.project.moduleIds??[]),...(Array.isArray(declared)?declared.map(String):[])],...(assetUrlFor?{urlFor:(asset:AssetMacroAsset)=>assetUrlFor(asset as CardAsset)}:{})};}
   // 렌더는 상태를 바꾸지 않는다(M-S0). 진단 기록도 마찬가지 — diagnostics는 평범한 배열에 담고
   // UI 알림은 마이크로태스크로 미룬다. 같은 사건은 재렌더로 쌓이지 않는다(수집기가 중복을 지운다).
   //

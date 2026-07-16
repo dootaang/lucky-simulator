@@ -40,3 +40,35 @@ describe('꼬리 _ 폴백 (ADR 0004 경과 조치)', () => {
     expect(out.warnings).toEqual([]);
   });
 });
+
+describe('구분자 없는 변형 번호와 그룹 폴백 (DOMINIUM 실측)', () => {
+  const image = (name: string) => ({ name, type: 'image', mime: 'image/png', bytes: new Uint8Array([1]) });
+  it("'bg' 요청을 구분자 없는 변형 'bg1'으로 해석한다", () => {
+    expect(resolveNamedAsset('bg', [image('bg1')])?.name).toBe('bg1');
+  });
+  it("확장자가 붙은 'Dive bar0.png'도 같은 변형 그룹으로 묶인다", () => {
+    expect(resolveNamedAsset('Dive bar', [image('Dive bar0.png'), image('Dive bar1')])?.name).toBe('Dive bar0.png');
+  });
+  it("카드에 없는 번호를 요청하면('Dive bar8', 실물 0~2) 같은 그룹의 기본 변형으로 폴백한다", () => {
+    const assets = [image('Dive bar0.png'), image('Dive bar1'), image('Dive bar2')];
+    expect(resolveNamedAsset('Dive bar8', assets)?.name).toBe('Dive bar0.png');
+    expect(resolveNamedAsset('Dive bar2', assets)?.name).toBe('Dive bar2'); // 실재하는 번호는 그 번호가 우선
+  });
+  it('숫자 전용 이름은 변형으로 오인하지 않는다', () => {
+    expect(resolveNamedAsset('4', [image('40')])).toBeNull();
+  });
+  it('오타 등으로 그룹 자체가 없으면 여전히 실패한다(정직한 미해결)', () => {
+    expect(resolveNamedAsset('IImperial Soldier19', [image('Imperial Soldier19')])).toBeNull();
+  });
+});
+
+describe('urlFor 객체 URL 공급 (CBS 예산 보호)', () => {
+  it('urlFor가 있으면 base64 인라인 대신 그 URL을 쓰고, 없으면 기존 data URI로 폴백한다', () => {
+    const assets = [{ name: 'scene', type: 'image', mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) }];
+    const withUrl = resolveAssetMacros('{{img::scene}}', assets, { urlFor: () => 'blob:site/abc' });
+    expect(withUrl.content).toContain('src="blob:site/abc"');
+    expect(withUrl.content).not.toContain('data:image');
+    const fallback = resolveAssetMacros('{{img::scene}}', assets, { urlFor: () => null });
+    expect(fallback.content).toContain('data:image/png;base64,AQID');
+  });
+});
