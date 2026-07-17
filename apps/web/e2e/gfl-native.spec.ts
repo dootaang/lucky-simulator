@@ -47,6 +47,28 @@ test('소녀전선 PNG를 넣으면 별도 컴파일 질문 없이 네이티브 
   await expect(reopened).toContainText('ALPHA');
 });
 
+test('저전투력 출격 위험도와 전술 교전 과정을 관리 화면 안에서 확인한다',async({page})=>{
+  await page.setViewportSize({width:844,height:720});
+  const simulation=await importGfl(page),console=simulation.getByLabel('소녀전선 지휘 콘솔');
+  await expect(simulation).toContainText('럭키 시뮬레이션');
+  await console.getByRole('button',{name:'지휘관으로 시작'}).click();
+  await console.getByRole('button',{name:'인형 고용',exact:true}).click();
+  await console.getByRole('button',{name:'오늘의 목록 확인'}).click();
+  await console.getByRole('button',{name:'계약',exact:true}).first().click();
+  await console.getByRole('button',{name:/수송 도착/}).click();
+  await console.getByRole('button',{name:'제대',exact:true}).click();
+  await console.locator('.roster button').first().click();
+  await console.getByRole('button',{name:'작전',exact:true}).click();
+  await console.getByRole('button',{name:/레드·오렌지 작전구역/}).click();
+  await console.getByRole('button',{name:/ALPHA/}).click();
+  await expect(console.locator('.risk')).toContainText('성공 가능성 약');
+  await expect(console.locator('.risk')).toContainText('전투력이 낮아도 출격');
+  await console.getByRole('button',{name:'전술 교전',exact:true}).click();
+  await expect(console.getByRole('button',{name:/집중 사격/})).toBeVisible();
+  await console.getByRole('button',{name:/균형 전술/}).click();
+  await expect(console.locator('.battle-report')).toContainText('최근 전투 보고');
+});
+
 test('휴대폰 가로모드에서 대화 장면과 관리창이 한 화면에 맞고 가로 스크롤이 생기지 않는다',async({page})=>{
   await page.setViewportSize({width:844,height:390});
   const simulation=await importGfl(page),console=simulation.getByLabel('소녀전선 지휘 콘솔');
@@ -63,6 +85,7 @@ test('소녀전선 장면 BGM은 모바일 채팅을 가리지 않고 원본 태
   await page.route('http://127.0.0.1:4173/test-llm',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({choices:[{message:{content:'카리나가 보급 목록을 펼쳤다.\n|BGM_shop|'}}]})}));
   const simulation=await importGfl(page);
   await simulation.getByRole('button',{name:'닫기'}).click();
+  await expect(page.getByRole('button',{name:'관리 화면 열기'})).toContainText('★ 관리');
   const bgm=page.getByRole('region',{name:'소녀전선 장면 음악'});
   await expect(bgm).toContainText('장면 신호 대기');
   await expect(bgm.getByRole('button',{name:'음악 재생'})).toBeDisabled();

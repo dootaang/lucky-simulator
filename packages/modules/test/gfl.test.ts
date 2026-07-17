@@ -437,8 +437,9 @@ describe("Girls Frontline native module", () => {
     game.dispatch("gfl/start", { mode: "commander" });
     game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
     const before = Number((game.state.resources as any).res);
-    for (let step = 0; step < 5; step++) expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: true, newDay: false });
-    expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: true, newDay: true, day: 2, daily: { income: 300 } });
+    for (let step = 0; step < 3; step++) expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: true, newDay: false });
+    expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: false, reason: "gfl_night_requires_end_day" });
+    expect(game.dispatch("gfl/time/end-day").log[0]).toMatchObject({ ok: true, day: 2, phase: "오전", daily: { income: 300 } });
     expect(Number((game.state.resources as any).res)).toBeGreaterThanOrEqual(before + 300 - 300);
     expect(game.select("gfl/status")).toMatchObject({ day: 2, phase: "오전", time: 8 });
     expect(game.select("gfl/hire")).toMatchObject({ capacity: 4 });
@@ -456,5 +457,22 @@ describe("Girls Frontline native module", () => {
     const game=runtime(source);game.dispatch("gfl/start",{mode:"commander"});game.dispatch("gfl/doll/acquire",{dollId:"m4a1"});game.dispatch("gfl/shop/buy",{itemId:"cake"});
     expect(game.dispatch("gfl/item/use",{itemId:"cake",dollId:"m4a1"}).log[0]).toMatchObject({ok:true,effect:{hp:50,mood:30,aff:25},affinity:25});
     game.dispatch("gfl/shop/buy",{itemId:"scope"});game.dispatch("gfl/equipment/equip",{dollId:"m4a1",equipmentId:"scope"});expect(game.dispatch("gfl/equipment/unequip",{dollId:"m4a1",equipmentId:"scope"}).log[0]).toMatchObject({ok:true,power:1000});
+  });
+  it("요구 전투력 미달도 출격시키고 d20 위험도를 반환한다", () => {
+    const source = structuredClone(schema) as any; source.gfl.missions[0].power = 5000;
+    const game = runtime(source); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
+    expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", engagementMode: "tactical" }).log[0]).toMatchObject({ ok: true, power: 1100, risk: { ratio: 22, label: "극위험" }, sortiesRemaining: 2 });
+  });
+  it("같은 전선의 작전 지역을 이전 지역 클리어 순서로 개방한다", () => {
+    const source = structuredClone(schema) as any; source.gfl.missions[0].theater = "front"; source.gfl.missions.push({ id: "beta", name: "BETA", theater: "front", power: 100, enemy: "철혈", rewards: {} });
+    const game = runtime(source); expect(game.select("gfl/missions")).toMatchObject([{ id: "alpha", unlocked: true }, { id: "beta", unlocked: false }]);
+    (game.state.gfl as any).completedMissions = ["alpha"]; expect(game.select("gfl/missions")).toMatchObject([{ id: "alpha", unlocked: true }, { id: "beta", unlocked: true }]);
+  });
+  it("대표 인형·관계 난이도·일일 작전 제한을 엔진 상태로 저장한다", () => {
+    const game = runtime(); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
+    expect(game.dispatch("gfl/doll/feature", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: true }); expect(game.dispatch("gfl/settings/update", { relationDifficulty: "strict" }).log[0]).toMatchObject({ ok: true });
+    expect(game.select("gfl/status")).toMatchObject({ featuredDollId: "m4a1", settings: { relationDifficulty: "strict" } });
+    for (let count = 0; count < 3; count++) { game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); game.dispatch("gfl/sortie/resolve"); const unit=(game.state.gfl as any).dolls.m4a1; unit.hp.cur=unit.hp.max; }
+    expect(game.select("gfl/daily")).toMatchObject({ sortiesUsed: 3, sortiesRemaining: 0, sortieLimit: 3 }); expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_daily_limit" });
   });
 });

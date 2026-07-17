@@ -135,6 +135,56 @@ function effectivePower(value: RuntimeRecord, echelon: RuntimeRecord) {
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
+const DAILY_SORTIE_LIMIT = 3;
+function dailyState(value: RuntimeRecord) {
+  const gfl = state(value), today = day(value);
+  let daily = record(gfl.daily);
+  if (number(daily.day) !== today) {
+    daily = { day: today, sortiesUsed: 0, sortiesCompleted: 0, management: 0, relations: 0, endDay: 0, claimed: [] };
+    gfl.daily = daily;
+    value.gfl = gfl;
+  }
+  return daily;
+}
+function dailyTasks(daily: RuntimeRecord) {
+  return [
+    { id: "management", label: "기지 업무 2회", progress: Math.min(2, number(daily.management)), target: 2 },
+    { id: "relation", label: "인형과 교류 1회", progress: Math.min(1, number(daily.relations)), target: 1 },
+    { id: "sortie", label: "작전 1회 수행", progress: Math.min(1, number(daily.sortiesCompleted)), target: 1 },
+    { id: "end-day", label: "하루 마감", progress: Math.min(1, number(daily.endDay)), target: 1 },
+  ];
+}
+function markDaily(c: Context, key: "management" | "relations" | "sortiesCompleted" | "endDay", amount = 1) {
+  const daily = dailyState(c.state);
+  daily[key] = number(daily[key]) + amount;
+  const completed = dailyTasks(daily).filter(task => task.progress >= task.target).length,
+    claimed = list<number>(daily.claimed), awards: RuntimeRecord[] = [], resources = record(c.state.resources);
+  for (const milestone of [2, 4]) if (completed >= milestone && !claimed.includes(milestone)) {
+    const gold = milestone === 2 ? 300 : 700, res = milestone === 2 ? 150 : 350;
+    c.state.gold = number(c.state.gold) + gold;
+    resources.res = number(resources.res) + res;
+    claimed.push(milestone); awards.push({ milestone, gold, res });
+  }
+  daily.claimed = claimed; c.state.resources = resources;
+  return awards;
+}
+function relationDifficulty(value: RuntimeRecord) {
+  const id = string(record(state(value).settings).relationDifficulty || "standard");
+  return ({ relaxed: { id, gain: 1.5, loss: .5 }, strict: { id, gain: .7, loss: 1.25 }, standard: { id: "standard", gain: 1, loss: 1 } } as Record<string, { id: string; gain: number; loss: number }>)[id] ?? { id: "standard", gain: 1, loss: 1 };
+}
+function missionUnlocked(schema: RuntimeRecord, value: RuntimeRecord, operation: RuntimeRecord) {
+  const completed = new Set(list<string>(state(value).completedMissions)), required = list<string>(operation.requires);
+  if (required.length) return required.every(id => completed.has(id));
+  const rows = missions(schema), index = rows.findIndex(row => row.id === operation.id), theater = string(operation.theater), previous = rows.slice(0, index).filter(row => string(row.theater) === theater).at(-1);
+  return !previous || completed.has(string(previous.id));
+}
+function missionRisk(formationPower: number, requiredPower: number) {
+  const ratio = formationPower / Math.max(1, requiredPower), modifier = clamp(Math.round(10 * Math.log2(Math.max(.1, ratio))), -10, 8);
+  let wins = 0;
+  for (let roll = 1; roll <= 20; roll++) if (roll === 20 || (roll !== 1 && roll + modifier >= 8)) wins++;
+  const chance = wins * 5, label = chance < 30 ? "극위험" : chance < 60 ? "위험" : chance < 85 ? "보통" : "안정";
+  return { ratio: Math.round(ratio * 100), modifier, chance, chanceLow: Math.max(5, chance - 5), chanceHigh: Math.min(95, chance + 5), label };
+}
 const RELATION_CHOICES: Record<
   string,
   { label: string; dc: number; affinity: number; mood: number }
@@ -245,7 +295,16 @@ function resolveSortie(c: Context) {
   if (!sortie.active || !operation || !entry)
     return fail(c, "gfl_sortie_missing");
 
-  const values = owned(c.state),
+  const tactic = string(c.params.tactic || sortie.tactic || "balanced"),
+    risk = missionRisk(number(sortie.power), number(operation.power)),
+    missionRoll = c.rng.int(1, 20),
+    missionTotal = missionRoll + risk.modifier,
+    condition = missionRoll === 20 || (missionRoll !== 1 && missionTotal >= 8) ? missionTotal >= 15 ? "favorable" : "steady" : missionTotal <= 2 ? "disastrous" : "unfavorable",
+    conditionHit = condition === "favorable" ? 2 : condition === "unfavorable" ? -2 : condition === "disastrous" ? -4 : 0,
+    tacticHit = tactic === "focus" ? 2 : tactic === "cover" ? -2 : 0,
+    allyDamageFactor = tactic === "focus" ? 1.15 : tactic === "cover" ? .85 : 1,
+    incomingFactor = (tactic === "focus" ? 1.15 : tactic === "cover" ? .7 : 1) * (condition === "favorable" ? .85 : condition === "unfavorable" ? 1.15 : condition === "disastrous" ? 1.3 : 1),
+    values = owned(c.state),
     allies: GflCombatant[] = list<unknown>(entry.slots)
       .filter(Boolean)
       .map((rawId) => record(values[string(rawId)]))
@@ -309,12 +368,12 @@ function resolveSortie(c: Context) {
       if (!target) break;
       const roll = c.rng.int(1, 20),
         critical = roll === 20,
-        hit = roll + number(ally.grade, 1) >= 8,
+        hit = roll + number(ally.grade, 1) + conditionHit + tacticHit >= 8,
         dealt = hit
           ? Math.max(
               1,
               Math.round(
-                ally.power * 0.24 * (critical ? 1.6 : 1) - target.power * 0.02,
+                ally.power * 0.24 * (critical ? 1.6 : 1) * allyDamageFactor - target.power * 0.02,
               ),
             )
           : 0;
@@ -345,7 +404,7 @@ function resolveSortie(c: Context) {
               ),
             )
           : 0,
-        dealt = Math.max(0, Math.round(raw * (1 - defenseReduction / 100)));
+        dealt = Math.max(0, Math.round(raw * (1 - defenseReduction / 100) * incomingFactor));
       target.hp = Math.max(0, target.hp - dealt);
       exchanges.push({
         side: "enemy",
@@ -371,10 +430,13 @@ function resolveSortie(c: Context) {
     unit.hp = hp;
     unit.status = ally.hp <= 0 ? "대파" : ally.hp < ally.maxHp ? "손상" : "대기";
   }
-  let reward = null;
+  let reward = null, rewardRate = 0;
   if (outcome === "victory") {
-    rewards(c.state, operation.rewards, c);
-    reward = operation.rewards ?? null;
+    const firstClear = !list<string>(state(c.state).completedMissions).includes(string(operation.id));
+    rewardRate = firstClear ? 1 : .35;
+    const rawReward = record(operation.rewards), scaledReward = Object.fromEntries(Object.entries(rawReward).map(([key, value]) => [key, Math.floor(number(value) * rewardRate)]));
+    rewards(c.state, scaledReward, c);
+    reward = scaledReward;
     const next = state(c.state);
     next.completedMissions = [
       ...new Set([
@@ -399,12 +461,18 @@ function resolveSortie(c: Context) {
   next.lastBattle = {
     missionId: operation.id,
     outcome,
-    rounds: rounds.length,
+    roundCount: rounds.length,
+    rounds,
     allies: allyResults,
     enemies: enemyResults,
+    rewards: reward,
+    rewardRate,
+    tactic,
+    missionCheck: { roll: missionRoll, modifier: risk.modifier, total: missionTotal, condition, risk },
   };
   next.sortie = null;
   c.state.gfl = next;
+  const dailyAwards = markDaily(c, "sortiesCompleted");
   // 이전 버전에서 이미 범용 전투창을 연 저장본도 새 일괄 전투로 안전하게 빠져나온다.
   c.state.combat = null;
   return ok(c, {
@@ -415,6 +483,10 @@ function resolveSortie(c: Context) {
     allies: allyResults,
     enemies: enemyResults,
     rewards: reward,
+    rewardRate,
+    tactic,
+    missionCheck: { roll: missionRoll, modifier: risk.modifier, total: missionTotal, condition, risk },
+    dailyAwards,
     llmCallsRequired: 0,
   });
 }
@@ -460,6 +532,19 @@ export function gflModule(): ModuleDefinition {
           return fail(c, "gfl_doll_owned", definition.id);
         return ok(c, { dollId: definition.id });
       }),
+      "gfl/doll/feature": scoped((c) => {
+        const id = string(c.params.dollId), gfl = state(c.state);
+        if (!owned(c.state)[id]) return fail(c, "gfl_doll_not_owned", id);
+        gfl.featuredDollId = id; c.state.gfl = gfl;
+        return ok(c, { dollId: id });
+      }),
+      "gfl/settings/update": scoped((c) => {
+        const difficulty = string(c.params.relationDifficulty), gfl = state(c.state), settings = record(gfl.settings);
+        if (difficulty && !["relaxed", "standard", "strict"].includes(difficulty)) return fail(c, "gfl_relation_difficulty_invalid", difficulty);
+        if (difficulty) settings.relationDifficulty = difficulty;
+        gfl.settings = settings; c.state.gfl = gfl;
+        return ok(c, { settings });
+      }),
       "gfl/hire/refresh": scoped((c) => {
         const gfl = state(c.state),
           today = day(c.state),
@@ -479,18 +564,22 @@ export function gflModule(): ModuleDefinition {
           );
         if (!definition || !offer)
           return fail(c, "gfl_hire_offer_missing", c.params.dollId);
-        return hireDoll(c, definition, number(definition.price, 5000), "offer");
+        const result = hireDoll(c, definition, number(definition.price, 5000), "offer");
+        if (record(result.log[0]).ok) markDaily(c, "management");
+        return result;
       }),
       "gfl/hire/snipe": scoped((c) => {
         const definition = doll(c.schema, c.params.dollId);
         if (!definition) return fail(c, "gfl_unknown_doll", c.params.dollId);
-        return hireDoll(
+        const result = hireDoll(
           c,
           definition,
           number(definition.price, 5000) +
             number(hireConfig(c.schema).snipePremium, 3000),
           "snipe",
         );
+        if (record(result.log[0]).ok) markDaily(c, "management");
+        return result;
       }),
       "gfl/hire/tick": scoped((c) => {
         const arrivals = Object.values(owned(c.state)).filter(
@@ -580,7 +669,9 @@ export function gflModule(): ModuleDefinition {
             : ["오전", "오후", "저녁", "밤", "심야", "새벽"],
           clock = record(c.state.clock),
           before = string(clock.phase || order[0]),
-          index = Math.max(0, order.indexOf(before)),
+          index = Math.max(0, order.indexOf(before));
+        if (before === "밤" && c.params.settlement !== true) return fail(c, "gfl_night_requires_end_day");
+        const
           next = order[(index + 1) % order.length]!,
           newDay = index === order.length - 1;
         clock.phase = next;
@@ -682,6 +773,7 @@ export function gflModule(): ModuleDefinition {
           gfl.hireOfferDay = null;
           gfl.hireRefreshDay = null;
           gfl.hiredDay = null;
+          gfl.daily = { day: tomorrow, sortiesUsed: 0, sortiesCompleted: 0, management: 0, relations: 0, endDay: 0, claimed: [] };
         }
         c.state.clock = clock;
         c.state.gfl = gfl;
@@ -697,9 +789,12 @@ export function gflModule(): ModuleDefinition {
   }),
   "gfl/time/end-day": scoped((c) => {
     if (fieldSortie(c.state)) return fail(c, "gfl_time_field_locked");
+    const phase = string(record(c.state.clock).phase || "오전");
+    if (!["저녁", "밤"].includes(phase)) return fail(c, "gfl_end_day_time_locked", phase);
+    const dailyAwards = markDaily(c, "endDay");
     const steps: RuntimeRecord[] = [];
     for (let count = 0; count < 6; count++) {
-      const result = c.registry.dispatch(c.schema, c.state, { id: "gfl/time/advance", params: {} }, c.rng),
+      const result = c.registry.dispatch(c.schema, c.state, { id: "gfl/time/advance", params: { settlement: true } }, c.rng),
         row = record(result.log[0]);
       if (!row.ok) return result;
       c.state = result.state;
@@ -707,7 +802,7 @@ export function gflModule(): ModuleDefinition {
       if (row.newDay) break;
     }
     const settlement = steps.at(-1) ?? {};
-    return ok(c, { steps: steps.length, day: settlement.day, phase: settlement.phase, daily: settlement.daily });
+    return ok(c, { steps: steps.length, day: settlement.day, phase: settlement.phase, daily: settlement.daily, dailyAwards });
   }),
       "gfl/relation/check": scoped((c) => {
         if (
@@ -744,7 +839,8 @@ export function gflModule(): ModuleDefinition {
                 : tier === "failure"
                   ? 0
                   : 1,
-          affinityDelta = choice.affinity * multiplier,
+          difficulty = relationDifficulty(c.state),
+          affinityDelta = Math.round(choice.affinity * multiplier * (multiplier < 0 ? difficulty.loss : difficulty.gain)),
           moodDelta = choice.mood * multiplier;
         unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
         unit.mood = clamp(number(unit.mood) + moodDelta, 0, 1000);
@@ -765,11 +861,14 @@ export function gflModule(): ModuleDefinition {
           moodDelta,
           affinity: unit.affinity,
           mood: unit.mood,
+          difficulty: difficulty.id,
         };
         const gfl = state(c.state);
         gfl.lastCheck = result;
         c.state.gfl = gfl;
-        return ok(c, result);
+        const dailyAwards = markDaily(c, "relations");
+        markDaily(c, "management");
+        return ok(c, { ...result, dailyAwards });
       }),
       "gfl/manufacture/start": scoped((c) => {
         if (baseLocation(c.state) !== "base-maintenance")
@@ -800,7 +899,8 @@ export function gflModule(): ModuleDefinition {
         });
         gfl.manufacturing = jobs;
         c.state.gfl = gfl;
-        return ok(c, { job: jobs.at(-1) });
+        const dailyAwards = markDaily(c, "management");
+        return ok(c, { job: jobs.at(-1), dailyAwards });
       }),
       "gfl/manufacture/tick": scoped((c) => {
         const gfl = state(c.state),
@@ -853,7 +953,8 @@ export function gflModule(): ModuleDefinition {
         });
         gfl.repairs = repairs;
         c.state.gfl = gfl;
-        return ok(c, { job: repairs.at(-1) });
+        const dailyAwards = markDaily(c, "management");
+        return ok(c, { job: repairs.at(-1), dailyAwards });
       }),
       "gfl/repair/tick": scoped((c) => {
         const gfl = state(c.state),
@@ -882,18 +983,15 @@ export function gflModule(): ModuleDefinition {
           command = string(c.params.command || "field");
         if (!operation)
           return fail(c, "gfl_unknown_mission", c.params.missionId);
+        if (!missionUnlocked(c.schema, c.state, operation)) return fail(c, "gfl_mission_locked", c.params.missionId);
         if (!entry) return fail(c, "gfl_unknown_echelon", c.params.echelonId);
         if (!["field", "remote"].includes(command))
           return fail(c, "gfl_sortie_command_invalid", command);
         const members = list<unknown>(entry.slots).filter(Boolean),
-      formationPower = effectivePower(c.state, entry);
+      formationPower = effectivePower(c.state, entry), daily = dailyState(c.state);
         if (!members.length) return fail(c, "gfl_echelon_empty");
-        if (formationPower < number(operation.power))
-          return fail(
-            c,
-            "gfl_power_too_low",
-            `${formationPower}/${operation.power}`,
-          );
+        if (number(daily.sortiesUsed) >= DAILY_SORTIE_LIMIT) return fail(c, "gfl_sortie_daily_limit", DAILY_SORTIE_LIMIT);
+        if (members.every(id => { const hp = record(record(owned(c.state)[string(id)]).hp); return number(hp.cur) <= 0; })) return fail(c, "gfl_echelon_incapacitated");
         const travelCost = Math.max(0, number(operation.travelCost));
         if (travelCost) {
           const missing = spend(c, { gold: travelCost });
@@ -910,7 +1008,9 @@ export function gflModule(): ModuleDefinition {
           power: formationPower,
           returnLocation: baseLocation(c.state),
           travelCost,
+          engagementMode: string(c.params.engagementMode || "tactical"),
         };
+        daily.sortiesUsed = number(daily.sortiesUsed) + 1;
         c.state.gfl = gfl;
         return ok(c, {
           missionId: operation.id,
@@ -918,6 +1018,8 @@ export function gflModule(): ModuleDefinition {
           power: formationPower,
           command,
           travelCost,
+          risk: missionRisk(formationPower, number(operation.power)),
+          sortiesRemaining: Math.max(0, DAILY_SORTIE_LIMIT - number(daily.sortiesUsed)),
         });
       }),
       // 소녀전선 전투는 범용 플레이어 HP를 빌리지 않는다. 편성된 각 인형과 여러 적을
@@ -959,6 +1061,7 @@ export function gflModule(): ModuleDefinition {
             unit.hp = hp;
           }
         }
+        const dailyAwards = markDaily(c, "management");
         return ok(c, {
           facilityId: id,
           before: level,
@@ -969,6 +1072,7 @@ export function gflModule(): ModuleDefinition {
             level + 1 < number(definition.maxLevel, 5)
               ? facilityCost(definition, level + 1)
               : null,
+          dailyAwards,
         });
       }),
       "gfl/mod/upgrade": scoped((c) => {
@@ -1008,7 +1112,8 @@ export function gflModule(): ModuleDefinition {
         const inventory = record(c.state.items);
         inventory[id] = number(inventory[id]) + quantity;
         c.state.items = inventory;
-        return ok(c, { itemId: id, quantity, price });
+        const dailyAwards = markDaily(c, "management");
+        return ok(c, { itemId: id, quantity, price, dailyAwards });
       }),
       "gfl/item/use": scoped((c) => {
         const itemId = string(c.params.itemId),
@@ -1211,6 +1316,9 @@ export function gflModule(): ModuleDefinition {
               : { id: locationId, name: location?.name ?? locationId },
           sortie: sortie.active ? sortie : null,
           lastCheck: gfl.lastCheck ?? null,
+          lastBattle: gfl.lastBattle ?? null,
+          featuredDollId: gfl.featuredDollId ?? null,
+          settings: { relationDifficulty: relationDifficulty(value).id },
         };
       },
       "gfl/locations": (...args) => {
@@ -1251,7 +1359,26 @@ export function gflModule(): ModuleDefinition {
           completed: list<string>(
             state(record(args[1])).completedMissions,
           ).includes(string(value.id)),
+          unlocked: missionUnlocked(record(args[0]), record(args[1]), value),
         })),
+      "gfl/daily": (...args) => {
+        const value = record(args[1]), daily = dailyState(value), tasks = dailyTasks(daily),
+          completed = tasks.filter(task => task.progress >= task.target).length,
+          claimed = list<number>(daily.claimed);
+        return {
+          day: number(daily.day),
+          sortiesUsed: number(daily.sortiesUsed),
+          sortieLimit: DAILY_SORTIE_LIMIT,
+          sortiesRemaining: Math.max(0, DAILY_SORTIE_LIMIT - number(daily.sortiesUsed)),
+          tasks,
+          completed,
+          claimed,
+          milestones: [
+            { target: 2, gold: 300, res: 150, claimed: claimed.includes(2) },
+            { target: 4, gold: 700, res: 350, claimed: claimed.includes(4) },
+          ],
+        };
+      },
       "gfl/theaters": (...args) =>
         list<RuntimeRecord>(config(record(args[0])).theaters),
       "gfl/queues": (...args) => ({

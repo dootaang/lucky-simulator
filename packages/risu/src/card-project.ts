@@ -55,12 +55,12 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
     content,featureToggles:{},moduleIds:compiled?.moduleIds??(fixtureInn?['genre.inn']:[])
   };
   const nativeGreeting='그리폰 지휘 시스템이 준비되었습니다. 지휘 콘솔에서 시작 방식을 선택하세요.';
-  const nativeInstruction='[Lucky 네이티브 화면] 게임 상태와 UI는 엔진이 표시한다. [시작버튼], [상태창], [사이드패널], [하단상태창], [진행도상태] 또는 [[상태변경]] 태그를 출력하지 말고 장면과 대사만 서술한다. 단, 장면 음악은 원본 BGM 목록 중 하나를 골라 응답 끝에 |BGM_이름| 형식으로 한 번만 출력한다.';
+  const nativeInstruction='[Lucky 소녀전선 서사 모드] 게임의 수치·보상·전투 결과·시간·호감도는 엔진이 계산한다. 그 결과를 바꾸거나 새로운 수치를 만들지 말고, 현재 대화와 엔진이 준 사실만 자연스러운 한국어 장면으로 묘사한다. 원본 카드의 상태창·사이드패널·진행도·저장·배경·로그 같은 UI 태그는 출력하지 않는다. 캐릭터 대사는 [|<img="캐릭터_표정">|"대사"|] 형식을 사용할 수 있다. 장면에 음악이 어울리면 원본 BGM 이름 하나만 |BGM_이름| 형식으로 응답 끝에 한 번 출력한다.';
   const runtimeRegexScripts=nativeGfl?[]:regexScripts;
   return {
     project,
     passport:{mode:compiled||fixtureInn?'full-sim':'chat',grades,cardName,...(risu&&embeddedProgram(risu,parsed.assets?.length??0)?{runtime:embeddedProgram(risu,parsed.assets?.length??0)!}:{})},
-    card:{name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario),systemPrompt:text(data.system_prompt),postHistoryInstructions:[text(data.post_history_instructions),...(nativeGfl?[nativeInstruction]:[])].filter(Boolean).join('\n\n'),regexScripts:runtimeRegexScripts},
+    card:{name:cardName,description:nativeGfl?'':text(data.description),personality:nativeGfl?'':text(data.personality),scenario:nativeGfl?'':text(data.scenario),systemPrompt:nativeGfl?nativeInstruction:text(data.system_prompt),postHistoryInstructions:nativeGfl?nativeInstruction:text(data.post_history_instructions),regexScripts:runtimeRegexScripts},
     firstMessage:nativeGfl?nativeGreeting:text(data.first_mes),
     greetings:nativeGfl?[nativeGreeting]:[text(data.first_mes),...(Array.isArray(data.alternate_greetings)?data.alternate_greetings.map(text):[])].filter(Boolean),
     regexScripts:runtimeRegexScripts,defaultVariables,backgroundHtml:nativeGfl?'':backgroundHtml

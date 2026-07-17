@@ -24,7 +24,16 @@ export interface NarrativeVerifyInput {
 
 // 1,000 같은 자리구분 쉼표를 제거해 비교한다(서사는 '999,999', 엔진 로그는 999999로 쓴다).
 function numericTokens(text: string): string[] {
-  return Array.from(String(text ?? '').matchAll(/\d[\d,]*(?:\.\d+)?/g)).map((match) => match[0].replace(/,/g, ''));
+  // S09, 404부대, M4A1처럼 식별자/부대명에 붙은 숫자는 게임 수치 주장이 아니다.
+  // 반면 250만, 999,999원처럼 단위가 붙은 실제 수치는 계속 검증한다.
+  const source = String(text ?? '');
+  return Array.from(source.matchAll(/\d[\d,]*(?:\.\d+)?/g))
+    .filter((match) => {
+      const start = match.index ?? 0, end = start + match[0].length,
+        before = source.slice(Math.max(0, start - 1), start), after = source.slice(end);
+      return !/[A-Za-z]/.test(before) && !/^(?:부대)/.test(after);
+    })
+    .map((match) => match[0].replace(/,/g, ''));
 }
 function sentences(text: string): string[] {
   return String(text ?? '').split(/(?<=[.!?。！？]|다\.|요\.)\s+|\n+/u).map((part) => part.trim()).filter(Boolean);
