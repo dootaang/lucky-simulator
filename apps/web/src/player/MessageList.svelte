@@ -8,6 +8,7 @@
   import { toFactLine } from './FactReceipt.svelte';
   import { presentNarrativeIssues } from './narrative-issues';
   import {buildNpcClusters,extractAssetSpeakers} from './npc-gallery';
+  import {stripGflBgmMarkers} from './gfl-bgm';
   import {tick} from 'svelte';
 
   let {session,version,scrollRequest=0,greetings=[],cardName,userName='나',userPortrait=null,botPortrait=null,model,waiting=false,assets=[],assetWidth=32,portraitFor,assetUrlFor=null,onassetneeded=()=>{},onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;scrollRequest?:number;greetings?:string[];cardName:string;userName?:string;userPortrait?:string|null;botPortrait?:string|null;model:string;waiting?:boolean;assets?:CardAsset[];assetWidth?:number;portraitFor:(id:string,emotion?:string,outfit?:number)=>string|null;assetUrlFor?:((asset:CardAsset)=>string|null)|null;onassetneeded?:(name:string)=>void;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
@@ -69,7 +70,7 @@
     }
     diagnostics.record({...where,kind:'asset',code:warning.code,summary:`${warning.macro} 처리 실패: ${warning.name}`,detail:{'명령':warning.macro,'이름':warning.name}});
   }
-  function rendered(message:ChatMessage){const result=renderDisplayContent(message.content,userName,cardName,assets,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1,assetOptions());for(const warning of result.warnings){report(message,warning);if(warning.code==='asset_missing')onassetneeded(warning.name);}return result.html;}
+  function rendered(message:ChatMessage){const content=nativeGfl?stripGflBgmMarkers(message.content):message.content,result=renderDisplayContent(content,userName,cardName,assets,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1,assetOptions());for(const warning of result.warnings){report(message,warning);if(warning.code==='asset_missing')onassetneeded(warning.name);}return result.html;}
   function cancel(){editing=null;draft='';}
   async function save(message:ChatMessage){if(draft.trim()&&draft!==message.content)await session.editMessage(message.id,draft);cancel();onchange();}
   async function toggleEdit(message:ChatMessage){if(editing===message.id){await save(message);return;}editing=message.id;draft=message.content;}

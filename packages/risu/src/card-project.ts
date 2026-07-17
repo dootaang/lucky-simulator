@@ -55,7 +55,7 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
     content,featureToggles:{},moduleIds:compiled?.moduleIds??(fixtureInn?['genre.inn']:[])
   };
   const nativeGreeting='그리폰 지휘 시스템이 준비되었습니다. 지휘 콘솔에서 시작 방식을 선택하세요.';
-  const nativeInstruction='[Lucky 네이티브 화면] 게임 상태와 UI는 엔진이 표시한다. [시작버튼], [상태창], [사이드패널], [하단상태창], [진행도상태] 또는 [[상태변경]] 태그를 출력하지 말고 장면과 대사만 서술한다.';
+  const nativeInstruction='[Lucky 네이티브 화면] 게임 상태와 UI는 엔진이 표시한다. [시작버튼], [상태창], [사이드패널], [하단상태창], [진행도상태] 또는 [[상태변경]] 태그를 출력하지 말고 장면과 대사만 서술한다. 단, 장면 음악은 원본 BGM 목록 중 하나를 골라 응답 끝에 |BGM_이름| 형식으로 한 번만 출력한다.';
   const runtimeRegexScripts=nativeGfl?[]:regexScripts;
   return {
     project,
