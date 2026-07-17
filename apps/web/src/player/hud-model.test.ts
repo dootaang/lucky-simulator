@@ -4,7 +4,7 @@ import { buildHudModel } from './hud-model';
 describe('계기판 HUD 모델', () => {
   it('여관형 상태에서 시계·지갑은 고정, 풀·평판·레벨은 게이지로 유도한다', () => {
     const model = buildHudModel({}, { day: 3, gold: 12400, resources: { food: 6, drink: 4 }, player: { level: 2, pools: { hp: { current: 90, max: 130 } } }, reputation: { village: 30, advent: 10 } });
-    expect(model.fixed.map((c) => `${c.label} ${c.value}`)).toEqual(['일차 3', '골드 12,400', '식자재 6', '주류 4']);
+    expect(model.fixed.map((c) => [c.label,c.value])).toEqual([['','3일차'], ['골드','12,400'], ['식자재','6'], ['주류','4']]);
     expect(model.gauges.map((c) => `${c.label} ${c.value}`)).toEqual(['HP 90/130', 'Lv 2', '평판 40']);
   });
   it('상태 슬롯이 하나도 없으면 빈 모델이라 HUD가 그려지지 않는다(3모드)', () => {
@@ -20,6 +20,6 @@ describe('계기판 HUD 모델', () => {
   it('선언 경로의 위험 키(constructor 등)는 칩이 되지 않고, 선언이 전부 무효면 표준 유도로 폴백한다', () => {
     const model = buildHudModel({ hud: [{ slot: 'gauge', label: '오염', path: 'constructor.name' }] }, { day: 1 });
     expect(model.gauges).toEqual([]); // 위험 경로는 읽지 않는다
-    expect(model.fixed).toEqual([{ id: 'clock', label: '일차', value: '1' }]); // 깨진 선언 대신 표준 유도
+    expect(model.fixed).toEqual([{ id: 'clock', label: '', value: '1일차' }]); // 깨진 선언 대신 표준 유도
   });
 });

@@ -40,11 +40,12 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
   const textPool=[data.description,data.first_mes,data.system_prompt,data.post_history_instructions,...loreEntries.map((entry)=>entry.content),...(parsed.embeddedModules??[])].map(text).filter(Boolean).join('\n');
   const grades=tagCompatibilityGrades(textPool);
   const fixtureInn=!('format'in parsed)&&grades.exact.length+grades.approx.length+grades.preserved.length>0;
+  const nativeGfl=compiled?.moduleIds.includes('genre.gfl')??false;
   const cardName=text(data.name)||parsed.name||'Imported card';
   const regexScripts=extractRegexScripts(parsed),risuExtension=(data.extensions&&typeof data.extensions==='object'?((data.extensions as Record<string,unknown>).risuai):null),risu=risuExtension&&typeof risuExtension==='object'?risuExtension as Record<string,unknown>:null,defaultVariables={...variableMap(risu?.defaultVariables??data.defaultVariables??data.default_variables)},backgroundHtml=[text(risu?.backgroundHTML),...(parsed.modules??[]).map(module=>text(module.raw?.backgroundEmbedding))].filter(Boolean).join('\n');
   for(const module of parsed.modules??[])Object.assign(defaultVariables,variableMap(module.defaultVariables??module.raw?.defaultVariables??module.raw?.default_variables));
   const activeModules=[...new Set((parsed.modules??[]).flatMap((module,index)=>[module.raw?.id,module.raw?.namespace,module.raw?.name,module.name,parsed.embeddedModules?.[index]].map(text).filter(Boolean)))],assetCommands=[...new Set((parsed.assets??[]).filter(asset=>String(asset.mime??'').startsWith('image/')).map(asset=>text(asset.name??asset.type).replace(/[_-]\d+$/,'')).filter(Boolean))];
-  const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks,activeModules,assetCommands};
+  const content={characters:[{id:'primary',name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario)}],lorebooks,activeModules,assetCommands,...(nativeGfl?{nativePresentation:'gfl'}:{})};
   const project:RuntimeProject={
     // 이름 슬러그만 쓰면 동명 카드 2장이 라이브러리·채팅을 서로 덮어쓴다(감사 #8) — 원본 바이트 해시로 유일화.
     projectId:`card:${slug(cardName)}:${hashBytes(parsed.sourceBytes??new TextEncoder().encode(cardName))}`,
@@ -53,13 +54,16 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
     navigation:compiled?.navigation??[{id:'play',screenId:'play',label:'플레이'}],
     content,featureToggles:{},moduleIds:compiled?.moduleIds??(fixtureInn?['genre.inn']:[])
   };
+  const nativeGreeting='그리폰 지휘 시스템이 준비되었습니다. 지휘 콘솔에서 시작 방식을 선택하세요.';
+  const nativeInstruction='[Lucky 네이티브 화면] 게임 상태와 UI는 엔진이 표시한다. [시작버튼], [상태창], [사이드패널], [하단상태창], [진행도상태] 또는 [[상태변경]] 태그를 출력하지 말고 장면과 대사만 서술한다.';
+  const runtimeRegexScripts=nativeGfl?[]:regexScripts;
   return {
     project,
     passport:{mode:compiled||fixtureInn?'full-sim':'chat',grades,cardName,...(risu&&embeddedProgram(risu,parsed.assets?.length??0)?{runtime:embeddedProgram(risu,parsed.assets?.length??0)!}:{})},
-    card:{name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario),systemPrompt:text(data.system_prompt),postHistoryInstructions:text(data.post_history_instructions),regexScripts},
-    firstMessage:text(data.first_mes),
-    greetings:[text(data.first_mes),...(Array.isArray(data.alternate_greetings)?data.alternate_greetings.map(text):[])].filter(Boolean),
-    regexScripts,defaultVariables,backgroundHtml
+    card:{name:cardName,description:text(data.description),personality:text(data.personality),scenario:text(data.scenario),systemPrompt:text(data.system_prompt),postHistoryInstructions:[text(data.post_history_instructions),...(nativeGfl?[nativeInstruction]:[])].filter(Boolean).join('\n\n'),regexScripts:runtimeRegexScripts},
+    firstMessage:nativeGfl?nativeGreeting:text(data.first_mes),
+    greetings:nativeGfl?[nativeGreeting]:[text(data.first_mes),...(Array.isArray(data.alternate_greetings)?data.alternate_greetings.map(text):[])].filter(Boolean),
+    regexScripts:runtimeRegexScripts,defaultVariables,backgroundHtml:nativeGfl?'':backgroundHtml
   };
 }
 

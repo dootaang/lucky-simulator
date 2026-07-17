@@ -22,24 +22,26 @@ assert(runtime.registry.hasEvent('gfl/start'));
 const registration=runtime.dispatch('gfl/start',{mode:'commander'});
 assert.equal(registration.log[0]?.ok,true);
 const echelons=runtime.select('gfl/echelons')as Array<Record<string,unknown>>,dolls=runtime.select('gfl/dolls')as Array<Record<string,unknown>>;
-assert(dolls.length>0&&echelons.length>0);
+assert.equal(dolls.length,0);assert(echelons.length>0);
+const theaters=runtime.select('gfl/theaters')as Array<Record<string,unknown>>,missions=runtime.select('gfl/missions')as Array<Record<string,unknown>>;assert.equal(theaters.length,3);for(const theater of theaters)assert(missions.some(mission=>mission.theater===theater.id));
 const hireRefresh=runtime.dispatch('gfl/hire/refresh'),hire=runtime.select('gfl/hire')as{offers:Array<Record<string,unknown>>;capacity:number};
 assert.equal(hireRefresh.log[0]?.ok,true);assert.equal(hire.offers.length,5);assert.equal(hire.capacity,3);
+runtime.state.gold=100_000;const hired=runtime.dispatch('gfl/hire/contract',{dollId:hire.offers[0]!.id});assert.equal(hired.log[0]?.ok,true);const owned=runtime.select('gfl/dolls')as Array<Record<string,unknown>>;assert.equal(owned.length,1);
 const m4=(compiled.schema.gfl as{dolls:Array<Record<string,unknown>>}).dolls.find(value=>value.name==='M4A1');
 assert.equal(m4?.price,7000);
 const facilities=runtime.select('gfl/facilities')as Array<Record<string,unknown>>,training=facilities.find(value=>value.id==='base1');
 assert.deepEqual(training?.cost,{gold:4000,res:2000});
-runtime.state.gold=100_000;(runtime.state.resources as Record<string,unknown>).res=100_000;
+(runtime.state.resources as Record<string,unknown>).res=100_000;
 const firstUpgrade=runtime.dispatch('gfl/facility/upgrade',{facilityId:'base1'}),secondUpgrade=runtime.dispatch('gfl/facility/upgrade',{facilityId:'base1'});
 assert.deepEqual(firstUpgrade.log[0]?.cost,{gold:4000,res:2000});assert.deepEqual(secondUpgrade.log[0]?.cost,{gold:6000,res:3000});
-const assignment=runtime.dispatch('gfl/echelon/assign',{echelonId:echelons[0]!.id,slot:0,dollId:dolls[0]!.id});
+const assignment=runtime.dispatch('gfl/echelon/assign',{echelonId:echelons[0]!.id,slot:0,dollId:owned[0]!.id});
 assert.equal(assignment.log[0]?.ok,true);
 const assetStarted=performance.now(),assetModules=[];
 for(const modulePath of modulePaths){const moduleStarted=performance.now(),assetIndex=await indexZipAssets(await openAsBlob(modulePath));assert(assetIndex.entries.length>0);assetModules.push({path:modulePath,entries:assetIndex.totalEntries,images:assetIndex.entries.length,centralDirectoryBytes:assetIndex.centralDirectoryBytes,indexMs:Math.round(performance.now()-moduleStarted)});}
 console.log(JSON.stringify({
   card:{name:parsed.name,format:parsed.format,bytes:parsed.sourceBytes.length,embeddedAssets:parsed.assets.length},
   runtime:compiled.diagnosis.runtime,
-  native:{modules:compiled.moduleIds,dolls:(compiled.schema.gfl as{dolls:unknown[]}).dolls.length,missions:(compiled.schema.gfl as{missions:unknown[]}).missions.length,echelons:echelons.length,starter:dolls[0]!.name,hireOffers:hire.offers.length,dormCapacity:hire.capacity,m4ContractPrice:m4?.price,facilityCosts:[firstUpgrade.log[0]?.cost,secondUpgrade.log[0]?.cost]},
+  native:{modules:compiled.moduleIds,dolls:(compiled.schema.gfl as{dolls:unknown[]}).dolls.length,missions:(compiled.schema.gfl as{missions:unknown[]}).missions.length,theaters:theaters.map(value=>value.name),echelons:echelons.length,starter:null,hired:owned[0]!.name,hireOffers:hire.offers.length,dormCapacity:hire.capacity,m4ContractPrice:m4?.price,facilityCosts:[firstUpgrade.log[0]?.cost,secondUpgrade.log[0]?.cost]},
   assetModules,
   assetModuleTotals:{modules:assetModules.length,entries:assetModules.reduce((sum,module)=>sum+module.entries,0),images:assetModules.reduce((sum,module)=>sum+module.images,0),centralDirectoryBytes:assetModules.reduce((sum,module)=>sum+module.centralDirectoryBytes,0),indexMs:Math.round(performance.now()-assetStarted)},
   totalMs:Math.round(performance.now()-started)

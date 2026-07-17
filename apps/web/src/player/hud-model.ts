@@ -36,7 +36,7 @@ export function buildHudModel(schema: Record<string, unknown>, state: Record<str
   const fromSchema = declared(rec(schema).hud, state);
   if (fromSchema) return fromSchema;
   const model: HudModel = { fixed: [], gauges: [] };
-  const day = num(state.day); if (day !== null) model.fixed.push({ id: 'clock', label: '일차', value: own(state, 'time') ? `${day} · ${String(state.time)}` : String(day) });
+  const day = num(state.day); if (day !== null) model.fixed.push({ id: 'clock', label: '', value: own(state, 'time') ? `${day}일차 · ${String(state.time)}` : `${day}일차` });
   const gold = num(state.gold); if (gold !== null) model.fixed.push({ id: 'wallet', label: '골드', value: gold.toLocaleString() });
   const resources = rec(state.resources);
   for (const key of Object.keys(resources).slice(0, 3)) { const v = num(resources[key]); if (v !== null) model.fixed.push({ id: `res:${key}`, label: RESOURCE_LABELS[key] ?? key, value: v.toLocaleString() }); }
