@@ -25,7 +25,7 @@ const echelons=runtime.select('gfl/echelons')as Array<Record<string,unknown>>,do
 assert.equal(dolls.length,0);assert(echelons.length>0);
 const theaters=runtime.select('gfl/theaters')as Array<Record<string,unknown>>,missions=runtime.select('gfl/missions')as Array<Record<string,unknown>>;assert.equal(theaters.length,3);for(const theater of theaters)assert(missions.some(mission=>mission.theater===theater.id));
 const hireRefresh=runtime.dispatch('gfl/hire/refresh'),hire=runtime.select('gfl/hire')as{offers:Array<Record<string,unknown>>;capacity:number};
-assert.equal(hireRefresh.log[0]?.ok,true);assert.equal(hire.offers.length,5);assert.equal(hire.capacity,3);
+assert.equal(hireRefresh.log[0]?.ok,true);assert.equal(hire.offers.length,5);assert.equal(hire.capacity,4);
 runtime.state.gold=100_000;const hired=runtime.dispatch('gfl/hire/contract',{dollId:hire.offers[0]!.id});assert.equal(hired.log[0]?.ok,true);const owned=runtime.select('gfl/dolls')as Array<Record<string,unknown>>;assert.equal(owned.length,1);
 const m4=(compiled.schema.gfl as{dolls:Array<Record<string,unknown>>}).dolls.find(value=>value.name==='M4A1');
 assert.equal(m4?.price,7000);

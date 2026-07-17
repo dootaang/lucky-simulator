@@ -2,6 +2,12 @@
 
 이 프로젝트(GPL-3.0-or-later)에 선별 이식한 외부 코드의 출처를 기록한다. ADR 0001 · CLAUDE-TASK-HYPA §9 정책.
 
+## Choice·Dice 모듈 메커니즘
+
+- 출처: `⚖️ Choice Module: Capsule Extension v5.9`, `🎲 Dice Module` (아카라이브 AI채팅 채널 공유본).
+- 권한: 제작자가 봇/유틸 편입을 허가했고 배포 글 마지막 줄 한 줄 크레딧을 조건으로 제시했다. 허가 증빙과 결정은 2026-07-10 커밋 `180b581`, `e41e445`에 기록돼 있다.
+- 적용: `packages/modules/src/gfl.ts`의 관계 선택 캡슐과 d20/DC 4단계 판정, 기존 `combat.turnbased`의 전투 판정. 원본 Lua의 채팅 편집·DOM 조작·저수준 API는 복사하거나 실행하지 않는다.
+
 ## Risu encrypted preset import
 
 - RisuAI (GPL-3.0-or-later) `src/ts/storage/database.svelte.ts`, `src/ts/util.ts`, and `src/ts/rpack/{rpack_js.js,rpack_map.bin}` were used to reproduce the `.risup`/`.risupreset` interoperability contract in `packages/risu/src/preset-file.ts`.

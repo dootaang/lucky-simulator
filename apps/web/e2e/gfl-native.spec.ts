@@ -32,15 +32,19 @@ test('소녀전선 PNG를 넣으면 별도 컴파일 질문 없이 네이티브 
   await expect(console).toContainText('현재 위치 · 지휘관실');
   await expect(console.getByRole('button',{name:'제조·수복'})).toBeDisabled();
   await console.getByRole('button',{name:'정비실'}).click();
-  await expect(console).toContainText('현재 위치 · 정비실');
-  await expect(console.getByRole('button',{name:'제조·수복'})).toBeEnabled();
-  await console.getByRole('button',{name:'인형 고용',exact:true}).click();
-  await console.getByRole('button',{name:'오늘의 목록 확인'}).click();
-  await expect(console).toContainText('숙소 0/3');
-  await expect(console.getByRole('button',{name:'계약',exact:true}).first()).toBeVisible();
-  await console.getByRole('button',{name:'작전',exact:true}).click();
-  await console.getByRole('button',{name:/레드·오렌지 작전구역/}).click();
-  await expect(console).toContainText('ALPHA');
+  await expect(simulation).toBeHidden();
+  await page.getByRole('button',{name:'현재 봇 메뉴'}).click();
+  await page.getByRole('button',{name:'시뮬레이션 열기'}).click();
+  const reopened=page.getByRole('dialog',{name:'시뮬레이션'}).getByLabel('소녀전선 지휘 콘솔');
+  await expect(reopened).toContainText('현재 위치 · 정비실');
+  await expect(reopened.getByRole('button',{name:'제조·수복'})).toBeEnabled();
+  await reopened.getByRole('button',{name:'인형 고용',exact:true}).click();
+  await reopened.getByRole('button',{name:'오늘의 목록 확인'}).click();
+  await expect(reopened).toContainText('숙소 0/4');
+  await expect(reopened.getByRole('button',{name:'계약',exact:true}).first()).toBeVisible();
+  await reopened.getByRole('button',{name:'작전',exact:true}).click();
+  await reopened.getByRole('button',{name:/레드·오렌지 작전구역/}).click();
+  await expect(reopened).toContainText('ALPHA');
 });
 
 test('휴대폰 가로모드에서 대화 장면과 관리창이 한 화면에 맞고 가로 스크롤이 생기지 않는다',async({page})=>{

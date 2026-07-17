@@ -1,75 +1,1261 @@
-import type{ModuleDefinition,RuntimeRecord}from'@simbot/kernel';
-import{fail,list,moduleDefinition,number,ok,record,rewards,scoped,string}from'./support.ts';
+import type { ModuleDefinition, RuntimeRecord } from "@simbot/kernel";
+import {
+  fail,
+  list,
+  moduleDefinition,
+  number,
+  ok,
+  record,
+  rewards,
+  scoped,
+  string,
+} from "./support.ts";
 
-type Doll=RuntimeRecord&{id:string;name:string;class:string;grade:number;maxHp:number;power:number;maxMp?:number;mood?:number};
-const config=(schema:RuntimeRecord)=>record(schema.gfl);
-const dolls=(schema:RuntimeRecord)=>list<Doll>(config(schema).dolls);
-const missions=(schema:RuntimeRecord)=>list<RuntimeRecord>(config(schema).missions);
-const items=(schema:RuntimeRecord)=>list<RuntimeRecord>(config(schema).items);
-const equipment=(schema:RuntimeRecord)=>list<RuntimeRecord>(config(schema).equipment);
-const fairies=(schema:RuntimeRecord)=>list<RuntimeRecord>(config(schema).fairies);
-const state=(value:RuntimeRecord)=>record(value.gfl);
-const owned=(value:RuntimeRecord)=>record(state(value).dolls);
-const doll=(schema:RuntimeRecord,id:unknown)=>dolls(schema).find(value=>value.id===id);
-const mission=(schema:RuntimeRecord,id:unknown)=>missions(schema).find(value=>value.id===id);
-const echelons=(value:RuntimeRecord)=>list<RuntimeRecord>(state(value).echelons);
-function acquire(c:Parameters<Parameters<typeof scoped>[0]>[0],definition:Doll,status='대기'){
-  const gfl=state(c.state),values=record(gfl.dolls);if(values[definition.id])return false;
-  const maxMp=number(definition.maxMp,1000),mood=number(definition.mood,50);
-  values[definition.id]={id:definition.id,name:definition.name,class:definition.class,grade:definition.grade,hp:{cur:definition.maxHp,max:definition.maxHp},mp:{cur:maxMp,max:maxMp},power:definition.power,mood,affinity:0,mod:0,status,equipment:[]};gfl.dolls=values;c.state.gfl=gfl;return true;
+type Doll = RuntimeRecord & {
+  id: string;
+  name: string;
+  class: string;
+  grade: number;
+  maxHp: number;
+  power: number;
+  maxMp?: number;
+  mood?: number;
+};
+const config = (schema: RuntimeRecord) => record(schema.gfl);
+const dolls = (schema: RuntimeRecord) => list<Doll>(config(schema).dolls);
+const missions = (schema: RuntimeRecord) =>
+  list<RuntimeRecord>(config(schema).missions);
+const items = (schema: RuntimeRecord) =>
+  list<RuntimeRecord>(config(schema).items);
+const equipment = (schema: RuntimeRecord) =>
+  list<RuntimeRecord>(config(schema).equipment);
+const fairies = (schema: RuntimeRecord) =>
+  list<RuntimeRecord>(config(schema).fairies);
+const state = (value: RuntimeRecord) => record(value.gfl);
+const owned = (value: RuntimeRecord) => record(state(value).dolls);
+const doll = (schema: RuntimeRecord, id: unknown) =>
+  dolls(schema).find((value) => value.id === id);
+const mission = (schema: RuntimeRecord, id: unknown) =>
+  missions(schema).find((value) => value.id === id);
+const echelons = (value: RuntimeRecord) =>
+  list<RuntimeRecord>(state(value).echelons);
+function acquire(
+  c: Parameters<Parameters<typeof scoped>[0]>[0],
+  definition: Doll,
+  status = "대기",
+) {
+  const gfl = state(c.state),
+    values = record(gfl.dolls);
+  if (values[definition.id]) return false;
+  const maxMp = number(definition.maxMp, 1000),
+    mood = number(definition.mood, 50),
+    baseMaxHp = number(definition.maxHp, 1000),
+    maxHp = baseMaxHp + MAINTENANCE_HP[facilityLevel(c.state, "base3") - 1]!;
+  values[definition.id] = {
+    id: definition.id,
+    name: definition.name,
+    class: definition.class,
+    grade: definition.grade,
+    hp: { cur: maxHp, max: maxHp },
+    mp: { cur: maxMp, max: maxMp },
+    baseMaxHp,
+    basePower: definition.power,
+    power: definition.power,
+    mood,
+    affinity: 0,
+    mod: 0,
+    status,
+    equipment: [],
+  };
+  gfl.dolls = values;
+  c.state.gfl = gfl;
+  return true;
 }
-function formation(value:RuntimeRecord,echelonId:unknown){return echelons(value).find(entry=>entry.id===echelonId);}
-function power(value:RuntimeRecord,echelon:RuntimeRecord){const values=owned(value);return list<unknown>(echelon.slots).reduce<number>((sum,id)=>sum+number(record(values[string(id)]).power),0);}
-function spend(c:Parameters<Parameters<typeof scoped>[0]>[0],cost:RuntimeRecord){const resources=record(c.state.resources);for(const[id,qty]of Object.entries(cost)){const have=id==='gold'?number(c.state.gold):number(resources[id]);if(have<number(qty))return id;}for(const[id,qty]of Object.entries(cost)){if(id==='gold')c.state.gold=number(c.state.gold)-number(qty);else resources[id]=number(resources[id])-number(qty);}c.state.resources=resources;return null;}
-function queue(value:RuntimeRecord,key:string){const gfl=state(value);return list<RuntimeRecord>(gfl[key]);}
-const day=(value:RuntimeRecord)=>number(value.day,number(record(value.clock).day,1));
-const hireConfig=(schema:RuntimeRecord)=>record(config(schema).hire);
-const locations=(schema:RuntimeRecord)=>list<RuntimeRecord>(schema.locations);
-const baseLocation=(value:RuntimeRecord)=>string(value.location||state(value).baseLocation||'base-command');
-const fieldSortie=(value:RuntimeRecord)=>{const sortie=record(state(value).sortie);return sortie.active&&sortie.command==='field'?sortie:null;};
-function dollCapacity(schema:RuntimeRecord,value:RuntimeRecord){const level=Math.max(1,Math.min(5,number(record(state(value).facilities).base5,1))),values=list<number>(hireConfig(schema).capacity);return number(values[level-1],[3,6,9,12,15][level-1]!);}
-function hireOffers(c:Parameters<Parameters<typeof scoped>[0]>[0]){const gfl=state(c.state),pool=dolls(c.schema).filter(value=>!owned(c.state)[value.id]),count=Math.min(Math.max(1,number(hireConfig(c.schema).dailySlots,5)),pool.length),offers:RuntimeRecord[]=[];for(let index=0;index<count;index++){const picked=pool.splice(c.rng.int(0,pool.length-1),1)[0]!;offers.push({id:picked.id,name:picked.name,class:picked.class,grade:picked.grade,price:number(picked.price,5000),description:string(picked.description),asset:picked.asset});}gfl.hireOffers=offers;gfl.hireOfferDay=day(c.state);c.state.gfl=gfl;return offers;}
-function hireDoll(c:Parameters<Parameters<typeof scoped>[0]>[0],definition:Doll,cost:number,kind:'offer'|'snipe'){const gfl=state(c.state),today=day(c.state);if(gfl.hiredDay===today)return fail(c,'gfl_hire_daily_limit',today);if(owned(c.state)[definition.id])return fail(c,'gfl_doll_owned',definition.id);const capacity=dollCapacity(c.schema,c.state),count=Object.keys(owned(c.state)).length;if(count>=capacity)return fail(c,'gfl_hire_capacity_full',`${count}/${capacity}`);const missing=spend(c,{gold:cost});if(missing)return fail(c,'gfl_hire_funds_missing',cost);acquire(c,definition,'이동 중');const unit=record(owned(c.state)[definition.id]);unit.arrivalRemaining=Math.max(1,number(hireConfig(c.schema).arrivalSteps,1));unit.hireKind=kind;const next=state(c.state);next.hiredDay=today;next.hireOffers=list<RuntimeRecord>(next.hireOffers).filter(value=>value.id!==definition.id);c.state.gfl=next;return ok(c,{dollId:definition.id,name:definition.name,cost,kind,arrivalRemaining:unit.arrivalRemaining,capacity});}
-function facilityCost(definition:RuntimeRecord,level:number){const base=record(definition.cost),multiplier=number(definition.costMultiplier,1.5),factor=multiplier**Math.max(0,level-1);return Object.fromEntries(Object.entries(base).map(([key,value])=>[key,Math.floor(number(value)*factor)]));}
+function formation(value: RuntimeRecord, echelonId: unknown) {
+  return echelons(value).find((entry) => entry.id === echelonId);
+}
+function power(value: RuntimeRecord, echelon: RuntimeRecord) {
+  const values = owned(value);
+  return list<unknown>(echelon.slots).reduce<number>(
+    (sum, id) => sum + number(record(values[string(id)]).power),
+    0,
+  );
+}
+function spend(
+  c: Parameters<Parameters<typeof scoped>[0]>[0],
+  cost: RuntimeRecord,
+) {
+  const resources = record(c.state.resources);
+  for (const [id, qty] of Object.entries(cost)) {
+    const have = id === "gold" ? number(c.state.gold) : number(resources[id]);
+    if (have < number(qty)) return id;
+  }
+  for (const [id, qty] of Object.entries(cost)) {
+    if (id === "gold") c.state.gold = number(c.state.gold) - number(qty);
+    else resources[id] = number(resources[id]) - number(qty);
+  }
+  c.state.resources = resources;
+  return null;
+}
+function queue(value: RuntimeRecord, key: string) {
+  const gfl = state(value);
+  return list<RuntimeRecord>(gfl[key]);
+}
+const day = (value: RuntimeRecord) =>
+  number(value.day, number(record(value.clock).day, 1));
+const hireConfig = (schema: RuntimeRecord) => record(config(schema).hire);
+const locations = (schema: RuntimeRecord) =>
+  list<RuntimeRecord>(schema.locations);
+const baseLocation = (value: RuntimeRecord) =>
+  string(value.location || state(value).baseLocation || "base-command");
+const fieldSortie = (value: RuntimeRecord) => {
+  const sortie = record(state(value).sortie);
+  return sortie.active && sortie.command === "field" ? sortie : null;
+};
+const facilityLevel = (value: RuntimeRecord, id: string) =>
+  Math.max(1, Math.min(5, number(record(state(value).facilities)[id], 1)));
+const TRAINING_BONUS = [10, 15, 20, 30, 50],
+  DEFENSE_REDUCTION = [5, 10, 15, 20, 30],
+  DEFENSE_POWER = [10, 15, 20, 30, 50],
+  MAINTENANCE_HP = [50, 100, 150, 200, 300],
+  SUPPLY_DAILY = [300, 600, 1000, 1500, 2500],
+  DORM_CAPACITY = [4, 8, 12, 16, 20],
+  DORM_HEAL = [10, 20, 30, 40, 100];
+function dollCapacity(schema: RuntimeRecord, value: RuntimeRecord) {
+  const level = facilityLevel(value, "base5"),
+    values = list<number>(hireConfig(schema).capacity);
+  return number(values[level - 1], DORM_CAPACITY[level - 1]!);
+}
+function effectivePower(value: RuntimeRecord, echelon: RuntimeRecord) {
+  const raw = power(value, echelon),
+    bonus = TRAINING_BONUS[facilityLevel(value, "base1") - 1]!;
+  return Math.round(raw * (1 + bonus / 100));
+}
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+const RELATION_CHOICES: Record<
+  string,
+  { label: string; dc: number; affinity: number; mood: number }
+> = {
+  talk: { label: "차분히 대화한다", dc: 8, affinity: 3, mood: 10 },
+  nickname: { label: "서로 부를 별명을 정한다", dc: 10, affinity: 5, mood: 25 },
+  encourage: { label: "진심으로 격려한다", dc: 12, affinity: 8, mood: 20 },
+};
+function relationFor(schema: RuntimeRecord, affinity: unknown) {
+  const relation = record(config(schema).relation),
+    names = list<string>(relation.names),
+    thresholds = list<number>(relation.thresholds),
+    descriptions = list<string>(relation.descriptions),
+    score = number(affinity);
+  let index = 0;
+  for (let at = 0; at < thresholds.length; at++) if (score >= number(thresholds[at])) index = at;
+  return { label: names[index] ?? "첫 만남", description: descriptions[index] ?? "", index };
+}
+function hireOffers(c: Parameters<Parameters<typeof scoped>[0]>[0]) {
+  const gfl = state(c.state),
+    pool = dolls(c.schema).filter((value) => !owned(c.state)[value.id]),
+    count = Math.min(
+      Math.max(1, number(hireConfig(c.schema).dailySlots, 5)),
+      pool.length,
+    ),
+    offers: RuntimeRecord[] = [];
+  for (let index = 0; index < count; index++) {
+    const picked = pool.splice(c.rng.int(0, pool.length - 1), 1)[0]!;
+    offers.push({
+      id: picked.id,
+      name: picked.name,
+      class: picked.class,
+      grade: picked.grade,
+      price: number(picked.price, 5000),
+      description: string(picked.description),
+      asset: picked.asset,
+    });
+  }
+  gfl.hireOffers = offers;
+  gfl.hireOfferDay = day(c.state);
+  c.state.gfl = gfl;
+  return offers;
+}
+function hireDoll(
+  c: Parameters<Parameters<typeof scoped>[0]>[0],
+  definition: Doll,
+  cost: number,
+  kind: "offer" | "snipe",
+) {
+  const gfl = state(c.state),
+    today = day(c.state);
+  if (gfl.hiredDay === today) return fail(c, "gfl_hire_daily_limit", today);
+  if (owned(c.state)[definition.id])
+    return fail(c, "gfl_doll_owned", definition.id);
+  const capacity = dollCapacity(c.schema, c.state),
+    count = Object.keys(owned(c.state)).length;
+  if (count >= capacity)
+    return fail(c, "gfl_hire_capacity_full", `${count}/${capacity}`);
+  const missing = spend(c, { gold: cost });
+  if (missing) return fail(c, "gfl_hire_funds_missing", cost);
+  acquire(c, definition, "이동 중");
+  const unit = record(owned(c.state)[definition.id]);
+  unit.arrivalRemaining = Math.max(
+    1,
+    number(hireConfig(c.schema).arrivalSteps, 1),
+  );
+  unit.hireKind = kind;
+  const next = state(c.state);
+  next.hiredDay = today;
+  next.hireOffers = list<RuntimeRecord>(next.hireOffers).filter(
+    (value) => value.id !== definition.id,
+  );
+  c.state.gfl = next;
+  return ok(c, {
+    dollId: definition.id,
+    name: definition.name,
+    cost,
+    kind,
+    arrivalRemaining: unit.arrivalRemaining,
+    capacity,
+  });
+}
+function facilityCost(definition: RuntimeRecord, level: number) {
+  const base = record(definition.cost),
+    multiplier = number(definition.costMultiplier, 1.5),
+    factor = multiplier ** Math.max(0, level - 1);
+  return Object.fromEntries(
+    Object.entries(base).map(([key, value]) => [
+      key,
+      Math.floor(number(value) * factor),
+    ]),
+  );
+}
 
-export function gflModule():ModuleDefinition{return moduleDefinition('genre.gfl',['core.stats','core.inventory','core.time','core.location','rpg.party','core.jobs','core.equipment','rpg.shop','rpg.loot','combat.turnbased'],['gfl'],['gold','resources','player','combat'],{
-  'gfl/start':scoped(c=>{const gfl=state(c.state);if(gfl.started)return fail(c,'gfl_already_started');const mode=string(c.params.mode||'commander');if(!['commander','doll'].includes(mode))return fail(c,'gfl_start_mode_invalid',mode);gfl.started=true;gfl.mode=mode;gfl.commanderName=string(c.params.name||'지휘관');gfl.baseLocation=baseLocation(c.state);c.state.gfl=gfl;
-    // 지휘관 시작 자금은 원본 Lua가 시작 시점에 별도로 지급한다(defaultVariables의 A_gold와 다름 — 실측 10,000).
-    const funds=number(config(c.schema).commanderFunds,0);if(mode==='commander'&&funds>0)c.state.gold=funds;
-    return ok(c,{mode,starter:null});}),
-  'gfl/doll/acquire':scoped(c=>{const definition=doll(c.schema,c.params.dollId);if(!definition)return fail(c,'gfl_unknown_doll',c.params.dollId);if(!acquire(c,definition))return fail(c,'gfl_doll_owned',definition.id);return ok(c,{dollId:definition.id});}),
-  'gfl/hire/refresh':scoped(c=>{const gfl=state(c.state),today=day(c.state),daily=gfl.hireOfferDay!==today;if(!daily&&gfl.hireRefreshDay===today)return fail(c,'gfl_hire_refresh_daily_limit',today);const offers=hireOffers(c),next=state(c.state);if(!daily)next.hireRefreshDay=today;c.state.gfl=next;return ok(c,{offers,daily,refreshUsed:!daily});}),
-  'gfl/hire/contract':scoped(c=>{const definition=doll(c.schema,c.params.dollId),offer=list<RuntimeRecord>(state(c.state).hireOffers).find(value=>value.id===c.params.dollId);if(!definition||!offer)return fail(c,'gfl_hire_offer_missing',c.params.dollId);return hireDoll(c,definition,number(definition.price,5000),'offer');}),
-  'gfl/hire/snipe':scoped(c=>{const definition=doll(c.schema,c.params.dollId);if(!definition)return fail(c,'gfl_unknown_doll',c.params.dollId);return hireDoll(c,definition,number(definition.price,5000)+number(hireConfig(c.schema).snipePremium,3000),'snipe');}),
-  'gfl/hire/tick':scoped(c=>{const arrivals=Object.values(owned(c.state)).filter(value=>record(value).status==='이동 중');if(!arrivals.length)return fail(c,'gfl_hire_no_arrivals');for(const raw of arrivals){const unit=record(raw),remaining=Math.max(0,number(unit.arrivalRemaining,1)-1);unit.arrivalRemaining=remaining;if(remaining===0)unit.status='대기';}return ok(c,{arrivals:arrivals.map(value=>({dollId:record(value).id,status:record(value).status,remaining:record(value).arrivalRemaining}))});}),
-  'gfl/echelon/assign':scoped(c=>{const gfl=state(c.state),entry=formation(c.state,c.params.echelonId),id=string(c.params.dollId),slot=Math.trunc(number(c.params.slot,-1));if(!entry)return fail(c,'gfl_unknown_echelon',c.params.echelonId);if(!owned(c.state)[id])return fail(c,'gfl_doll_not_owned',id);if(slot<0||slot>4)return fail(c,'gfl_slot_invalid',slot);for(const echelon of echelons(c.state)){const slots=list<unknown>(echelon.slots);for(let index=0;index<slots.length;index++)if(slots[index]===id)slots[index]=null;echelon.slots=slots;}const slots=list<unknown>(entry.slots);while(slots.length<5)slots.push(null);slots[slot]=id;entry.slots=slots;gfl.echelons=echelons(c.state);c.state.gfl=gfl;return ok(c,{echelonId:entry.id,slot,dollId:id});}),
-  'gfl/echelon/remove':scoped(c=>{const gfl=state(c.state),entry=formation(c.state,c.params.echelonId),slot=Math.trunc(number(c.params.slot,-1));if(!entry)return fail(c,'gfl_unknown_echelon',c.params.echelonId);if(slot<0||slot>4)return fail(c,'gfl_slot_invalid',slot);const slots=list<unknown>(entry.slots),removed=slots[slot]??null;slots[slot]=null;entry.slots=slots;gfl.echelons=echelons(c.state);c.state.gfl=gfl;return ok(c,{echelonId:entry.id,slot,removed});}),
-  'gfl/location/move':scoped(c=>{const target=string(c.params.locationId),destination=locations(c.schema).find(value=>value.id===target),before=baseLocation(c.state),sortie=fieldSortie(c.state);if(!destination)return fail(c,'gfl_location_unknown',target);if(sortie)return fail(c,'gfl_commander_in_field',sortie.missionId);if(before==='base-outside'&&target!=='base-hall')return fail(c,'gfl_location_return_hall',target);if(before===target)return fail(c,'gfl_location_same',target);const gfl=state(c.state);c.state.location=target;gfl.baseLocation=target;c.state.gfl=gfl;return ok(c,{before,locationId:target,name:destination.name,outside:target==='base-outside'});}),
-  'gfl/manufacture/start':scoped(c=>{if(baseLocation(c.state)!=='base-maintenance')return fail(c,'gfl_maintenance_required');const kind=string(c.params.kind||'doll'),heavy=c.params.heavy===true,definitions=kind==='equipment'?list<RuntimeRecord>(config(c.schema).equipment):dolls(c.schema);if(!definitions.length)return fail(c,'gfl_manufacture_pool_empty',kind);const costs=record(record(config(c.schema).manufacturing)[heavy?'heavy':kind]),missing=spend(c,costs);if(missing)return fail(c,'gfl_manufacture_cost_missing',missing);const result=definitions[c.rng.int(0,definitions.length-1)]!,gfl=state(c.state),jobs=queue(c.state,'manufacturing');jobs.push({id:`mfg:${number(record(c.state.clock).turn)}:${jobs.length}`,kind,heavy,resultId:result.id,remaining:heavy?3:2,status:'active'});gfl.manufacturing=jobs;c.state.gfl=gfl;return ok(c,{job:jobs.at(-1)});}),
-  'gfl/manufacture/tick':scoped(c=>{const gfl=state(c.state),jobs=queue(c.state,'manufacturing'),job=jobs.find(value=>value.id===c.params.jobId);if(!job||job.status!=='active')return fail(c,'gfl_manufacture_not_active',c.params.jobId);job.remaining=Math.max(0,number(job.remaining)-1);if(job.remaining===0){job.status='complete';if(job.kind==='doll'){const definition=doll(c.schema,job.resultId);if(definition)acquire(c,definition);}else{const items=record(c.state.items);items[string(job.resultId)]=number(items[string(job.resultId)])+1;c.state.items=items;}}gfl.manufacturing=jobs;c.state.gfl=gfl;return ok(c,{job});}),
-  'gfl/repair/start':scoped(c=>{if(baseLocation(c.state)!=='base-maintenance')return fail(c,'gfl_maintenance_required');const id=string(c.params.dollId),unit=record(owned(c.state)[id]),hp=record(unit.hp);if(!Object.keys(unit).length)return fail(c,'gfl_doll_not_owned',id);if(number(hp.cur)>=number(hp.max))return fail(c,'gfl_repair_not_needed',id);if(queue(c.state,'repairs').some(value=>value.dollId===id&&value.status==='active'))return fail(c,'gfl_repair_already_active',id);const missing=spend(c,{parts:1});if(missing)return fail(c,'gfl_repair_cost_missing',missing);const gfl=state(c.state),repairs=queue(c.state,'repairs');unit.status='수복';repairs.push({id:`repair:${id}:${number(record(c.state.clock).turn)}`,dollId:id,remaining:2,status:'active'});gfl.repairs=repairs;c.state.gfl=gfl;return ok(c,{job:repairs.at(-1)});}),
-  'gfl/repair/tick':scoped(c=>{const gfl=state(c.state),repairs=queue(c.state,'repairs'),job=repairs.find(value=>value.id===c.params.jobId),unit=record(owned(c.state)[string(job?.dollId)]);if(!job||job.status!=='active')return fail(c,'gfl_repair_not_active',c.params.jobId);job.remaining=Math.max(0,number(job.remaining)-1);if(job.remaining===0){job.status='complete';const hp=record(unit.hp);hp.cur=hp.max;unit.hp=hp;unit.status='대기';}gfl.repairs=repairs;c.state.gfl=gfl;return ok(c,{job});}),
-  'gfl/sortie/start':scoped(c=>{const gfl=state(c.state);if(record(gfl.sortie).active)return fail(c,'gfl_sortie_active');const operation=mission(c.schema,c.params.missionId),entry=formation(c.state,c.params.echelonId),command=string(c.params.command||'field');if(!operation)return fail(c,'gfl_unknown_mission',c.params.missionId);if(!entry)return fail(c,'gfl_unknown_echelon',c.params.echelonId);if(!['field','remote'].includes(command))return fail(c,'gfl_sortie_command_invalid',command);const members=list<unknown>(entry.slots).filter(Boolean),formationPower=power(c.state,entry);if(!members.length)return fail(c,'gfl_echelon_empty');if(formationPower<number(operation.power))return fail(c,'gfl_power_too_low',`${formationPower}/${operation.power}`);const travelCost=Math.max(0,number(operation.travelCost));if(travelCost){const missing=spend(c,{gold:travelCost});if(missing)return fail(c,'gfl_sortie_travel_funds_missing',travelCost);}gfl.sortie={active:true,missionId:operation.id,echelonId:entry.id,command,progress:0,engaged:false,power:formationPower,returnLocation:baseLocation(c.state),travelCost};c.state.gfl=gfl;return ok(c,{missionId:operation.id,echelonId:entry.id,power:formationPower,command,travelCost});}),
-  'gfl/sortie/engage':scoped(c=>{const gfl=state(c.state),sortie=record(gfl.sortie),operation=mission(c.schema,sortie.missionId);if(!sortie.active||!operation)return fail(c,'gfl_sortie_missing');if(sortie.engaged)return fail(c,'gfl_sortie_already_engaged');const p=record(c.state.player),pools=record(p.pools);pools.hp={cur:Math.max(100,number(sortie.power)),max:Math.max(100,number(sortie.power))};p.pools=pools;p.atk=Math.max(10,Math.round(number(sortie.power)/20));p.def=Math.max(2,Math.round(number(sortie.power)/200));p.acc=5;p.evade=10;c.state.player=p;const started=c.registry.dispatch(c.schema,c.state,{id:'start_encounter',params:{enemies:[{name:string(operation.enemy||'적대 세력'),rank:string(operation.rank||'E'),hp:Math.max(50,Math.round(number(operation.power)/2)),atk:Math.max(5,Math.round(number(operation.power)/120)),def:Math.max(1,Math.round(number(operation.power)/300)),evade:8,acc:2}]}},c.rng);if(!started.log[0]?.ok)return started;c.state=started.state;const next=state(c.state),nextSortie=record(next.sortie);nextSortie.engaged=true;next.sortie=nextSortie;c.state.gfl=next;return ok(c,{missionId:operation.id,enemies:started.log[0]?.enemies});}),
-  'gfl/sortie/finish':scoped(c=>{const gfl=state(c.state),sortie=record(gfl.sortie),operation=mission(c.schema,sortie.missionId);if(!sortie.active||!sortie.engaged||!operation)return fail(c,'gfl_sortie_not_engaged');const ended=c.registry.dispatch(c.schema,c.state,{id:'end_encounter',params:{}},c.rng);if(!ended.log[0]?.ok)return ended;c.state=ended.state;const outcome=string(ended.log[0]?.outcome);if(outcome==='victory'){rewards(c.state,operation.rewards,c);const next=state(c.state);next.completedMissions=[...new Set([...list<string>(next.completedMissions),string(operation.id)])];next.sortie=null;c.state.gfl=next;return ok(c,{outcome,missionId:operation.id,rewards:operation.rewards});}const next=state(c.state);next.sortie=null;c.state.gfl=next;return ok(c,{outcome,missionId:operation.id});}),
-  'gfl/facility/upgrade':scoped(c=>{const id=string(c.params.facilityId),definition=list<RuntimeRecord>(config(c.schema).facilities).find(value=>value.id===id),gfl=state(c.state),facilities=record(gfl.facilities),level=number(facilities[id],1);if(!definition)return fail(c,'gfl_unknown_facility',id);if(level>=number(definition.maxLevel,5))return fail(c,'gfl_facility_max',id);const scaled=facilityCost(definition,level),missing=spend(c,scaled);if(missing)return fail(c,'gfl_facility_cost_missing',missing);facilities[id]=level+1;gfl.facilities=facilities;c.state.gfl=gfl;return ok(c,{facilityId:id,before:level,after:level+1,cost:scaled,nextCost:level+1<number(definition.maxLevel,5)?facilityCost(definition,level+1):null});}),
-  'gfl/mod/upgrade':scoped(c=>{if(baseLocation(c.state)!=='base-maintenance')return fail(c,'gfl_maintenance_required');const id=string(c.params.dollId),unit=record(owned(c.state)[id]),stage=number(unit.mod);if(!Object.keys(unit).length)return fail(c,'gfl_doll_not_owned',id);if(stage>=3)return fail(c,'gfl_mod_max',id);const missing=spend(c,{cores:(stage+1)*number(unit.grade,3)});if(missing)return fail(c,'gfl_mod_cost_missing',missing);
-    // MOD 단계별 전투력 상승은 카드 원본 MOD_POWER 테이블을 스키마로 받는다(컴파일러가 회수). 폴백은 원본 실측값.
-    const gains=list<number>(config(c.schema).modPower);unit.mod=stage+1;unit.power=number(unit.power)+number(gains[stage],[500,600,1000][stage]!);return ok(c,{dollId:id,before:stage,after:stage+1,power:unit.power});}),
-  'gfl/shop/buy':scoped(c=>{const id=string(c.params.itemId),definition=[...items(c.schema),...equipment(c.schema)].find(value=>value.id===id);if(!definition)return fail(c,'gfl_shop_unknown_item',id);const quantity=Math.max(1,Math.trunc(number(c.params.quantity,1))),price=Math.max(0,number(definition.price))*quantity,missing=spend(c,{gold:price});if(missing)return fail(c,'gfl_shop_funds_missing',missing);const inventory=record(c.state.items);inventory[id]=number(inventory[id])+quantity;c.state.items=inventory;return ok(c,{itemId:id,quantity,price});}),
-  'gfl/equipment/equip':scoped(c=>{const dollId=string(c.params.dollId),equipmentId=string(c.params.equipmentId),unit=record(owned(c.state)[dollId]),definition=equipment(c.schema).find(value=>value.id===equipmentId),inventory=record(c.state.items);if(!Object.keys(unit).length)return fail(c,'gfl_doll_not_owned',dollId);if(!definition)return fail(c,'gfl_unknown_equipment',equipmentId);if(number(inventory[equipmentId])<1)return fail(c,'gfl_equipment_not_owned',equipmentId);const banned=list<string>(definition.ban),only=list<string>(definition.only),klass=string(unit.class);if(banned.includes(klass)||(only.length&&!only.includes(klass)))return fail(c,'gfl_equipment_class_restricted',klass);const equipped=list<string>(unit.equipment);if(equipped.length>=2)return fail(c,'gfl_equipment_slots_full',dollId);inventory[equipmentId]=number(inventory[equipmentId])-1;equipped.push(equipmentId);unit.equipment=equipped;unit.power=number(unit.power)+Math.max(0,number(definition.power));c.state.items=inventory;return ok(c,{dollId,equipmentId,power:unit.power});}),
-  'gfl/doll/dismantle':scoped(c=>{if(baseLocation(c.state)!=='base-maintenance')return fail(c,'gfl_maintenance_required');const id=string(c.params.dollId),gfl=state(c.state),values=record(gfl.dolls),unit=record(values[id]);if(!Object.keys(unit).length)return fail(c,'gfl_doll_not_owned',id);if(echelons(c.state).some(entry=>list<unknown>(entry.slots).includes(id)))return fail(c,'gfl_doll_in_echelon',id);if(queue(c.state,'repairs').some(entry=>entry.dollId===id&&entry.status==='active'))return fail(c,'gfl_doll_in_repair',id);delete values[id];gfl.dolls=values;c.state.gfl=gfl;const resource=record(c.state.resources),cores=Math.max(1,Math.floor(number(unit.grade)/2));resource.cores=number(resource.cores)+cores;resource.parts=number(resource.parts)+1;c.state.resources=resource;return ok(c,{dollId:id,cores,parts:1});}),
-  'gfl/fairy/acquire':scoped(c=>{const id=string(c.params.fairyId),definition=fairies(c.schema).find(value=>value.id===id),gfl=state(c.state),values=record(gfl.fairies);if(!definition)return fail(c,'gfl_unknown_fairy',id);if(values[id])return fail(c,'gfl_fairy_owned',id);const missing=spend(c,{gold:1000,res:500});if(missing)return fail(c,'gfl_fairy_cost_missing',missing);values[id]={...definition,level:1,power:Math.max(100,number(definition.power,300))};gfl.fairies=values;c.state.gfl=gfl;return ok(c,{fairyId:id});}),
-  'gfl/fairy/assign':scoped(c=>{const id=string(c.params.fairyId),entry=formation(c.state,c.params.echelonId),gfl=state(c.state);if(!entry)return fail(c,'gfl_unknown_echelon',c.params.echelonId);if(!record(gfl.fairies)[id])return fail(c,'gfl_fairy_not_owned',id);for(const echelon of echelons(c.state))if(echelon.fairyId===id)echelon.fairyId=null;entry.fairyId=id;gfl.echelons=echelons(c.state);c.state.gfl=gfl;return ok(c,{echelonId:entry.id,fairyId:id});})
-},{
-  'gfl/status':(...args)=>{const schema=record(args[0]),value=record(args[1]),gfl=state(value),sortie=record(gfl.sortie),locationId=baseLocation(value),location=locations(schema).find(entry=>entry.id===locationId);return{started:!!gfl.started,mode:gfl.mode??null,day:value.day??record(value.clock).day??1,time:record(value.clock).hour??8,funds:value.gold??0,resources:record(value.resources).res??0,parts:record(value.resources).parts??0,dolls:Object.keys(record(gfl.dolls)).length,locationId,locationName:location?.name??locationId,effectiveLocation:sortie.active&&sortie.command==='field'?{id:`mission:${sortie.missionId}`,name:`작전 현장 · ${sortie.missionId}`}:{id:locationId,name:location?.name??locationId},sortie:sortie.active?sortie:null};},
-  'gfl/locations':(...args)=>{const schema=record(args[0]),value=record(args[1]),currentId=baseLocation(value),sortie=fieldSortie(value);return{currentId,locked:Boolean(sortie),locations:locations(schema).map(entry=>({...entry,current:entry.id===currentId,reachable:!sortie&&(currentId!=='base-outside'||entry.id==='base-hall')}))};},
-  'gfl/dolls':(...args)=>Object.values(owned(record(args[1]))),
-  'gfl/echelons':(...args)=>echelons(record(args[1])).map(entry=>({...entry,power:power(record(args[1]),entry)})),
-  'gfl/missions':(...args)=>missions(record(args[0])).map(value=>({...value,completed:list<string>(state(record(args[1])).completedMissions).includes(string(value.id))})),
-  'gfl/theaters':(...args)=>list<RuntimeRecord>(config(record(args[0])).theaters),
-  'gfl/queues':(...args)=>({manufacturing:queue(record(args[1]),'manufacturing'),repairs:queue(record(args[1]),'repairs')}),
-  'gfl/hire':(...args)=>{const schema=record(args[0]),value=record(args[1]),gfl=state(value),today=day(value),capacity=dollCapacity(schema,value);return{offers:list<RuntimeRecord>(gfl.hireOffers),available:dolls(schema).filter(entry=>!owned(value)[entry.id]).map(entry=>({id:entry.id,name:entry.name,class:entry.class,grade:entry.grade,price:number(entry.price,5000),snipePrice:number(entry.price,5000)+number(hireConfig(schema).snipePremium,3000),description:entry.description,asset:entry.asset})),capacity,count:Object.keys(owned(value)).length,hiredToday:gfl.hiredDay===today,canRefresh:gfl.hireRefreshDay!==today,offerDay:gfl.hireOfferDay??null,arrivals:Object.values(owned(value)).filter(entry=>record(entry).status==='이동 중')};},
-  'gfl/facilities':(...args)=>{const schema=record(args[0]),value=record(args[1]),levels=record(state(value).facilities);return list<RuntimeRecord>(config(schema).facilities).map(definition=>{const level=number(levels[string(definition.id)],1),maxLevel=number(definition.maxLevel,5);return{...definition,level,maxLevel,cost:level<maxLevel?facilityCost(definition,level):null,currentEffect:list<unknown>(definition.effects)[level-1]??null,nextEffect:level<maxLevel?list<unknown>(definition.effects)[level]??null:null};});},
-  'gfl/shop':(...args)=>{const schema=record(args[0]),value=record(args[1]),inventory=record(value.items);return{catalog:[...items(schema),...equipment(schema)].map(entry=>({...entry,owned:number(inventory[string(entry.id)]),kind:equipment(schema).some(item=>item.id===entry.id)?'equipment':'item'})),fairyCatalog:fairies(schema),fairies:Object.values(record(state(value).fairies))};},
-});}
+export function gflModule(): ModuleDefinition {
+  return moduleDefinition(
+    "genre.gfl",
+    [
+      "core.stats",
+      "core.inventory",
+      "core.time",
+      "core.location",
+      "rpg.party",
+      "core.jobs",
+      "core.equipment",
+      "rpg.shop",
+      "rpg.loot",
+      "combat.turnbased",
+    ],
+    ["gfl"],
+    ["gold", "resources", "player", "combat"],
+    {
+      "gfl/start": scoped((c) => {
+        const gfl = state(c.state);
+        if (gfl.started) return fail(c, "gfl_already_started");
+        const mode = string(c.params.mode || "commander");
+        if (!["commander", "doll"].includes(mode))
+          return fail(c, "gfl_start_mode_invalid", mode);
+        gfl.started = true;
+        gfl.mode = mode;
+        gfl.commanderName = string(c.params.name || "지휘관");
+        gfl.baseLocation = baseLocation(c.state);
+        c.state.gfl = gfl;
+        // 지휘관 시작 자금은 원본 Lua가 시작 시점에 별도로 지급한다(defaultVariables의 A_gold와 다름 — 실측 10,000).
+        const funds = number(config(c.schema).commanderFunds, 0);
+        if (mode === "commander" && funds > 0) c.state.gold = funds;
+        return ok(c, { mode, starter: null });
+      }),
+      "gfl/doll/acquire": scoped((c) => {
+        const definition = doll(c.schema, c.params.dollId);
+        if (!definition) return fail(c, "gfl_unknown_doll", c.params.dollId);
+        if (!acquire(c, definition))
+          return fail(c, "gfl_doll_owned", definition.id);
+        return ok(c, { dollId: definition.id });
+      }),
+      "gfl/hire/refresh": scoped((c) => {
+        const gfl = state(c.state),
+          today = day(c.state),
+          daily = gfl.hireOfferDay !== today;
+        if (!daily && gfl.hireRefreshDay === today)
+          return fail(c, "gfl_hire_refresh_daily_limit", today);
+        const offers = hireOffers(c),
+          next = state(c.state);
+        if (!daily) next.hireRefreshDay = today;
+        c.state.gfl = next;
+        return ok(c, { offers, daily, refreshUsed: !daily });
+      }),
+      "gfl/hire/contract": scoped((c) => {
+        const definition = doll(c.schema, c.params.dollId),
+          offer = list<RuntimeRecord>(state(c.state).hireOffers).find(
+            (value) => value.id === c.params.dollId,
+          );
+        if (!definition || !offer)
+          return fail(c, "gfl_hire_offer_missing", c.params.dollId);
+        return hireDoll(c, definition, number(definition.price, 5000), "offer");
+      }),
+      "gfl/hire/snipe": scoped((c) => {
+        const definition = doll(c.schema, c.params.dollId);
+        if (!definition) return fail(c, "gfl_unknown_doll", c.params.dollId);
+        return hireDoll(
+          c,
+          definition,
+          number(definition.price, 5000) +
+            number(hireConfig(c.schema).snipePremium, 3000),
+          "snipe",
+        );
+      }),
+      "gfl/hire/tick": scoped((c) => {
+        const arrivals = Object.values(owned(c.state)).filter(
+          (value) => record(value).status === "이동 중",
+        );
+        if (!arrivals.length) return fail(c, "gfl_hire_no_arrivals");
+        for (const raw of arrivals) {
+          const unit = record(raw),
+            remaining = Math.max(0, number(unit.arrivalRemaining, 1) - 1);
+          unit.arrivalRemaining = remaining;
+          if (remaining === 0) unit.status = "대기";
+        }
+        return ok(c, {
+          arrivals: arrivals.map((value) => ({
+            dollId: record(value).id,
+            status: record(value).status,
+            remaining: record(value).arrivalRemaining,
+          })),
+        });
+      }),
+      "gfl/echelon/assign": scoped((c) => {
+        const gfl = state(c.state),
+          entry = formation(c.state, c.params.echelonId),
+          id = string(c.params.dollId),
+          slot = Math.trunc(number(c.params.slot, -1));
+        if (!entry) return fail(c, "gfl_unknown_echelon", c.params.echelonId);
+        if (!owned(c.state)[id]) return fail(c, "gfl_doll_not_owned", id);
+        if (slot < 0 || slot > 4) return fail(c, "gfl_slot_invalid", slot);
+        for (const echelon of echelons(c.state)) {
+          const slots = list<unknown>(echelon.slots);
+          for (let index = 0; index < slots.length; index++)
+            if (slots[index] === id) slots[index] = null;
+          echelon.slots = slots;
+        }
+        const slots = list<unknown>(entry.slots);
+        while (slots.length < 5) slots.push(null);
+        slots[slot] = id;
+        entry.slots = slots;
+        gfl.echelons = echelons(c.state);
+        c.state.gfl = gfl;
+        return ok(c, { echelonId: entry.id, slot, dollId: id });
+      }),
+      "gfl/echelon/remove": scoped((c) => {
+        const gfl = state(c.state),
+          entry = formation(c.state, c.params.echelonId),
+          slot = Math.trunc(number(c.params.slot, -1));
+        if (!entry) return fail(c, "gfl_unknown_echelon", c.params.echelonId);
+        if (slot < 0 || slot > 4) return fail(c, "gfl_slot_invalid", slot);
+        const slots = list<unknown>(entry.slots),
+          removed = slots[slot] ?? null;
+        slots[slot] = null;
+        entry.slots = slots;
+        gfl.echelons = echelons(c.state);
+        c.state.gfl = gfl;
+        return ok(c, { echelonId: entry.id, slot, removed });
+      }),
+      "gfl/location/move": scoped((c) => {
+        const target = string(c.params.locationId),
+          destination = locations(c.schema).find(
+            (value) => value.id === target,
+          ),
+          before = baseLocation(c.state),
+          sortie = fieldSortie(c.state);
+        if (!destination) return fail(c, "gfl_location_unknown", target);
+        if (sortie) return fail(c, "gfl_commander_in_field", sortie.missionId);
+        if (before === "base-outside" && target !== "base-hall")
+          return fail(c, "gfl_location_return_hall", target);
+        if (before === target) return fail(c, "gfl_location_same", target);
+        const gfl = state(c.state);
+        c.state.location = target;
+        gfl.baseLocation = target;
+        gfl.currentLocationName = destination.name;
+        c.state.gfl = gfl;
+        return ok(c, {
+          before,
+          locationId: target,
+          name: destination.name,
+          outside: target === "base-outside",
+          narrativeFact: `지휘관의 현재 위치는 ${string(destination.name)}이다.`,
+        });
+      }),
+  "gfl/time/advance": scoped((c) => {
+        if (fieldSortie(c.state)) return fail(c, "gfl_time_field_locked");
+        const phases = list<string>(config(c.schema).timePhases),
+          order = phases.length
+            ? phases
+            : ["오전", "오후", "저녁", "밤", "심야", "새벽"],
+          clock = record(c.state.clock),
+          before = string(clock.phase || order[0]),
+          index = Math.max(0, order.indexOf(before)),
+          next = order[(index + 1) % order.length]!,
+          newDay = index === order.length - 1;
+        clock.phase = next;
+        clock.hour = [8, 12, 18, 22, 2, 5][(index + 1) % order.length];
+        clock.turn = number(clock.turn) + 1;
+        const gfl = state(c.state),
+          arrivals: RuntimeRecord[] = [];
+        for (const raw of Object.values(owned(c.state)).filter(
+          (value) => record(value).status === "이동 중",
+        )) {
+          const unit = record(raw);
+          unit.arrivalRemaining = Math.max(
+            0,
+            number(unit.arrivalRemaining, 1) - 1,
+          );
+          if (unit.arrivalRemaining === 0) {
+            unit.status = "대기";
+            arrivals.push({ dollId: unit.id, name: unit.name });
+          }
+        }
+        const completed: RuntimeRecord[] = [];
+        for (const job of queue(c.state, "manufacturing").filter(
+          (value) => value.status === "active",
+        )) {
+          job.remaining = Math.max(0, number(job.remaining) - 1);
+          if (job.remaining === 0) {
+            job.status = "complete";
+            completed.push(job);
+            if (job.kind === "doll") {
+              const definition = doll(c.schema, job.resultId);
+              if (definition) acquire(c, definition);
+            } else {
+              const inventory = record(c.state.items);
+              inventory[string(job.resultId)] =
+                number(inventory[string(job.resultId)]) + 1;
+              c.state.items = inventory;
+            }
+          }
+        }
+        for (const job of queue(c.state, "repairs").filter(
+          (value) => value.status === "active",
+        )) {
+          job.remaining = Math.max(0, number(job.remaining) - 1);
+          if (job.remaining === 0) {
+            job.status = "complete";
+            completed.push(job);
+            const unit = record(owned(c.state)[string(job.dollId)]),
+              hp = record(unit.hp);
+            hp.cur = hp.max;
+            unit.hp = hp;
+            unit.status = "대기";
+          }
+        }
+        let daily: RuntimeRecord | null = null;
+        if (newDay) {
+          const tomorrow = day(c.state) + 1;
+          c.state.day = tomorrow;
+          clock.day = tomorrow;
+          const income = SUPPLY_DAILY[facilityLevel(c.state, "base4") - 1]!,
+            resources = record(c.state.resources);
+          resources.res = number(resources.res) + income;
+          c.state.resources = resources;
+          const healRate = DORM_HEAL[facilityLevel(c.state, "base5") - 1]!;
+          for (const raw of Object.values(owned(c.state))) {
+            const unit = record(raw),
+              hp = record(unit.hp);
+            hp.cur = Math.min(
+              number(hp.max),
+              number(hp.cur) + Math.ceil((number(hp.max) * healRate) / 100),
+            );
+            unit.hp = hp;
+            unit.mood = clamp(number(unit.mood) + 10, 0, 1000);
+          }
+          const raidChance = Math.max(
+              0,
+              20 - DEFENSE_REDUCTION[facilityLevel(c.state, "base2") - 1]!,
+            ),
+            raidRoll = c.rng.int(1, 100),
+            raid = raidRoll <= raidChance;
+          if (raid) {
+            const best = Math.max(
+                0,
+                ...echelons(c.state).map((entry) =>
+                  effectivePower(c.state, entry),
+                ),
+              ),
+              defended =
+                Math.round(
+                  best *
+                    (1 +
+                      DEFENSE_POWER[facilityLevel(c.state, "base2") - 1]! /
+                        100),
+                ) >= 1000;
+            if (!defended)
+              resources.res = Math.max(0, number(resources.res) - 300);
+            daily = { income, healRate, raid: true, defended, raidRoll };
+          } else daily = { income, healRate, raid: false, raidRoll };
+          gfl.hireOffers = [];
+          gfl.hireOfferDay = null;
+          gfl.hireRefreshDay = null;
+          gfl.hiredDay = null;
+        }
+        c.state.clock = clock;
+        c.state.gfl = gfl;
+    return ok(c, {
+          before,
+          phase: next,
+          day: day(c.state),
+          newDay,
+          arrivals,
+          completed,
+      daily,
+    });
+  }),
+  "gfl/time/end-day": scoped((c) => {
+    if (fieldSortie(c.state)) return fail(c, "gfl_time_field_locked");
+    const steps: RuntimeRecord[] = [];
+    for (let count = 0; count < 6; count++) {
+      const result = c.registry.dispatch(c.schema, c.state, { id: "gfl/time/advance", params: {} }, c.rng),
+        row = record(result.log[0]);
+      if (!row.ok) return result;
+      c.state = result.state;
+      steps.push(row);
+      if (row.newDay) break;
+    }
+    const settlement = steps.at(-1) ?? {};
+    return ok(c, { steps: steps.length, day: settlement.day, phase: settlement.phase, daily: settlement.daily });
+  }),
+      "gfl/relation/check": scoped((c) => {
+        if (
+          ["dc", "modifier", "roll", "affinity", "mood"].some(
+            (key) => key in c.params,
+          )
+        )
+          return fail(c, "gfl_check_number_not_allowed");
+        const dollId = string(c.params.dollId),
+          unit = record(owned(c.state)[dollId]),
+          choice = RELATION_CHOICES[string(c.params.choice)];
+        if (!Object.keys(unit).length)
+          return fail(c, "gfl_doll_not_owned", dollId);
+        if (!choice)
+          return fail(c, "gfl_relation_choice_unknown", c.params.choice);
+        const roll = c.rng.int(1, 20),
+          modifier =
+            Math.floor(number(unit.affinity) / 50) +
+            Math.floor(number(unit.mood) / 100),
+          total = roll + modifier,
+          success = total >= choice.dc,
+          tier = success
+            ? roll === 20
+              ? "critical_success"
+              : "success"
+            : roll === 1
+              ? "critical_failure"
+              : "failure",
+          multiplier =
+            tier === "critical_success"
+              ? 2
+              : tier === "critical_failure"
+                ? -1
+                : tier === "failure"
+                  ? 0
+                  : 1,
+          affinityDelta = choice.affinity * multiplier,
+          moodDelta = choice.mood * multiplier;
+        unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
+        unit.mood = clamp(number(unit.mood) + moodDelta, 0, 1000);
+        const result = {
+          dollId,
+          name: unit.name,
+          choice: string(c.params.choice),
+          label: choice.label,
+          mode: "dc",
+          sides: 20,
+          dc: choice.dc,
+          roll,
+          modifier,
+          total,
+          success,
+          tier,
+          affinityDelta,
+          moodDelta,
+          affinity: unit.affinity,
+          mood: unit.mood,
+        };
+        const gfl = state(c.state);
+        gfl.lastCheck = result;
+        c.state.gfl = gfl;
+        return ok(c, result);
+      }),
+      "gfl/manufacture/start": scoped((c) => {
+        if (baseLocation(c.state) !== "base-maintenance")
+          return fail(c, "gfl_maintenance_required");
+        const kind = string(c.params.kind || "doll"),
+          heavy = c.params.heavy === true,
+          definitions =
+            kind === "equipment"
+              ? list<RuntimeRecord>(config(c.schema).equipment)
+              : dolls(c.schema);
+        if (!definitions.length)
+          return fail(c, "gfl_manufacture_pool_empty", kind);
+        const costs = record(
+            record(config(c.schema).manufacturing)[heavy ? "heavy" : kind],
+          ),
+          missing = spend(c, costs);
+        if (missing) return fail(c, "gfl_manufacture_cost_missing", missing);
+        const result = definitions[c.rng.int(0, definitions.length - 1)]!,
+          gfl = state(c.state),
+          jobs = queue(c.state, "manufacturing");
+        jobs.push({
+          id: `mfg:${number(record(c.state.clock).turn)}:${jobs.length}`,
+          kind,
+          heavy,
+          resultId: result.id,
+          remaining: heavy ? 3 : 2,
+          status: "active",
+        });
+        gfl.manufacturing = jobs;
+        c.state.gfl = gfl;
+        return ok(c, { job: jobs.at(-1) });
+      }),
+      "gfl/manufacture/tick": scoped((c) => {
+        const gfl = state(c.state),
+          jobs = queue(c.state, "manufacturing"),
+          job = jobs.find((value) => value.id === c.params.jobId);
+        if (!job || job.status !== "active")
+          return fail(c, "gfl_manufacture_not_active", c.params.jobId);
+        job.remaining = Math.max(0, number(job.remaining) - 1);
+        if (job.remaining === 0) {
+          job.status = "complete";
+          if (job.kind === "doll") {
+            const definition = doll(c.schema, job.resultId);
+            if (definition) acquire(c, definition);
+          } else {
+            const items = record(c.state.items);
+            items[string(job.resultId)] =
+              number(items[string(job.resultId)]) + 1;
+            c.state.items = items;
+          }
+        }
+        gfl.manufacturing = jobs;
+        c.state.gfl = gfl;
+        return ok(c, { job });
+      }),
+      "gfl/repair/start": scoped((c) => {
+        if (baseLocation(c.state) !== "base-maintenance")
+          return fail(c, "gfl_maintenance_required");
+        const id = string(c.params.dollId),
+          unit = record(owned(c.state)[id]),
+          hp = record(unit.hp);
+        if (!Object.keys(unit).length) return fail(c, "gfl_doll_not_owned", id);
+        if (number(hp.cur) >= number(hp.max))
+          return fail(c, "gfl_repair_not_needed", id);
+        if (
+          queue(c.state, "repairs").some(
+            (value) => value.dollId === id && value.status === "active",
+          )
+        )
+          return fail(c, "gfl_repair_already_active", id);
+        const missing = spend(c, { parts: 1 });
+        if (missing) return fail(c, "gfl_repair_cost_missing", missing);
+        const gfl = state(c.state),
+          repairs = queue(c.state, "repairs");
+        unit.status = "수복";
+        repairs.push({
+          id: `repair:${id}:${number(record(c.state.clock).turn)}`,
+          dollId: id,
+          remaining: 2,
+          status: "active",
+        });
+        gfl.repairs = repairs;
+        c.state.gfl = gfl;
+        return ok(c, { job: repairs.at(-1) });
+      }),
+      "gfl/repair/tick": scoped((c) => {
+        const gfl = state(c.state),
+          repairs = queue(c.state, "repairs"),
+          job = repairs.find((value) => value.id === c.params.jobId),
+          unit = record(owned(c.state)[string(job?.dollId)]);
+        if (!job || job.status !== "active")
+          return fail(c, "gfl_repair_not_active", c.params.jobId);
+        job.remaining = Math.max(0, number(job.remaining) - 1);
+        if (job.remaining === 0) {
+          job.status = "complete";
+          const hp = record(unit.hp);
+          hp.cur = hp.max;
+          unit.hp = hp;
+          unit.status = "대기";
+        }
+        gfl.repairs = repairs;
+        c.state.gfl = gfl;
+        return ok(c, { job });
+      }),
+      "gfl/sortie/start": scoped((c) => {
+        const gfl = state(c.state);
+        if (record(gfl.sortie).active) return fail(c, "gfl_sortie_active");
+        const operation = mission(c.schema, c.params.missionId),
+          entry = formation(c.state, c.params.echelonId),
+          command = string(c.params.command || "field");
+        if (!operation)
+          return fail(c, "gfl_unknown_mission", c.params.missionId);
+        if (!entry) return fail(c, "gfl_unknown_echelon", c.params.echelonId);
+        if (!["field", "remote"].includes(command))
+          return fail(c, "gfl_sortie_command_invalid", command);
+        const members = list<unknown>(entry.slots).filter(Boolean),
+      formationPower = effectivePower(c.state, entry);
+        if (!members.length) return fail(c, "gfl_echelon_empty");
+        if (formationPower < number(operation.power))
+          return fail(
+            c,
+            "gfl_power_too_low",
+            `${formationPower}/${operation.power}`,
+          );
+        const travelCost = Math.max(0, number(operation.travelCost));
+        if (travelCost) {
+          const missing = spend(c, { gold: travelCost });
+          if (missing)
+            return fail(c, "gfl_sortie_travel_funds_missing", travelCost);
+        }
+        gfl.sortie = {
+          active: true,
+          missionId: operation.id,
+          echelonId: entry.id,
+          command,
+          progress: 0,
+          engaged: false,
+          power: formationPower,
+          returnLocation: baseLocation(c.state),
+          travelCost,
+        };
+        c.state.gfl = gfl;
+        return ok(c, {
+          missionId: operation.id,
+          echelonId: entry.id,
+          power: formationPower,
+          command,
+          travelCost,
+        });
+      }),
+      "gfl/sortie/engage": scoped((c) => {
+        const gfl = state(c.state),
+          sortie = record(gfl.sortie),
+          operation = mission(c.schema, sortie.missionId);
+        if (!sortie.active || !operation) return fail(c, "gfl_sortie_missing");
+        if (sortie.engaged) return fail(c, "gfl_sortie_already_engaged");
+        const p = record(c.state.player),
+          pools = record(p.pools);
+        pools.hp = {
+          cur: Math.max(100, number(sortie.power)),
+          max: Math.max(100, number(sortie.power)),
+        };
+        p.pools = pools;
+        p.atk = Math.max(10, Math.round(number(sortie.power) / 20));
+        p.def = Math.max(2, Math.round(number(sortie.power) / 200));
+        p.acc = 5;
+        p.evade = 10;
+        c.state.player = p;
+        const started = c.registry.dispatch(
+          c.schema,
+          c.state,
+          {
+            id: "start_encounter",
+            params: {
+              enemies: [
+                {
+                  name: string(operation.enemy || "적대 세력"),
+                  rank: string(operation.rank || "E"),
+                  hp: Math.max(50, Math.round(number(operation.power) / 2)),
+                  atk: Math.max(5, Math.round(number(operation.power) / 120)),
+                  def: Math.max(1, Math.round(number(operation.power) / 300)),
+                  evade: 8,
+                  acc: 2,
+                },
+              ],
+            },
+          },
+          c.rng,
+        );
+        if (!started.log[0]?.ok) return started;
+        c.state = started.state;
+        const next = state(c.state),
+          nextSortie = record(next.sortie);
+        nextSortie.engaged = true;
+        next.sortie = nextSortie;
+        c.state.gfl = next;
+        return ok(c, {
+          missionId: operation.id,
+          enemies: started.log[0]?.enemies,
+        });
+      }),
+      "gfl/sortie/finish": scoped((c) => {
+        const gfl = state(c.state),
+          sortie = record(gfl.sortie),
+          operation = mission(c.schema, sortie.missionId);
+        if (!sortie.active || !sortie.engaged || !operation)
+          return fail(c, "gfl_sortie_not_engaged");
+        const ended = c.registry.dispatch(
+          c.schema,
+          c.state,
+          { id: "end_encounter", params: {} },
+          c.rng,
+        );
+        if (!ended.log[0]?.ok) return ended;
+        c.state = ended.state;
+        const outcome = string(ended.log[0]?.outcome);
+        if (outcome === "victory") {
+          rewards(c.state, operation.rewards, c);
+          const next = state(c.state);
+          next.completedMissions = [
+            ...new Set([
+              ...list<string>(next.completedMissions),
+              string(operation.id),
+            ]),
+          ];
+          next.sortie = null;
+          c.state.gfl = next;
+          return ok(c, {
+            outcome,
+            missionId: operation.id,
+            rewards: operation.rewards,
+          });
+        }
+        const next = state(c.state);
+        next.sortie = null;
+        c.state.gfl = next;
+        return ok(c, { outcome, missionId: operation.id });
+      }),
+      "gfl/facility/upgrade": scoped((c) => {
+        const id = string(c.params.facilityId),
+          definition = list<RuntimeRecord>(config(c.schema).facilities).find(
+            (value) => value.id === id,
+          ),
+          gfl = state(c.state),
+          facilities = record(gfl.facilities),
+          level = number(facilities[id], 1);
+        if (!definition) return fail(c, "gfl_unknown_facility", id);
+        if (level >= number(definition.maxLevel, 5))
+          return fail(c, "gfl_facility_max", id);
+        const scaled = facilityCost(definition, level),
+          missing = spend(c, scaled);
+        if (missing) return fail(c, "gfl_facility_cost_missing", missing);
+        facilities[id] = level + 1;
+        gfl.facilities = facilities;
+        c.state.gfl = gfl;
+        if (id === "base3") {
+          const bonus = MAINTENANCE_HP[level]!;
+          for (const raw of Object.values(owned(c.state))) {
+            const unit = record(raw),
+              hp = record(unit.hp),
+              oldMax = number(hp.max),
+              newMax =
+                number(unit.baseMaxHp, oldMax - MAINTENANCE_HP[level - 1]!) +
+                bonus;
+            hp.max = newMax;
+            hp.cur = Math.min(
+              newMax,
+              number(hp.cur) + Math.max(0, newMax - oldMax),
+            );
+            unit.hp = hp;
+          }
+        }
+        return ok(c, {
+          facilityId: id,
+          before: level,
+          after: level + 1,
+          cost: scaled,
+          currentEffect: list<unknown>(definition.effects)[level] ?? null,
+          nextCost:
+            level + 1 < number(definition.maxLevel, 5)
+              ? facilityCost(definition, level + 1)
+              : null,
+        });
+      }),
+      "gfl/mod/upgrade": scoped((c) => {
+        if (baseLocation(c.state) !== "base-maintenance")
+          return fail(c, "gfl_maintenance_required");
+        const id = string(c.params.dollId),
+          unit = record(owned(c.state)[id]),
+          stage = number(unit.mod);
+        if (!Object.keys(unit).length) return fail(c, "gfl_doll_not_owned", id);
+        if (stage >= 3) return fail(c, "gfl_mod_max", id);
+        const missing = spend(c, {
+          cores: (stage + 1) * number(unit.grade, 3),
+        });
+        if (missing) return fail(c, "gfl_mod_cost_missing", missing);
+        // MOD 단계별 전투력 상승은 카드 원본 MOD_POWER 테이블을 스키마로 받는다(컴파일러가 회수). 폴백은 원본 실측값.
+        const gains = list<number>(config(c.schema).modPower);
+        unit.mod = stage + 1;
+        unit.power =
+          number(unit.power) + number(gains[stage], [500, 600, 1000][stage]!);
+        return ok(c, {
+          dollId: id,
+          before: stage,
+          after: stage + 1,
+          power: unit.power,
+        });
+      }),
+      "gfl/shop/buy": scoped((c) => {
+        const id = string(c.params.itemId),
+          definition = [...items(c.schema), ...equipment(c.schema)].find(
+            (value) => value.id === id,
+          );
+        if (!definition) return fail(c, "gfl_shop_unknown_item", id);
+        const quantity = Math.max(1, Math.trunc(number(c.params.quantity, 1))),
+          price = Math.max(0, number(definition.price)) * quantity,
+          missing = spend(c, { gold: price });
+        if (missing) return fail(c, "gfl_shop_funds_missing", missing);
+        const inventory = record(c.state.items);
+        inventory[id] = number(inventory[id]) + quantity;
+        c.state.items = inventory;
+        return ok(c, { itemId: id, quantity, price });
+      }),
+      "gfl/item/use": scoped((c) => {
+        const itemId = string(c.params.itemId),
+          dollId = string(c.params.dollId),
+          definition = items(c.schema).find((value) => value.id === itemId),
+          unit = record(owned(c.state)[dollId]),
+          inventory = record(c.state.items);
+        if (!definition) return fail(c, "gfl_shop_unknown_item", itemId);
+        if (string(definition.type) !== "use")
+          return fail(c, "gfl_item_not_usable", itemId);
+        if (!Object.keys(unit).length)
+          return fail(c, "gfl_doll_not_owned", dollId);
+        if (number(inventory[itemId]) < 1)
+          return fail(c, "gfl_item_not_owned", itemId);
+        const effect = record(definition.effect),
+          hp = record(unit.hp),
+          mp = record(unit.mp);
+        if ("hp" in effect)
+          hp.cur = clamp(number(hp.cur) + number(effect.hp), 0, number(hp.max));
+        if ("mp" in effect)
+          mp.cur = clamp(number(mp.cur) + number(effect.mp), 0, number(mp.max));
+        if ("mood" in effect)
+          unit.mood = clamp(number(unit.mood) + number(effect.mood), 0, 1000);
+        if ("aff" in effect)
+          unit.affinity = clamp(
+            number(unit.affinity) + number(effect.aff),
+            -200,
+            500,
+          );
+        unit.hp = hp;
+        unit.mp = mp;
+        inventory[itemId] = number(inventory[itemId]) - 1;
+        c.state.items = inventory;
+        return ok(c, {
+          itemId,
+          dollId,
+          effect,
+          hp,
+          mp,
+          mood: unit.mood,
+          affinity: unit.affinity,
+        });
+      }),
+      "gfl/item/sell": scoped((c) => {
+        const itemId = string(c.params.itemId),
+          definition = [...items(c.schema), ...equipment(c.schema)].find(
+            (value) => value.id === itemId,
+          ),
+          inventory = record(c.state.items);
+        if (!definition) return fail(c, "gfl_shop_unknown_item", itemId);
+        if (number(inventory[itemId]) < 1)
+          return fail(c, "gfl_item_not_owned", itemId);
+        const price = Math.floor(number(definition.price) / 2);
+        inventory[itemId] = number(inventory[itemId]) - 1;
+        c.state.items = inventory;
+        c.state.gold = number(c.state.gold) + price;
+        return ok(c, { itemId, price });
+      }),
+      "gfl/equipment/equip": scoped((c) => {
+        const dollId = string(c.params.dollId),
+          equipmentId = string(c.params.equipmentId),
+          unit = record(owned(c.state)[dollId]),
+          definition = equipment(c.schema).find(
+            (value) => value.id === equipmentId,
+          ),
+          inventory = record(c.state.items);
+        if (!Object.keys(unit).length)
+          return fail(c, "gfl_doll_not_owned", dollId);
+        if (!definition) return fail(c, "gfl_unknown_equipment", equipmentId);
+        if (number(inventory[equipmentId]) < 1)
+          return fail(c, "gfl_equipment_not_owned", equipmentId);
+        const banned = list<string>(definition.ban),
+          only = list<string>(definition.only),
+          klass = string(unit.class);
+        if (banned.includes(klass) || (only.length && !only.includes(klass)))
+          return fail(c, "gfl_equipment_class_restricted", klass);
+        const equipped = list<string>(unit.equipment);
+        if (equipped.length >= 2)
+          return fail(c, "gfl_equipment_slots_full", dollId);
+        inventory[equipmentId] = number(inventory[equipmentId]) - 1;
+        equipped.push(equipmentId);
+        unit.equipment = equipped;
+        unit.power = number(unit.power) + Math.max(0, number(definition.power));
+        c.state.items = inventory;
+        return ok(c, { dollId, equipmentId, power: unit.power });
+      }),
+      "gfl/equipment/unequip": scoped((c) => {
+        const dollId = string(c.params.dollId),
+          equipmentId = string(c.params.equipmentId),
+          unit = record(owned(c.state)[dollId]),
+          definition = equipment(c.schema).find(
+            (value) => value.id === equipmentId,
+          ),
+          inventory = record(c.state.items);
+        if (!Object.keys(unit).length)
+          return fail(c, "gfl_doll_not_owned", dollId);
+        if (!definition) return fail(c, "gfl_unknown_equipment", equipmentId);
+        const equipped = list<string>(unit.equipment),
+          index = equipped.indexOf(equipmentId);
+        if (index < 0)
+          return fail(c, "gfl_equipment_not_equipped", equipmentId);
+        equipped.splice(index, 1);
+        unit.equipment = equipped;
+        unit.power = Math.max(
+          0,
+          number(unit.power) - Math.max(0, number(definition.power)),
+        );
+        inventory[equipmentId] = number(inventory[equipmentId]) + 1;
+        c.state.items = inventory;
+        return ok(c, { dollId, equipmentId, power: unit.power });
+      }),
+      "gfl/doll/dismantle": scoped((c) => {
+        if (baseLocation(c.state) !== "base-maintenance")
+          return fail(c, "gfl_maintenance_required");
+        const id = string(c.params.dollId),
+          gfl = state(c.state),
+          values = record(gfl.dolls),
+          unit = record(values[id]);
+        if (!Object.keys(unit).length) return fail(c, "gfl_doll_not_owned", id);
+        if (
+          echelons(c.state).some((entry) =>
+            list<unknown>(entry.slots).includes(id),
+          )
+        )
+          return fail(c, "gfl_doll_in_echelon", id);
+        if (
+          queue(c.state, "repairs").some(
+            (entry) => entry.dollId === id && entry.status === "active",
+          )
+        )
+          return fail(c, "gfl_doll_in_repair", id);
+        delete values[id];
+        gfl.dolls = values;
+        c.state.gfl = gfl;
+        const resource = record(c.state.resources),
+          cores = Math.max(1, Math.floor(number(unit.grade) / 2));
+        resource.cores = number(resource.cores) + cores;
+        resource.parts = number(resource.parts) + 1;
+        c.state.resources = resource;
+        return ok(c, { dollId: id, cores, parts: 1 });
+      }),
+      "gfl/fairy/acquire": scoped((c) => {
+        const id = string(c.params.fairyId),
+          definition = fairies(c.schema).find((value) => value.id === id),
+          gfl = state(c.state),
+          values = record(gfl.fairies);
+        if (!definition) return fail(c, "gfl_unknown_fairy", id);
+        if (values[id]) return fail(c, "gfl_fairy_owned", id);
+        const missing = spend(c, { gold: 1000, res: 500 });
+        if (missing) return fail(c, "gfl_fairy_cost_missing", missing);
+        values[id] = {
+          ...definition,
+          level: 1,
+          power: Math.max(100, number(definition.power, 300)),
+        };
+        gfl.fairies = values;
+        c.state.gfl = gfl;
+        return ok(c, { fairyId: id });
+      }),
+      "gfl/fairy/assign": scoped((c) => {
+        const id = string(c.params.fairyId),
+          entry = formation(c.state, c.params.echelonId),
+          gfl = state(c.state);
+        if (!entry) return fail(c, "gfl_unknown_echelon", c.params.echelonId);
+        if (!record(gfl.fairies)[id]) return fail(c, "gfl_fairy_not_owned", id);
+        for (const echelon of echelons(c.state))
+          if (echelon.fairyId === id) echelon.fairyId = null;
+        entry.fairyId = id;
+        gfl.echelons = echelons(c.state);
+        c.state.gfl = gfl;
+        return ok(c, { echelonId: entry.id, fairyId: id });
+      }),
+    },
+    {
+      "gfl/status": (...args) => {
+        const schema = record(args[0]),
+          value = record(args[1]),
+          gfl = state(value),
+          sortie = record(gfl.sortie),
+          locationId = baseLocation(value),
+          location = locations(schema).find((entry) => entry.id === locationId);
+        return {
+          started: !!gfl.started,
+          mode: gfl.mode ?? null,
+          day: value.day ?? record(value.clock).day ?? 1,
+          phase: record(value.clock).phase ?? "오전",
+          time: record(value.clock).hour ?? 8,
+          funds: value.gold ?? 0,
+          resources: record(value.resources).res ?? 0,
+          parts: record(value.resources).parts ?? 0,
+          dolls: Object.keys(record(gfl.dolls)).length,
+          locationId,
+          locationName: location?.name ?? locationId,
+          effectiveLocation:
+            sortie.active && sortie.command === "field"
+              ? {
+                  id: `mission:${sortie.missionId}`,
+                  name: `작전 현장 · ${sortie.missionId}`,
+                }
+              : { id: locationId, name: location?.name ?? locationId },
+          sortie: sortie.active ? sortie : null,
+          lastCheck: gfl.lastCheck ?? null,
+        };
+      },
+      "gfl/locations": (...args) => {
+        const schema = record(args[0]),
+          value = record(args[1]),
+          currentId = baseLocation(value),
+          sortie = fieldSortie(value);
+        return {
+          currentId,
+          locked: Boolean(sortie),
+          locations: locations(schema).map((entry) => ({
+            ...entry,
+            current: entry.id === currentId,
+            reachable:
+              !sortie &&
+              (currentId !== "base-outside" || entry.id === "base-hall"),
+          })),
+        };
+      },
+  "gfl/dolls": (...args) => {
+    const schema = record(args[0]);
+    return Object.values(owned(record(args[1]))).map((raw) => {
+      const unit = record(raw);
+      return { ...unit, relation: relationFor(schema, unit.affinity) };
+    });
+  },
+      "gfl/echelons": (...args) =>
+        echelons(record(args[1])).map((entry) => ({
+          ...entry,
+          rawPower: power(record(args[1]), entry),
+          power: effectivePower(record(args[1]), entry),
+          trainingBonus:
+            TRAINING_BONUS[facilityLevel(record(args[1]), "base1") - 1],
+        })),
+      "gfl/missions": (...args) =>
+        missions(record(args[0])).map((value) => ({
+          ...value,
+          completed: list<string>(
+            state(record(args[1])).completedMissions,
+          ).includes(string(value.id)),
+        })),
+      "gfl/theaters": (...args) =>
+        list<RuntimeRecord>(config(record(args[0])).theaters),
+      "gfl/queues": (...args) => ({
+        manufacturing: queue(record(args[1]), "manufacturing"),
+        repairs: queue(record(args[1]), "repairs"),
+      }),
+      "gfl/hire": (...args) => {
+        const schema = record(args[0]),
+          value = record(args[1]),
+          gfl = state(value),
+          today = day(value),
+          capacity = dollCapacity(schema, value);
+        return {
+          offers: list<RuntimeRecord>(gfl.hireOffers),
+          available: dolls(schema)
+            .filter((entry) => !owned(value)[entry.id])
+            .map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              class: entry.class,
+              grade: entry.grade,
+              price: number(entry.price, 5000),
+              snipePrice:
+                number(entry.price, 5000) +
+                number(hireConfig(schema).snipePremium, 3000),
+              description: entry.description,
+              asset: entry.asset,
+            })),
+          capacity,
+          count: Object.keys(owned(value)).length,
+          hiredToday: gfl.hiredDay === today,
+          canRefresh: gfl.hireRefreshDay !== today,
+          offerDay: gfl.hireOfferDay ?? null,
+          arrivals: Object.values(owned(value)).filter(
+            (entry) => record(entry).status === "이동 중",
+          ),
+        };
+      },
+      "gfl/facilities": (...args) => {
+        const schema = record(args[0]),
+          value = record(args[1]),
+          levels = record(state(value).facilities);
+        return list<RuntimeRecord>(config(schema).facilities).map(
+          (definition) => {
+            const level = number(levels[string(definition.id)], 1),
+              maxLevel = number(definition.maxLevel, 5);
+            return {
+              ...definition,
+              level,
+              maxLevel,
+              cost: level < maxLevel ? facilityCost(definition, level) : null,
+              currentEffect:
+                list<unknown>(definition.effects)[level - 1] ?? null,
+              nextEffect:
+                level < maxLevel
+                  ? (list<unknown>(definition.effects)[level] ?? null)
+                  : null,
+            };
+          },
+        );
+      },
+      "gfl/shop": (...args) => {
+        const schema = record(args[0]),
+          value = record(args[1]),
+          inventory = record(value.items);
+        return {
+          catalog: [...items(schema), ...equipment(schema)].map((entry) => ({
+            ...entry,
+            owned: number(inventory[string(entry.id)]),
+            kind: equipment(schema).some((item) => item.id === entry.id)
+              ? "equipment"
+              : "item",
+          })),
+          fairyCatalog: fairies(schema),
+          fairies: Object.values(record(state(value).fairies)),
+        };
+      },
+    },
+    (schema, value) => {
+      const gfl = state(value),
+        locationId = baseLocation(value),
+        location = locations(schema).find((entry) => entry.id === locationId),
+        clock = record(value.clock),
+        units = Object.values(owned(value)).map((raw) => {
+          const unit = record(raw);
+          return {
+            id: unit.id,
+            name: unit.name,
+        mood: unit.mood,
+        affinity: unit.affinity,
+        relation: relationFor(schema, unit.affinity).label,
+        status: unit.status,
+          };
+        });
+      return {
+        commander: {
+          locationId,
+          locationName: location?.name ?? gfl.currentLocationName ?? locationId,
+          fieldMission: fieldSortie(value)?.missionId ?? null,
+        },
+        time: {
+          day: day(value),
+          phase: clock.phase ?? "오전",
+          hour: clock.hour ?? 8,
+        },
+        resources: {
+          funds: value.gold ?? 0,
+          supplies: record(value.resources).res ?? 0,
+        },
+        dolls: units,
+        rule: "위치·시간·자원·관계 수치는 엔진 확정값이다. [[aff=...]]·[[mood=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
+      };
+    },
+  );
+}

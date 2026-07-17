@@ -1,149 +1,1928 @@
-import type { EngineJournalData,MemoryRecord } from '@simbot/contracts';
-import { ContinuityPatchLedger,ingestMemoryTurn,memoryRecord,MemoryLedger,planGroundedMemory,reconcileMemorySources,validateFactReferences,verifyNarrative,type ContinuityPatchInput,type ContinuityPatchRecord,type EmbeddingProvider,type FactReferenceInput,type FactReferenceVerdict,type MemoryCandidateInput,type MemoryDecision,type MemoryEvidenceEvent,type NarrativeIssue } from '@simbot/memory';
-import type { SessionRepository } from '@simbot/persistence';
-import { activateLore,applyRegexScripts,compilePrompt,estimateTokens,normalizeLoreEntries,setActiveRenderContext,stripPromptImageMarkup,type CardRuntimeSnapshot,type CardStateOwnership,type CompiledPrompt,type LoreEntry,type Persona,type PromptPreset,type RegexScript,type RuntimeWorkerSuccess } from '@simbot/risu';
-import { BUTTON_ONLY_EVENTS,resolveSpeakerList, type ProjectRuntime, type SpeakerReference } from '@simbot/runtime';
-import{SessionJournal,fnv1a,stableHash,stableStringify}from'./journal.ts';
-import{CardRuntimeJournal,type CardRuntimeJournalData}from'./card-runtime-journal.ts';
-import {auxProviderFor,type AuxConfig} from './providers/auxiliary.ts';
-export * from './openai-compatible.ts';
-export * from './journal.ts';
-export * from './card-runtime-journal.ts';
-export{maskSecrets}from'./providers/openai.ts'; // 진단 복사본에 키가 새지 않게 — 마스킹 로직은 하나만 존재해야 한다
+import type { EngineJournalData, MemoryRecord } from "@simbot/contracts";
+import {
+  ContinuityPatchLedger,
+  ingestMemoryTurn,
+  memoryRecord,
+  MemoryLedger,
+  planGroundedMemory,
+  reconcileMemorySources,
+  validateFactReferences,
+  verifyNarrative,
+  type ContinuityPatchInput,
+  type ContinuityPatchRecord,
+  type EmbeddingProvider,
+  type FactReferenceInput,
+  type FactReferenceVerdict,
+  type MemoryCandidateInput,
+  type MemoryDecision,
+  type MemoryEvidenceEvent,
+  type NarrativeIssue,
+} from "@simbot/memory";
+import type { SessionRepository } from "@simbot/persistence";
+import {
+  activateLore,
+  applyRegexScripts,
+  compilePrompt,
+  estimateTokens,
+  normalizeLoreEntries,
+  setActiveRenderContext,
+  stripPromptImageMarkup,
+  type CardRuntimeSnapshot,
+  type CardStateOwnership,
+  type CompiledPrompt,
+  type LoreEntry,
+  type Persona,
+  type PromptPreset,
+  type RegexScript,
+  type RuntimeWorkerSuccess,
+} from "@simbot/risu";
+import {
+  BUTTON_ONLY_EVENTS,
+  resolveSpeakerList,
+  type ProjectRuntime,
+  type SpeakerReference,
+} from "@simbot/runtime";
+import {
+  SessionJournal,
+  fnv1a,
+  stableHash,
+  stableStringify,
+} from "./journal.ts";
+import {
+  CardRuntimeJournal,
+  type CardRuntimeJournalData,
+} from "./card-runtime-journal.ts";
+import { auxProviderFor, type AuxConfig } from "./providers/auxiliary.ts";
+export * from "./openai-compatible.ts";
+export * from "./journal.ts";
+export * from "./card-runtime-journal.ts";
+export { maskSecrets } from "./providers/openai.ts"; // 진단 복사본에 키가 새지 않게 — 마스킹 로직은 하나만 존재해야 한다
 
-export { createVoyageProvider } from '@simbot/memory';
+export { createVoyageProvider } from "@simbot/memory";
 
 // 카드 태그 채널이 dispatch할 수 있는 이벤트의 명시적 허용목록(방어 심층).
 // 번역기는 지금 이 8종만 내지만, 번역기가 넓어져도 세션이 조용히 채널을 열어주지 않도록 여기서 고정한다.
 // (LLM은 본문 태그를 자유롭게 쓸 수 있으므로 이 채널의 상한이 곧 LLM의 상태 조작 상한이다.)
-export const CARD_TAG_EVENTS=new Set<string>(['gold_delta','resource_delta','scale_delta','checkin','checkout','day_end','hire','fire','panel_sync']);
-export interface MessageChip{ok:boolean;text:string;kind?:string;}
-export interface ChatMessage{id:string;index:number;role:'user'|'assistant';content:string;createdAt:string;origin?:'model'|'greeting'|'user'|'engine'|'ledger';translation?:string;facts?:Record<string,unknown>[];chips?:MessageChip[];speakers?:SpeakerReference[];}
-export interface ProposedEvent{id:string;params?:Record<string,unknown>;}
-export interface NarrativeResponse{text:string;events?:ProposedEvent[];speakers?:Array<{npcId:string;emotion?:string;focus?:boolean}>;memories?:MemoryCandidateInput[];factRefs?:FactReferenceInput[];continuityPatch?:ContinuityPatchInput;usage?:{inputTokens?:number;outputTokens?:number;totalTokens?:number};model?:string;finishReason?:string;generationId?:string;}
-export interface PromptRun{id:string;turn:number;kind:'send'|'reroll'|'continue'|'management';createdAt:string;prompt?:CompiledPrompt;promptHash?:string;responseText:string;proposedEvents:ProposedEvent[];logs:Record<string,unknown>[];memoryDecisions?:MemoryDecision[];factReferenceVerdicts?:FactReferenceVerdict[];continuityPatchId?:string;stateBefore?:{state:Record<string,unknown>;rng:number};stateAfter?:{state:Record<string,unknown>;rng:number};stateBeforeHash?:string;stateAfterHash?:string;issues:NarrativeIssue[];provider?:string;model?:string;durationMs?:number;inputTokens?:number;outputTokens?:number;tokensEstimated?:boolean;finishReason?:string;generationId?:string;}
-export interface ModelRequest{prompt:CompiledPrompt;signal?:AbortSignal;format?:'prose'|'json';purpose?:'chat'|'management';}
-export interface ModelProvider{complete(request:ModelRequest):Promise<NarrativeResponse>;}
-export interface SessionBindings{persona:Persona|null;preset:PromptPreset;}
-export interface SessionCheckpoint{turn:number;messageCount:number;messages?:ChatMessage[];memory:MemoryRecord[];continuityPatches?:ContinuityPatchRecord[];lastLogs:Record<string,unknown>[];cbsVariables:Record<string,string>;lastSpeakers:SpeakerReference[];alternates:AlternateState[];ledgerDeltas:string[];journalCursor:number;cardRuntimeCursor?:number;bindings:SessionBindings;}
-export interface SessionHistory{undo:SessionCheckpoint[];redo:SessionCheckpoint[];}
-export interface SessionSnapshot{contract:'simbot-play-session/0.1';id:string;projectId:string;schemaFingerprint?:string;turn:number;messages:ChatMessage[];engine:{state:Record<string,unknown>;rng:number};memory:MemoryRecord[];continuityPatches?:ContinuityPatchRecord[];lastLogs:Record<string,unknown>[];cbsVariables?:Record<string,string>;cardRuntimeJournal?:CardRuntimeJournalData;lastSpeakers?:SpeakerReference[];alternates?:AlternateState[];responseBranches?:ResponseBranchSet[];promptRuns?:PromptRun[];journal?:EngineJournalData;history?:SessionHistory;bindings?:SessionBindings;ledgerDeltas?:string[];integrity?:string;}
-export const MAX_SESSION_IMPORT_BYTES=30*1024*1024;
-export function parseSessionBackup(text:string,byteLength=new TextEncoder().encode(text).byteLength):SessionSnapshot{if(byteLength>MAX_SESSION_IMPORT_BYTES)throw new Error('session_import_too_large');let raw:unknown;try{raw=JSON.parse(text);}catch{throw new Error('session_import_json_invalid');}const value=(raw&&typeof raw==='object'&&'snapshot'in raw?(raw as{snapshot?:unknown}).snapshot:raw)as Partial<SessionSnapshot>|null;if(!value||value.contract!=='simbot-play-session/0.1')throw new Error('session_import_contract_mismatch');return value as SessionSnapshot;}
+export const CARD_TAG_EVENTS = new Set<string>([
+  "gold_delta",
+  "resource_delta",
+  "scale_delta",
+  "checkin",
+  "checkout",
+  "day_end",
+  "hire",
+  "fire",
+  "panel_sync",
+]);
+export interface MessageChip {
+  ok: boolean;
+  text: string;
+  kind?: string;
+}
+export interface ChatMessage {
+  id: string;
+  index: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  origin?: "model" | "greeting" | "user" | "engine" | "ledger";
+  translation?: string;
+  facts?: Record<string, unknown>[];
+  chips?: MessageChip[];
+  speakers?: SpeakerReference[];
+}
+export interface ProposedEvent {
+  id: string;
+  params?: Record<string, unknown>;
+}
+export interface NarrativeResponse {
+  text: string;
+  events?: ProposedEvent[];
+  speakers?: Array<{ npcId: string; emotion?: string; focus?: boolean }>;
+  memories?: MemoryCandidateInput[];
+  factRefs?: FactReferenceInput[];
+  continuityPatch?: ContinuityPatchInput;
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  model?: string;
+  finishReason?: string;
+  generationId?: string;
+}
+export interface PromptRun {
+  id: string;
+  turn: number;
+  kind: "send" | "reroll" | "continue" | "management";
+  createdAt: string;
+  prompt?: CompiledPrompt;
+  promptHash?: string;
+  responseText: string;
+  proposedEvents: ProposedEvent[];
+  logs: Record<string, unknown>[];
+  memoryDecisions?: MemoryDecision[];
+  factReferenceVerdicts?: FactReferenceVerdict[];
+  continuityPatchId?: string;
+  stateBefore?: { state: Record<string, unknown>; rng: number };
+  stateAfter?: { state: Record<string, unknown>; rng: number };
+  stateBeforeHash?: string;
+  stateAfterHash?: string;
+  issues: NarrativeIssue[];
+  provider?: string;
+  model?: string;
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokensEstimated?: boolean;
+  finishReason?: string;
+  generationId?: string;
+}
+export interface ModelRequest {
+  prompt: CompiledPrompt;
+  signal?: AbortSignal;
+  format?: "prose" | "json";
+  purpose?: "chat" | "management";
+}
+export interface ModelProvider {
+  complete(request: ModelRequest): Promise<NarrativeResponse>;
+}
+export interface SessionBindings {
+  persona: Persona | null;
+  preset: PromptPreset;
+}
+export interface SessionCheckpoint {
+  turn: number;
+  messageCount: number;
+  messages?: ChatMessage[];
+  memory: MemoryRecord[];
+  continuityPatches?: ContinuityPatchRecord[];
+  lastLogs: Record<string, unknown>[];
+  cbsVariables: Record<string, string>;
+  lastSpeakers: SpeakerReference[];
+  alternates: AlternateState[];
+  ledgerDeltas: string[];
+  journalCursor: number;
+  cardRuntimeCursor?: number;
+  bindings: SessionBindings;
+}
+export interface SessionHistory {
+  undo: SessionCheckpoint[];
+  redo: SessionCheckpoint[];
+}
+export interface SessionSnapshot {
+  contract: "simbot-play-session/0.1";
+  id: string;
+  projectId: string;
+  schemaFingerprint?: string;
+  turn: number;
+  messages: ChatMessage[];
+  engine: { state: Record<string, unknown>; rng: number };
+  memory: MemoryRecord[];
+  continuityPatches?: ContinuityPatchRecord[];
+  lastLogs: Record<string, unknown>[];
+  cbsVariables?: Record<string, string>;
+  cardRuntimeJournal?: CardRuntimeJournalData;
+  lastSpeakers?: SpeakerReference[];
+  alternates?: AlternateState[];
+  responseBranches?: ResponseBranchSet[];
+  promptRuns?: PromptRun[];
+  journal?: EngineJournalData;
+  history?: SessionHistory;
+  bindings?: SessionBindings;
+  ledgerDeltas?: string[];
+  integrity?: string;
+}
+export const MAX_SESSION_IMPORT_BYTES = 30 * 1024 * 1024;
+export function parseSessionBackup(
+  text: string,
+  byteLength = new TextEncoder().encode(text).byteLength,
+): SessionSnapshot {
+  if (byteLength > MAX_SESSION_IMPORT_BYTES)
+    throw new Error("session_import_too_large");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error("session_import_json_invalid");
+  }
+  const value = (
+    raw && typeof raw === "object" && "snapshot" in raw
+      ? (raw as { snapshot?: unknown }).snapshot
+      : raw
+  ) as Partial<SessionSnapshot> | null;
+  if (!value || value.contract !== "simbot-play-session/0.1")
+    throw new Error("session_import_contract_mismatch");
+  return value as SessionSnapshot;
+}
 // 세션 무결성 — 저장 시 페이로드 해시를 심고 복구 시 재계산해 변조·손상 파일을 거부한다
 // (마이그레이션 감사 Critical: 복구가 contract·projectId만 보고 무검증 주입하던 것 보완. 옛 sessionJournal 손상감지 이관).
 // 무결성 해시는 복원되는 페이로드 전부를 덮어야 한다. cbsVariables(카드 변수 저장소)가 해시 밖에 있으면
 // 저장 파일의 변수만 고쳐 검증을 우회할 수 있다(통합 감사 Critical). 단 구 스냅샷은 이 필드가 없으므로
 // '있을 때만' 해시에 포함해 기존 저장분의 해시를 바꾸지 않는다(하위호환).
-export function sessionIntegrity(snapshot:Omit<SessionSnapshot,'integrity'>):string{return fnv1a(stableStringify({projectId:snapshot.projectId,...(snapshot.schemaFingerprint?{schemaFingerprint:snapshot.schemaFingerprint}:{}),turn:snapshot.turn,messages:snapshot.messages,engine:snapshot.engine,memory:snapshot.memory,...(snapshot.continuityPatches?{continuityPatches:snapshot.continuityPatches}:{}),...(snapshot.cbsVariables?{cbsVariables:snapshot.cbsVariables}:{}),...(snapshot.cardRuntimeJournal?{cardRuntimeJournal:snapshot.cardRuntimeJournal}:{}),...(snapshot.lastSpeakers?{lastSpeakers:snapshot.lastSpeakers}:{}),...(snapshot.alternates?{alternates:snapshot.alternates}:{}),...(snapshot.responseBranches?{responseBranches:snapshot.responseBranches}:{}),...(snapshot.promptRuns?{promptRuns:snapshot.promptRuns}:{}),...(snapshot.journal?{journal:snapshot.journal}:{}),...(snapshot.history?{history:snapshot.history}:{}),...(snapshot.bindings?{bindings:snapshot.bindings}:{}),...(snapshot.ledgerDeltas?{ledgerDeltas:snapshot.ledgerDeltas}:{})}));}
-function runtimeSchemaFingerprint(runtime:ProjectRuntime){return fnv1a(stableStringify(runtime.project.schema));}
-const MEMORY_ANCHOR_KEYS=['target','npcId','resource','resourceId','scale','axis','stat','questId','facilityId','roomId','itemId','recipeId','slotId'] as const;
-function engineMemoryAnchor(eventId:string,log:Record<string,unknown>){const parts=[eventId];for(const key of MEMORY_ANCHOR_KEYS)if(Object.hasOwn(log,key)&&['string','number','boolean'].includes(typeof log[key]))parts.push(`${key}=${String(log[key])}`);return`engine:${parts.join(':')}`;}
+export function sessionIntegrity(
+  snapshot: Omit<SessionSnapshot, "integrity">,
+): string {
+  return fnv1a(
+    stableStringify({
+      projectId: snapshot.projectId,
+      ...(snapshot.schemaFingerprint
+        ? { schemaFingerprint: snapshot.schemaFingerprint }
+        : {}),
+      turn: snapshot.turn,
+      messages: snapshot.messages,
+      engine: snapshot.engine,
+      memory: snapshot.memory,
+      ...(snapshot.continuityPatches
+        ? { continuityPatches: snapshot.continuityPatches }
+        : {}),
+      ...(snapshot.cbsVariables ? { cbsVariables: snapshot.cbsVariables } : {}),
+      ...(snapshot.cardRuntimeJournal
+        ? { cardRuntimeJournal: snapshot.cardRuntimeJournal }
+        : {}),
+      ...(snapshot.lastSpeakers ? { lastSpeakers: snapshot.lastSpeakers } : {}),
+      ...(snapshot.alternates ? { alternates: snapshot.alternates } : {}),
+      ...(snapshot.responseBranches
+        ? { responseBranches: snapshot.responseBranches }
+        : {}),
+      ...(snapshot.promptRuns ? { promptRuns: snapshot.promptRuns } : {}),
+      ...(snapshot.journal ? { journal: snapshot.journal } : {}),
+      ...(snapshot.history ? { history: snapshot.history } : {}),
+      ...(snapshot.bindings ? { bindings: snapshot.bindings } : {}),
+      ...(snapshot.ledgerDeltas ? { ledgerDeltas: snapshot.ledgerDeltas } : {}),
+    }),
+  );
+}
+function runtimeSchemaFingerprint(runtime: ProjectRuntime) {
+  return fnv1a(stableStringify(runtime.project.schema));
+}
+const MEMORY_ANCHOR_KEYS = [
+  "target",
+  "npcId",
+  "resource",
+  "resourceId",
+  "scale",
+  "axis",
+  "stat",
+  "questId",
+  "facilityId",
+  "roomId",
+  "itemId",
+  "recipeId",
+  "slotId",
+] as const;
+function engineMemoryAnchor(eventId: string, log: Record<string, unknown>) {
+  const parts = [eventId];
+  for (const key of MEMORY_ANCHOR_KEYS)
+    if (
+      Object.hasOwn(log, key) &&
+      ["string", "number", "boolean"].includes(typeof log[key])
+    )
+      parts.push(`${key}=${String(log[key])}`);
+  return `engine:${parts.join(":")}`;
+}
 // UI가 건네는 값은 프레임워크 프록시($state 등)일 수 있고 structuredClone은 Proxy를 복제하지 못한다.
 // caller 경계에서만 관용적으로 복제한다 — 세션 데이터는 어차피 JSON 직렬화 대상이라 폴백이 안전하다.
-function clone<T>(value:T):T{try{return structuredClone(value);}catch{return value===null||typeof value!=='object'?value:JSON.parse(JSON.stringify(value)) as T;}}
-function object(value:unknown):Record<string,unknown>{return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};}
-const unsafeRuntimeKeys=new Set(['__proto__','constructor','prototype']);
-function safeRuntimeKey(value:string){return!!value&&value.length<=256&&!unsafeRuntimeKeys.has(value);}
-function activeModules(project:ProjectRuntime['project']){const declared=object(project.content).activeModules;return[...new Set([...(project.moduleIds??[]),...(Array.isArray(declared)?declared.map(String):[])])];}
-function narrativeCatalog(project:ProjectRuntime['project']){const schema=project.schema,block=(Array.isArray(schema.entities)?schema.entities:[]).map(object).find(value=>value.type==='npc'),npcs=(Array.isArray(block?.instances)?block.instances:[]).map(object),aliases=npcs.map(npc=>[npc.id,npc.nameKo,npc.name,npc.nameEn,...(Array.isArray(npc.aliases)?npc.aliases:[])].map(String).filter(Boolean)),normalize=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9가-힣]/g,''),commands=(Array.isArray(object(project.content).assetCommands)?object(project.content).assetCommands as unknown[]:[]).map(String).filter(command=>aliases.some(items=>items.some(alias=>{const key=normalize(alias),value=normalize(command);return!!key&&(value===key||value.startsWith(key));}))).slice(0,120);return{npcs:npcs.map((npc,index)=>`${String(npc.id??`npc-${index}`)} (${String(npc.nameKo??npc.name??npc.nameEn??npc.id??'이름 없음')})`),commands};}
-function compactPromptRuns(runs:PromptRun[]){const kept=runs.slice(-500),detailedFrom=Math.max(0,kept.length-8);return kept.map((run,index)=>{if(index>=detailedFrom)return run;const{prompt:_,stateBefore:__,stateAfter:___,...summary}=run;return summary;});}
-export interface PlaySessionOptions{id:string;runtime:ProjectRuntime;provider:ModelProvider;providerInfo?:{provider?:string;model?:string};preset:PromptPreset;persona?:Persona|null;maxContext?:number|undefined;card:{name:string;description?:string;personality?:string;scenario?:string;systemPrompt?:string;postHistoryInstructions?:string};loreEntries?:unknown[];memory?:MemoryLedger;embeddingProvider?:EmbeddingProvider;aux?:AuxConfig;repository?:SessionRepository<SessionSnapshot>;historyWindow?:number;tagTranslator?:(text:string)=>{events:Array<{id:string;params:Record<string,unknown>}>;residue:string};speakerExtractor?:(text:string)=>NonNullable<NarrativeResponse['speakers']>;regexScripts?:RegexScript[];defaultVariables?:Record<string,string>;stateOwnership?:CardStateOwnership;}
+function clone<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    return value === null || typeof value !== "object"
+      ? value
+      : (JSON.parse(JSON.stringify(value)) as T);
+  }
+}
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+const unsafeRuntimeKeys = new Set(["__proto__", "constructor", "prototype"]);
+function safeRuntimeKey(value: string) {
+  return !!value && value.length <= 256 && !unsafeRuntimeKeys.has(value);
+}
+function activeModules(project: ProjectRuntime["project"]) {
+  const declared = object(project.content).activeModules;
+  return [
+    ...new Set([
+      ...(project.moduleIds ?? []),
+      ...(Array.isArray(declared) ? declared.map(String) : []),
+    ]),
+  ];
+}
+function narrativeCatalog(project: ProjectRuntime["project"]) {
+  const schema = project.schema,
+    block = (Array.isArray(schema.entities) ? schema.entities : [])
+      .map(object)
+      .find((value) => value.type === "npc"),
+    npcs = (Array.isArray(block?.instances) ? block.instances : []).map(object),
+    aliases = npcs.map((npc) =>
+      [
+        npc.id,
+        npc.nameKo,
+        npc.name,
+        npc.nameEn,
+        ...(Array.isArray(npc.aliases) ? npc.aliases : []),
+      ]
+        .map(String)
+        .filter(Boolean),
+    ),
+    normalize = (value: string) =>
+      value
+        .normalize("NFKC")
+        .toLowerCase()
+        .replace(/[^a-z0-9가-힣]/g, ""),
+    commands = (
+      Array.isArray(object(project.content).assetCommands)
+        ? (object(project.content).assetCommands as unknown[])
+        : []
+    )
+      .map(String)
+      .filter((command) =>
+        aliases.some((items) =>
+          items.some((alias) => {
+            const key = normalize(alias),
+              value = normalize(command);
+            return !!key && (value === key || value.startsWith(key));
+          }),
+        ),
+      )
+      .slice(0, 120);
+  return {
+    npcs: npcs.map(
+      (npc, index) =>
+        `${String(npc.id ?? `npc-${index}`)} (${String(npc.nameKo ?? npc.name ?? npc.nameEn ?? npc.id ?? "이름 없음")})`,
+    ),
+    commands,
+  };
+}
+function compactPromptRuns(runs: PromptRun[]) {
+  const kept = runs.slice(-500),
+    detailedFrom = Math.max(0, kept.length - 8);
+  return kept.map((run, index) => {
+    if (index >= detailedFrom) return run;
+    const { prompt: _, stateBefore: __, stateAfter: ___, ...summary } = run;
+    return summary;
+  });
+}
+export interface PlaySessionOptions {
+  id: string;
+  runtime: ProjectRuntime;
+  provider: ModelProvider;
+  providerInfo?: { provider?: string; model?: string };
+  preset: PromptPreset;
+  persona?: Persona | null;
+  maxContext?: number | undefined;
+  card: {
+    name: string;
+    description?: string;
+    personality?: string;
+    scenario?: string;
+    systemPrompt?: string;
+    postHistoryInstructions?: string;
+  };
+  loreEntries?: unknown[];
+  memory?: MemoryLedger;
+  embeddingProvider?: EmbeddingProvider;
+  aux?: AuxConfig;
+  repository?: SessionRepository<SessionSnapshot>;
+  historyWindow?: number;
+  tagTranslator?: (text: string) => {
+    events: Array<{ id: string; params: Record<string, unknown> }>;
+    residue: string;
+  };
+  speakerExtractor?: (
+    text: string,
+  ) => NonNullable<NarrativeResponse["speakers"]>;
+  regexScripts?: RegexScript[];
+  defaultVariables?: Record<string, string>;
+  stateOwnership?: CardStateOwnership;
+}
 // 대안은 세션의 파생 상태 전부(기억 원장·무대 화자 포함)를 함께 보관해야 한다 — 일부만 되돌리면 기각된 평행세계가 원장에 남는다(감사 계열: restore 메모리 미청소).
-export interface AlternateState{messages:ChatMessage[];engine:{state:Record<string,unknown>;rng:number};logs:Record<string,unknown>[];memory:MemoryRecord[];continuityPatches?:ContinuityPatchRecord[];speakers:SpeakerReference[];promptRuns:PromptRun[];ledgerDeltas?:string[];journalCursor?:number;cardRuntimeCursor?:number;turn?:number;cbsVariables?:Record<string,string>;bindings?:SessionBindings;}
-export interface ResponseBranchSet{messageId:string;active:number;variants:AlternateState[];}
+export interface AlternateState {
+  messages: ChatMessage[];
+  engine: { state: Record<string, unknown>; rng: number };
+  logs: Record<string, unknown>[];
+  memory: MemoryRecord[];
+  continuityPatches?: ContinuityPatchRecord[];
+  speakers: SpeakerReference[];
+  promptRuns: PromptRun[];
+  ledgerDeltas?: string[];
+  journalCursor?: number;
+  cardRuntimeCursor?: number;
+  turn?: number;
+  cbsVariables?: Record<string, string>;
+  bindings?: SessionBindings;
+}
+export interface ResponseBranchSet {
+  messageId: string;
+  active: number;
+  variants: AlternateState[];
+}
 
-export class PlaySession{
- readonly id:string;readonly runtime:ProjectRuntime;readonly memory:MemoryLedger;
- #provider:ModelProvider;#providerInfo:NonNullable<PlaySessionOptions['providerInfo']>;#embeddingProvider:EmbeddingProvider|undefined;#preset:PromptPreset;#persona:Persona|null;#maxContext:number|undefined;readonly #card:PlaySessionOptions['card'];readonly #stateOwnership:CardStateOwnership;readonly #lore:LoreEntry[];readonly #repository:SessionRepository<SessionSnapshot>|undefined;readonly #historyWindow:number;readonly #tagTranslator:PlaySessionOptions['tagTranslator'];readonly #speakerExtractor:PlaySessionOptions['speakerExtractor'];
- #messages:ChatMessage[]=[];#turn=0;#lastLogs:Record<string,unknown>[]=[];#lastSpeakers:SpeakerReference[]=[];#busy=false;#messageSeq=0;#auxSeq=0;#aux:AuxConfig={enabled:false,slots:{}};#checkpoints:SessionCheckpoint[]=[];#redoStack:SessionCheckpoint[]=[];#alternates:AlternateState[]=[];#responseBranches:ResponseBranchSet[]=[];#promptRuns:PromptRun[]=[];#narrativeIssues:NarrativeIssue[]=[];#ledgerDeltas:string[]=[];#listeners=new Set<()=>void>();#regexScripts:RegexScript[];#cbsVariables:Record<string,string>;#journal:SessionJournal;#cardRuntimeJournal:CardRuntimeJournal;#continuityPatches=new ContinuityPatchLedger();
- // 리스처럼 사용자 입력은 즉시 화면에 올라가야 한다 — UI가 응답을 기다리지 않고 갱신하도록 변경을 알린다.
- subscribe(listener:()=>void){this.#listeners.add(listener);return()=>this.#listeners.delete(listener);}
- #notify(){for(const listener of this.#listeners)listener();}
- constructor(options:PlaySessionOptions){this.id=options.id;this.runtime=options.runtime;const rawDispatch=this.runtime.dispatch.bind(this.runtime);this.#journal=new SessionJournal(this.runtime,rawDispatch);this.runtime.dispatch=(id,params={})=>this.#journal.append(id,params);this.#provider=options.provider;this.#providerInfo=clone(options.providerInfo??{});this.#embeddingProvider=options.embeddingProvider;this.#aux=options.aux?clone(options.aux):{enabled:false,slots:{}};this.#preset=clone(options.preset);this.#persona=options.persona?clone(options.persona):null;this.#maxContext=options.maxContext;this.#card=clone(options.card);this.#stateOwnership=options.stateOwnership??'card';this.#lore=normalizeLoreEntries(options.loreEntries??[]);this.memory=options.memory??new MemoryLedger();this.#repository=options.repository;this.#historyWindow=Math.max(8,options.historyWindow??40);this.#tagTranslator=options.tagTranslator;this.#speakerExtractor=options.speakerExtractor;this.#regexScripts=clone(options.regexScripts??[]);this.#cbsVariables=clone(options.defaultVariables??{});const seed=parseInt(fnv1a(`${this.id}:${this.runtime.project.projectId}`),16)>>>0;this.#cardRuntimeJournal=new CardRuntimeJournal({variables:this.#cbsVariables,randomState:seed||1,logicalTimeMs:1_700_000_000_000});setActiveRenderContext(this.#regexScripts,this.#cbsVariables);}
- get messages(){return this.#messages.map((value)=>({...value,origin:value.origin??(value.role==='assistant'?'model':'user')}));}get turn(){return this.#turn;}get busy(){return this.#busy;}get regexScripts(){return clone(this.#regexScripts);}get cbsVariables(){return this.#cbsVariables;}get lastLogs(){return structuredClone(this.#lastLogs);}get promptRuns(){return clone(this.#promptRuns);}get narrativeIssues(){return structuredClone(this.#narrativeIssues);}get continuityPatches(){return this.#continuityPatches.all();}get rawLastSpeakers(){return structuredClone(this.#lastSpeakers);}get lastSpeakers(){return this.resolveSpeakers(this.#lastSpeakers);}resolveSpeakers(items:readonly SpeakerReference[]=[]){return resolveSpeakerList(this.runtime.project.schema,this.runtime.state,items);}#snapshotSpeakers(items:readonly SpeakerReference[]=[]):SpeakerReference[]{return this.resolveSpeakers(items).map(({npcId,emotion,outfit,focus})=>({npcId,...(emotion===undefined?{}:{emotion}),...(outfit===undefined?{}:{outfit}),...(focus?{focus:true}:{})}));}get checkpointDepth(){return this.#checkpoints.length;}get redoDepth(){return this.#redoStack.length;}get alternateCount(){const id=this.#lastModelResponseId();return id?this.responseAlternateCount(id):this.#alternates.length;}responseAlternateCount(messageId:string){const branch=this.#responseBranches.find(value=>value.messageId===messageId);return branch?Math.max(0,branch.variants.length-1):0;}responseAlternateIndex(messageId:string){return this.#responseBranches.find(value=>value.messageId===messageId)?.active??0;}canRerollResponse(messageId:string){const index=this.#messages.findIndex(message=>message.id===messageId),message=this.#messages[index];return!!message&&message.role==='assistant'&&message.origin==='model'&&index>0&&this.#messages[index-1]?.role==='user'&&this.#checkpoints.some(value=>value.messageCount===index-1);}get eventCount(){return this.#journal.length;}get eventCursor(){return this.#journal.cursor;}get journalSnapshotIndexes(){return this.#journal.snapshotIndexes;}get journal(){return this.#journal.toJSON();}stateAt(index:number){return this.#journal.stateAt(index);}async truncateTo(index:number){const head=this.#journal.truncateTo(index);this.#checkpoints=this.#checkpoints.filter(value=>value.journalCursor<=index);this.#redoStack=this.#redoStack.filter(value=>value.journalCursor<=index);this.#alternates=this.#alternates.filter(value=>(value.journalCursor??0)<=index);this.#responseBranches=this.#responseBranches.map(branch=>({...branch,variants:branch.variants.filter(value=>(value.journalCursor??0)<=index)})).filter(branch=>branch.variants.length).map(branch=>({...branch,active:Math.min(branch.active,branch.variants.length-1)}));reconcileMemorySources(this.memory,{messageIds:this.#messages.map(message=>message.id),eventIndexes:this.#journal.activeIndexes(),atTurn:this.#turn});await this.save();this.#notify();return head;}async dispatchEngineEvent(id:string,params:Record<string,unknown>={}){return this.runLedgerAction(id,params);}async approveMemory(id:string){this.memory.approve(id);await this.save();this.#notify();}async rejectMemory(id:string){this.memory.reject(id);await this.save();this.#notify();}async applyContinuityPatch(id:string){this.#continuityPatches.apply(id,this.memory,this.#turn);await this.save();this.#notify();}async rejectContinuityPatch(id:string){this.#continuityPatches.reject(id);await this.save();this.#notify();}
- get cardRuntimeRevision(){const card=this.#cardRuntimeJournal.state;return stableHash({turn:this.#turn,eventCursor:this.#journal.cursor,cardCursor:this.#cardRuntimeJournal.cursor,variables:this.#cbsVariables,randomState:card.randomState,logicalTimeMs:card.logicalTimeMs});}
- cardRuntimeSnapshot():CardRuntimeSnapshot{const card=this.#cardRuntimeJournal.state;return{sessionId:this.id,cardId:this.runtime.project.projectId,revision:this.cardRuntimeRevision,variables:clone(this.#cbsVariables),randomState:card.randomState,logicalTimeMs:card.logicalTimeMs,stateOwnership:this.#stateOwnership};}
- async applyCardRuntimeTransaction(response:RuntimeWorkerSuccess,expectedRequestId:string):Promise<{applied:true}|{applied:false;reason:string}>{
-  if(response.requestId!==expectedRequestId)return{applied:false,reason:'request_mismatch'};
-  if(response.sessionId!==this.id)return{applied:false,reason:'session_mismatch'};
-  if(response.cardId!==this.runtime.project.projectId)return{applied:false,reason:'card_mismatch'};
-  if(response.baseRevision!==this.cardRuntimeRevision)return{applied:false,reason:'revision_mismatch'};
-  if(response.effects.some(effect=>effect.disposition==='apply'))return{applied:false,reason:'effects_unclassified'};
-  if(this.#stateOwnership==='engine'&&response.patch.length)return{applied:false,reason:'engine_owned_state_write'};
-  const currentRuntime=this.#cardRuntimeJournal.state;if(!Number.isInteger(response.randomState)||response.randomState<0||response.randomState>0xffff_ffff)return{applied:false,reason:'invalid_random_state'};if(response.logicalTimeMs!==currentRuntime.logicalTimeMs+1_000)return{applied:false,reason:'invalid_logical_time'};
-  const next=clone(this.#cbsVariables);
-  for(const patch of response.patch){if(!safeRuntimeKey(patch.key))return{applied:false,reason:'unsafe_patch_key'};if(patch.op==='set'){if(typeof patch.value!=='string')return{applied:false,reason:'invalid_patch_value'};next[patch.key]=patch.value;}else if(patch.op==='delete')delete next[patch.key];else return{applied:false,reason:'invalid_patch_op'};}
-  const committed=this.#cardRuntimeJournal.append(response.requestId,response.patch,response.randomState,response.logicalTimeMs);this.#cbsVariables=committed.variables;setActiveRenderContext(this.#regexScripts,this.#cbsVariables);await this.save();this.#notify();return{applied:true};
- }
- // 설정 변경 시 세션을 재생성하면 현재 작업 이력이 갈라지므로 provider만 교체한다(감사 #11).
- setProvider(provider:ModelProvider,providerInfo?:PlaySessionOptions['providerInfo']){this.#provider=provider;if(providerInfo)this.#providerInfo=clone(providerInfo);}setPreset(preset:PromptPreset){this.#preset=clone(preset);}setRegexScripts(scripts:readonly RegexScript[]){this.#regexScripts=clone([...scripts]);setActiveRenderContext(this.#regexScripts,this.#cbsVariables);this.#notify();}setPersona(persona:Persona|null){this.#persona=persona?clone(persona):null;}setMaxContext(value?:number){this.#maxContext=value;}setEmbeddingProvider(provider?:EmbeddingProvider){this.#embeddingProvider=provider;}setAux(aux:AuxConfig){this.#aux=clone(aux);}
- async seedGreeting(text:string){if(this.#messages.length||!text.trim())return;this.#append('assistant',text.trim(),'greeting');await this.save();}
- async replaceGreeting(text:string){if(this.#messages.length!==1||this.#messages[0]?.role!=='assistant')throw new Error('greeting_locked');if(!text.trim())throw new Error('message_empty');this.#messages[0]={...this.#messages[0],content:text.trim()};this.#notify();await this.save();}
- async summarizeForMemory(text:string){const sourceText=text.trim();if(!sourceText)throw new Error('memory_summary_empty');const provider=auxProviderFor('memory',this.#aux,this.#provider),prompt:CompiledPrompt={messages:[{role:'system',content:'장기 기억으로 보존할 핵심 사실만 짧고 정확하게 요약한다.'},{role:'user',content:sourceText}],assistantPrefill:'',trace:[],warnings:[]},response=await provider.complete({prompt,format:'prose'}),summary=response.text.trim();if(!summary)throw new Error('memory_summary_empty');const id=`aux-memory:${this.#turn}:${++this.#auxSeq}`;this.memory.add(memoryRecord({id,text:summary,turn:this.#turn,status:'candidate',evidence:[{kind:'message',id:`aux-source:${this.#turn}`}] }));await this.save();return summary;}
- async translateMessage(id:string,target='한국어',retranslate=false){const index=this.#messages.findIndex(message=>message.id===id);if(index<0)throw new Error(`message_not_found:${id}`);const message=this.#messages[index]!;if(message.role!=='assistant')throw new Error('translation_assistant_only');if(message.translation&&!retranslate)return message.translation;const provider=auxProviderFor('translation',this.#aux,this.#provider),prompt:CompiledPrompt={messages:[{role:'system',content:`다음 채팅 응답을 자연스러운 ${target}로 번역한다. 설명이나 머리말 없이 번역문만 출력한다. HTML 태그, {{...}} 매크로, [ysp_...] 태그, 파일명과 에셋 식별자는 원문 그대로 보존한다.`},{role:'user',content:message.content}],assistantPrefill:'',trace:[],warnings:[]},response=await provider.complete({prompt,format:'prose'}),translation=response.text.trim();if(!translation)throw new Error('translation_empty');this.#messages[index]={...message,translation};await this.save();this.#notify();return translation;}
- async clearMessageTranslation(id:string){const index=this.#messages.findIndex(message=>message.id===id);if(index<0)throw new Error(`message_not_found:${id}`);const message=this.#messages[index]!;delete message.translation;await this.save();this.#notify();}
- // 편집·삭제 후 대안은 편집 전 본문을 되살릴 수 있으므로 폐기한다. 삭제 시 잘린 지점 이후를 담은 체크포인트도
- // 함께 버린다 — 남겨두면 되돌리기가 '지운 미래'를 부활시킨다(감사 #3).
- async editMessage(id:string,content:string){if(!content.trim())throw new Error('message_empty');const index=this.#messages.findIndex((message)=>message.id===id);if(index<0)throw new Error(`message_not_found:${id}`);const{translation:_,...previous}=this.#messages[index]!;this.#messages[index]={...previous,content};this.#alternates=[];this.#responseBranches=[];await this.save();this.#notify();}
- // 메시지 편집·삭제는 서사 기록만 바꾸며 엔진 상태와 근거 기억은 사건 경로 밖에서 변경하지 않는다.
- async removeMessage(id:string,cascade=false){const index=this.#messages.findIndex((message)=>message.id===id);if(index<0)throw new Error(`message_not_found:${id}`);if(cascade)this.#messages=this.#messages.slice(0,index);else this.#messages.splice(index,1);this.#messages=this.#messages.map((message,messageIndex)=>({...message,index:messageIndex}));this.#checkpoints=this.#checkpoints.filter((snapshot)=>snapshot.messageCount<=index);this.#alternates=[];const ids=new Set(this.#messages.map(message=>message.id));this.#responseBranches=this.#responseBranches.filter(branch=>ids.has(branch.messageId));reconcileMemorySources(this.memory,{messageIds:this.#messages.map(message=>message.id),eventIndexes:this.#journal.activeIndexes(),atTurn:this.#turn});await this.save();}
- async undoTurn(){const checkpoint=this.#checkpoints.at(-1);if(!checkpoint)throw new Error('no_checkpoint');this.#redoStack.push(this.#captureCheckpoint(true));this.#checkpoints.pop();this.#restoreCheckpoint(checkpoint);this.#alternates=[];await this.save();}
- async redoTurn(){const future=this.#redoStack.pop();if(!future)throw new Error('no_redo');this.#checkpoints.push(this.#captureCheckpoint());if(this.#checkpoints.length>30)this.#checkpoints.shift();this.#restoreCheckpoint(future);this.#alternates=[];await this.save();}
- async reroll(signal?:AbortSignal){const id=this.#lastModelResponseId();if(!id)throw new Error('no_checkpoint');return this.rerollResponse(id,signal);}
- async rerollResponse(messageId:string,signal?:AbortSignal){const index=this.#messages.findIndex(message=>message.id===messageId);if(!this.canRerollResponse(messageId)||index<1)throw new Error('no_checkpoint');const checkpoint=this.#checkpoints.find(value=>value.messageCount===index-1),input=this.#messages[index-1]?.content;if(!checkpoint||!input)throw new Error('no_checkpoint');let branch=this.#responseBranches.find(value=>value.messageId===messageId);if(!branch){branch={messageId,active:0,variants:[this.#captureResponseState(messageId)]};this.#responseBranches.push(branch);}this.#restoreCheckpoint(checkpoint);this.#checkpoints=this.#checkpoints.filter(value=>value.messageCount<=checkpoint.messageCount);this.#redoStack=[];this.#alternates=[];const result=await this.#send(input,signal,false),generated=this.#messages.at(-1);if(!generated||generated.role!=='assistant')throw new Error('reroll_response_missing');const current=this.#responseBranches.find(value=>value.messageId===messageId)??branch;current.variants=[...current.variants,this.#captureResponseState(generated.id)].slice(-10);current.active=current.variants.length-1;current.messageId=generated.id;const ids=new Set(this.#messages.map(message=>message.id));this.#responseBranches=this.#responseBranches.filter(value=>ids.has(value.messageId));this.#syncLegacyAlternates(current);await this.save();this.#notify();return result;}
- async showAlternate(index:number){const id=this.#lastModelResponseId();if(!id)throw new Error(`alternate_not_found:${index}`);return this.showResponseAlternate(id,index);}
- async showResponseAlternate(messageId:string,index:number){let branch=this.#responseBranches.find(value=>value.messageId===messageId);if(!branch&&messageId===this.#lastModelResponseId()&&this.#alternates.length){branch={messageId,active:this.#alternates.length,variants:[...clone(this.#alternates),this.#captureResponseState(messageId)]};this.#responseBranches.push(branch);}const alternate=branch?.variants[index];if(!branch||!alternate)throw new Error(`alternate_not_found:${index}`);this.#restoreAlternate(alternate);branch.active=index;const targetIndex=this.#messages.findIndex(message=>message.id===messageId);this.#checkpoints=this.#checkpoints.filter(value=>value.messageCount<=Math.max(0,targetIndex-1));this.#redoStack=[];const ids=new Set(this.#messages.map(message=>message.id));this.#responseBranches=this.#responseBranches.filter(value=>ids.has(value.messageId));this.#syncLegacyAlternates(branch);await this.save();this.#notify();}
- async send(content:string,signal?:AbortSignal){return this.#send(applyRegexScripts(content,this.#regexScripts,'input'),signal,true);}
- async continueGeneration(signal?:AbortSignal){return this.#send('Continue the last assistant response naturally without repeating it.',signal,true,false);}
- async runLedgerAction(id:string,params:Record<string,unknown>={}){if(this.#busy)throw new Error('session_busy');this.#busy=true;this.#notify();try{this.#pushCheckpoint();const result=this.runtime.dispatch(id,params),logs=clone(result.log as Record<string,unknown>[]);this.#lastLogs=logs;this.#lastSpeakers=[];this.#narrativeIssues=[];this.#recordEngineFacts(id,logs,this.#journal.cursor);for(const log of logs)if(log.ok)this.#ledgerDeltas.push(`${id}: ${JSON.stringify(log)}`);this.#append('assistant','장부에 반영되었습니다.','ledger',{facts:logs});this.#turn+=1;await this.save();return result;}finally{this.#busy=false;this.#notify();}}
- async runManagementTurn(id:string,params:Record<string,unknown>={},flavorText='',signal?:AbortSignal){return this.runManagementBatch([{id,params}],flavorText,signal);}
- async runManagementBatch(events:Array<{id:string;params?:Record<string,unknown>}>,flavorText='',signal?:AbortSignal){if(this.#busy)throw new Error('session_busy');if(!events.length)throw new Error('management_events_empty');this.#busy=true;this.#notify();const started=Date.now(),stateBefore=this.runtime.snapshot();try{this.#pushCheckpoint();const intent=applyRegexScripts(flavorText,this.#regexScripts,'input').trim();if(intent)this.#append('user',intent,'user');const logs:Record<string,unknown>[]=[],eventEvidence:MemoryEvidenceEvent[]=[];for(const event of events){const rows=this.runtime.dispatch(event.id,event.params??{}).log as Record<string,unknown>[],journalIndex=this.#journal.cursor;logs.push(...rows);this.#recordEngineFacts(event.id,rows,journalIndex);eventEvidence.push({id:event.id,index:journalIndex,ok:rows.some(row=>row.ok===true),summary:JSON.stringify(rows)});}this.#lastLogs=clone(logs);const prompt=this.#managementPrompt(events.map(event=>event.id),logs,intent),chips:MessageChip[]=[];let response:NarrativeResponse|undefined,text='관리 결과가 반영되었습니다.',proposed:ProposedEvent[]=[];try{response=await this.#provider.complete({prompt,format:'prose',purpose:'management',...(signal?{signal}:{})});if(!response||typeof response.text!=='string')throw new Error('model_response_invalid');const translated=this.#tagTranslator?.(response.text),translatedEvents=translated?.events??[];proposed=[...(response.events??[]),...translatedEvents];if(proposed.length)chips.push({ok:false,kind:'system',text:`서사화 사건 ${proposed.length}개 무시됨`});text=(translated?.residue??response.text).trim()||text;this.#lastSpeakers=clone(response.speakers?.length?response.speakers:(this.#speakerExtractor?.(text)??[]));}catch{chips.push({ok:false,kind:'system',text:'서사화 API 오류 · 엔진 결과 유지'});this.#lastSpeakers=[];}this.#narrativeIssues=verifyNarrative({narrative:text,evidenceTexts:[JSON.stringify(logs),JSON.stringify(this.runtime.state),intent],hasFailedProposedEvent:logs.some(log=>log.ok===false)}).issues;const assistant=this.#append('assistant',text,'engine',{facts:logs,chips,speakers:this.rawLastSpeakers}),continuity=this.#processContinuity(response??{text},assistant,intent?this.#messages.at(-2):undefined,eventEvidence);const inputTokens=response?.usage?.inputTokens??prompt.messages.reduce((sum,message)=>sum+estimateTokens(message.content),0),outputTokens=response?.usage?.outputTokens??estimateTokens(text),stateAfter=this.runtime.snapshot(),run:PromptRun={id:`run:${this.#turn}:${assistant.id}`,turn:this.#turn,kind:'management',createdAt:new Date().toISOString(),prompt:clone(prompt),promptHash:stableHash(prompt),responseText:text,proposedEvents:clone(proposed),logs:this.lastLogs,...continuity,stateBefore:clone(stateBefore),stateAfter,stateBeforeHash:stableHash(stateBefore),stateAfterHash:stableHash(stateAfter),issues:this.narrativeIssues,durationMs:Date.now()-started,inputTokens,outputTokens,tokensEstimated:response?.usage?.inputTokens===undefined||response.usage.outputTokens===undefined,...(this.#providerInfo.provider?{provider:this.#providerInfo.provider}:{}),...(response?.model??this.#providerInfo.model?{model:response?.model??this.#providerInfo.model}:{}),...(response?.finishReason?{finishReason:response.finishReason}:{}),...(response?.generationId?{generationId:response.generationId}:{})};this.#promptRuns=compactPromptRuns([...this.#promptRuns,run]);this.#ledgerDeltas=[];this.#turn+=1;await this.save();return{logs:this.lastLogs,response:{...response,text},prompt};}finally{this.#busy=false;this.#notify();}}
- async #send(content:string,signal:AbortSignal|undefined,checkpoint:boolean,appendUser=true){const text=content.trim();if(!text)throw new Error('message_empty');if(this.#busy)throw new Error('session_busy');this.#busy=true;const redoBefore=this.#redoStack.slice();try{if(checkpoint){this.#checkpoints.push(this.#captureCheckpoint());if(this.#checkpoints.length>30)this.#checkpoints.shift();this.#redoStack=[];this.#alternates=[];}if(appendUser)this.#append('user',text,'user');let prompt!:CompiledPrompt,response!:NarrativeResponse;const stateBefore=this.runtime.snapshot(),requestStarted=Date.now();
-  // 모델 호출 실패 시 user 메시지·체크포인트를 되감는다 — 방치하면 응답 없는 유저 메시지가
-  // 다음 턴 체크포인트에 정상인 양 굳는다(감사 #2). 응답 도착 이후의 실패는 여기 대상이 아니다.
-  // 카드 태그 번역기가 있는 리스 카드는 산문을 보존하고, SimPack만 구조화 JSON 계약을 사용한다.
-  try{prompt=await this.#compile(text,!appendUser,signal);response=await this.#provider.complete({prompt,format:this.#tagTranslator?'prose':'json',...(signal?{signal}:{})});if(!response||typeof response.text!=='string')throw new Error('model_response_invalid');}catch(error){if(appendUser){this.#messages.pop();this.#messageSeq-=1;}if(checkpoint){this.#checkpoints.pop();this.#redoStack=redoBefore;}throw error;}
-  this.#lastLogs=[];this.#lastSpeakers=structuredClone(response.speakers?.length?response.speakers:(this.#speakerExtractor?.(response.text)??[]));const eventEvidence:MemoryEvidenceEvent[]=[];
-  const record=(eventId:string,logs:Record<string,unknown>[])=>{const journalIndex=this.#journal.cursor;this.#lastLogs.push(...logs);this.#recordEngineFacts(eventId,logs,journalIndex);eventEvidence.push({id:eventId,index:journalIndex,ok:logs.some(log=>log.ok===true),summary:JSON.stringify(logs)});};
-  const allowed=new Set(this.runtime.allowedModelEventIds());for(const event of response.events??[]){if(!event||!this.runtime.registry.hasEvent(event.id)){this.#lastLogs.push({ok:false,event:String(event?.id??''),reason:'unregistered_model_event'});continue;}if(!allowed.has(event.id)){this.#lastLogs.push({ok:false,event:event.id,reason:'model_event_not_allowed'});continue;}record(event.id,this.runtime.dispatch(event.id,event.params??{}).log);}
-  const translated=this.#tagTranslator?.(response.text),assistantText=translated?.residue??response.text;for(const event of translated?.events??[]){if(BUTTON_ONLY_EVENTS.has(event.id)){this.#lastLogs.push({ok:false,event:event.id,reason:'card_tag_blocked'});continue;}if(!CARD_TAG_EVENTS.has(event.id)){this.#lastLogs.push({ok:false,event:event.id,reason:'card_tag_not_allowed'});continue;}if(!this.runtime.registry.hasEvent(event.id)){this.#lastLogs.push({ok:false,event:event.id,reason:'card_tag_unregistered'});continue;}record(event.id,this.runtime.dispatch(event.id,event.params).log);}
-  this.#narrativeIssues=verifyNarrative({narrative:assistantText,evidenceTexts:[JSON.stringify(this.#lastLogs),JSON.stringify(this.runtime.state),text],hasFailedProposedEvent:this.#lastLogs.some((log)=>log.ok===false)}).issues;
-  const assistant=this.#append('assistant',assistantText,'model',{speakers:this.rawLastSpeakers}),userMessage=appendUser?this.#messages.at(-2):undefined,continuity=this.#processContinuity(response,assistant,userMessage,eventEvidence);
-  const reportedUsage=response.usage,inputTokens=reportedUsage?.inputTokens??prompt.messages.reduce((sum,message)=>sum+estimateTokens(message.content),estimateTokens(prompt.assistantPrefill)),outputTokens=reportedUsage?.outputTokens??estimateTokens(assistantText),tokensEstimated=reportedUsage?.inputTokens===undefined||reportedUsage.outputTokens===undefined;
-  const stateAfter=this.runtime.snapshot(),run:PromptRun={id:`run:${this.#turn}:${assistant.id}`,turn:this.#turn,kind:!appendUser?'continue':checkpoint?'send':'reroll',createdAt:new Date().toISOString(),prompt:clone(prompt),promptHash:stableHash(prompt),responseText:assistantText,proposedEvents:clone(response.events??[]),logs:this.lastLogs,...continuity,stateBefore:clone(stateBefore),stateAfter,stateBeforeHash:stableHash(stateBefore),stateAfterHash:stableHash(stateAfter),issues:this.narrativeIssues,durationMs:Date.now()-requestStarted,inputTokens,outputTokens,tokensEstimated,...(this.#providerInfo.provider?{provider:this.#providerInfo.provider}:{}),...(response.model??this.#providerInfo.model?{model:response.model??this.#providerInfo.model}:{}),...(response.finishReason?{finishReason:response.finishReason}:{}),...(response.generationId?{generationId:response.generationId}:{})};this.#promptRuns=compactPromptRuns([...this.#promptRuns,run]);
-  this.#turn+=1;await this.save();return{response:{...response,text:assistantText},logs:this.lastLogs,prompt};}finally{this.#busy=false;}}
- async save(){if(!this.#repository)return;await this.#repository.put({id:this.id,schemaHash:this.runtime.project.projectId,title:this.#card.name,updatedAt:Date.now(),payload:this.snapshot()});}
- snapshot():SessionSnapshot{const patches=this.continuityPatches,base={contract:'simbot-play-session/0.1' as const,id:this.id,projectId:this.runtime.project.projectId,schemaFingerprint:runtimeSchemaFingerprint(this.runtime),turn:this.#turn,messages:this.messages,engine:this.runtime.snapshot(),memory:this.memory.all(),...(patches.length?{continuityPatches:patches}:{}),lastLogs:this.lastLogs,cbsVariables:clone(this.#cbsVariables),cardRuntimeJournal:this.#cardRuntimeJournal.toJSON(),lastSpeakers:this.rawLastSpeakers,journal:this.#journal.toJSON(),history:{undo:clone(this.#checkpoints),redo:clone(this.#redoStack)},bindings:{persona:clone(this.#persona),preset:clone(this.#preset)},...(this.#ledgerDeltas.length?{ledgerDeltas:clone(this.#ledgerDeltas)}:{}),...(this.#alternates.length?{alternates:clone(this.#alternates)}:{}),...(this.#responseBranches.length?{responseBranches:clone(this.#responseBranches)}:{}),...(this.#promptRuns.length?{promptRuns:clone(this.#promptRuns)}:{})};return{...base,integrity:sessionIntegrity(base)};}
- restore(value:SessionSnapshot){if(value.contract!=='simbot-play-session/0.1'||value.projectId!==this.runtime.project.projectId)throw new Error('session_snapshot_incompatible');
-  // 무결성 해시는 필수 — 해시 필드를 지우는 것만으로 변조 검증을 우회할 수 있으므로(감사 Critical)
-  // 누락도 거부한다. 프리릴리스 조이기: 현행 저장 경로는 전부 해시를 실으므로 하위호환 예외를 없앤다.
-  if(value.integrity!==sessionIntegrity(value))throw new Error('session_corrupt:integrity');
-  const currentFingerprint=runtimeSchemaFingerprint(this.runtime),compiled=!!this.runtime.project.schema._compiler;
-  if((value.schemaFingerprint&&value.schemaFingerprint!==currentFingerprint)||(compiled&&!value.schemaFingerprint))throw new Error('session_schema_incompatible');
-  const data=clone(value); // 프록시일 수 있는 입력을 여기서 한 번 평평하게 만든다(엔진·원장 내부 clone 보호).
-  if(data.journal){this.#journal.restore(data.journal);if(stableStringify(this.runtime.snapshot())!==stableStringify(data.engine))throw new Error('session_corrupt:journal_engine');}else{this.runtime.restore(data.engine);this.#journal.reset(data.engine);}this.#turn=data.turn;this.#messages=data.messages.map(message=>({...message,origin:message.origin??(message.role==='assistant'?'model':'user')}));this.#lastLogs=data.lastLogs;this.#lastSpeakers=clone(data.lastSpeakers??[]);this.#alternates=clone(data.alternates??[]);this.#responseBranches=clone(data.responseBranches??[]);this.#promptRuns=compactPromptRuns(clone(data.promptRuns??[]));this.#cbsVariables=clone(data.cbsVariables??{});if(data.cardRuntimeJournal){this.#cardRuntimeJournal.restore(data.cardRuntimeJournal);const cardState=this.#cardRuntimeJournal.state;if(stableStringify(cardState.variables)!==stableStringify(this.#cbsVariables))throw new Error('session_corrupt:card_runtime_variables');}else{const seed=parseInt(fnv1a(`${this.id}:${this.runtime.project.projectId}`),16)>>>0;this.#cardRuntimeJournal=new CardRuntimeJournal({variables:this.#cbsVariables,randomState:seed||1,logicalTimeMs:1_700_000_000_000});}this.#ledgerDeltas=clone(data.ledgerDeltas??[]);this.#checkpoints=clone(data.history?.undo??[]).slice(-30);this.#redoStack=clone(data.history?.redo??[]).slice(-30);if(data.bindings){this.#persona=clone(data.bindings.persona);this.#preset=clone(data.bindings.preset);}setActiveRenderContext(this.#regexScripts,this.#cbsVariables);this.memory.reset(data.memory);this.#continuityPatches.reset(data.continuityPatches??[]);this.#syncMessageSeq();const last=this.#lastModelResponseId();if(!this.#responseBranches.length&&this.#alternates.length&&last)this.#responseBranches=[{messageId:last,active:this.#alternates.length,variants:[...clone(this.#alternates),this.#captureResponseState(last)]}];this.#notify();}
- #captureCheckpoint(includeMessages=false):SessionCheckpoint{return{turn:this.#turn,messageCount:this.#messages.length,...(includeMessages?{messages:this.messages}:{}),memory:this.memory.all(),continuityPatches:this.continuityPatches,lastLogs:this.lastLogs,cbsVariables:clone(this.#cbsVariables),lastSpeakers:this.rawLastSpeakers,alternates:clone(this.#alternates),ledgerDeltas:clone(this.#ledgerDeltas),journalCursor:this.#journal.cursor,cardRuntimeCursor:this.#cardRuntimeJournal.cursor,bindings:{persona:clone(this.#persona),preset:clone(this.#preset)}};}
- #restoreCheckpoint(value:SessionCheckpoint){const messages=value.messages?clone(value.messages):this.#messages.slice(0,value.messageCount);this.#journal.moveTo(value.journalCursor);this.#turn=value.turn;this.#messages=messages;this.memory.reset(value.memory);this.#continuityPatches.reset(value.continuityPatches??[]);this.#lastLogs=clone(value.lastLogs);if(value.cardRuntimeCursor!==undefined){const card=this.#cardRuntimeJournal.moveTo(value.cardRuntimeCursor);if(stableStringify(card.variables)!==stableStringify(value.cbsVariables))throw new Error('card_runtime_checkpoint_diverged');this.#cbsVariables=card.variables;}else this.#cbsVariables=clone(value.cbsVariables);this.#lastSpeakers=clone(value.lastSpeakers);this.#alternates=clone(value.alternates);this.#ledgerDeltas=clone(value.ledgerDeltas??[]);this.#persona=clone(value.bindings.persona);this.#preset=clone(value.bindings.preset);setActiveRenderContext(this.#regexScripts,this.#cbsVariables);this.#syncMessageSeq();this.#notify();}
- #lastModelResponseId(){return[...this.#messages].reverse().find(message=>message.role==='assistant'&&message.origin==='model')?.id;}
- #captureResponseState(messageId:string):AlternateState{const index=this.#messages.findIndex(message=>message.id===messageId);if(index<0)throw new Error(`message_not_found:${messageId}`);const next=this.#checkpoints.find(value=>value.messageCount===index+1),atHead=index===this.#messages.length-1,turn=atHead?this.#turn:(next?.turn??this.#turn),journalCursor=atHead?this.#journal.cursor:(next?.journalCursor??this.#journal.cursor),cardRuntimeCursor=atHead?this.#cardRuntimeJournal.cursor:(next?.cardRuntimeCursor??this.#cardRuntimeJournal.cursor),messages=this.messages.slice(0,index+1),bindings=atHead?{persona:clone(this.#persona),preset:clone(this.#preset)}:clone(next?.bindings??{persona:this.#persona,preset:this.#preset});return{messages,engine:this.#journal.stateAt(journalCursor),logs:atHead?this.lastLogs:clone(next?.lastLogs??[]),memory:atHead?this.memory.all():clone(next?.memory??[]),continuityPatches:atHead?this.continuityPatches:clone(next?.continuityPatches??[]),speakers:atHead?this.rawLastSpeakers:clone(next?.lastSpeakers??[]),promptRuns:this.promptRuns.filter(run=>messages.some(message=>run.id.endsWith(`:${message.id}`))||run.turn<turn),ledgerDeltas:atHead?clone(this.#ledgerDeltas):clone(next?.ledgerDeltas??[]),journalCursor,cardRuntimeCursor,turn,cbsVariables:atHead?clone(this.#cbsVariables):clone(next?.cbsVariables??{}),bindings};}
- #restoreAlternate(value:AlternateState){this.#messages=clone(value.messages);this.#lastLogs=clone(value.logs);this.#lastSpeakers=clone(value.speakers);this.#promptRuns=compactPromptRuns(clone(value.promptRuns??[]));this.#ledgerDeltas=clone(value.ledgerDeltas??[]);if(value.journalCursor===undefined){this.runtime.restore(value.engine);this.#journal.reset(value.engine);}else{const engine=this.#journal.stateAt(value.journalCursor);if(stableStringify(engine)!==stableStringify(value.engine))throw new Error('session_corrupt:alternate_journal');this.#journal.moveTo(value.journalCursor);}this.#turn=value.turn??this.#turn;this.memory.reset(value.memory);this.#continuityPatches.reset(value.continuityPatches??[]);if(value.cardRuntimeCursor!==undefined){const card=this.#cardRuntimeJournal.moveTo(value.cardRuntimeCursor);if(value.cbsVariables&&stableStringify(card.variables)!==stableStringify(value.cbsVariables))throw new Error('session_corrupt:alternate_card_runtime');this.#cbsVariables=card.variables;}else this.#cbsVariables=clone(value.cbsVariables??this.#cbsVariables);if(value.bindings){this.#persona=clone(value.bindings.persona);this.#preset=clone(value.bindings.preset);}setActiveRenderContext(this.#regexScripts,this.#cbsVariables);this.#syncMessageSeq();}
- #syncLegacyAlternates(branch:ResponseBranchSet){this.#alternates=branch.variants.filter((_,index)=>index!==branch.active).map(value=>clone(value));}
- #pushCheckpoint(){this.#checkpoints.push(this.#captureCheckpoint());if(this.#checkpoints.length>30)this.#checkpoints.shift();this.#redoStack=[];this.#alternates=[];}
- #recordEngineFacts(eventId:string,logs:Record<string,unknown>[],journalIndex=this.#journal.cursor){for(const[index,log]of logs.entries())if(log.ok){const evidenceId=`${this.#turn}:${eventId}:${index}`;this.memory.replace(memoryRecord({id:`engine:${evidenceId}`,text:`${eventId} 결과: ${JSON.stringify(log)}`,turn:this.#turn,status:'approved',kind:'engine-fact',canonicalAnchors:[engineMemoryAnchor(eventId,log)],importance:5,lifecycle:{state:'active',timeScope:'current'},evidence:[{kind:'event',id:String(journalIndex)}],sourceEventIndexes:[journalIndex]}),this.#turn);
-  // 티어 통과는 장기 회상 앵커가 된다 — "N일차에 신뢰가 되었다"를 나중에 사람 말로 찾을 수 있게
-  // JSON 사실과 별도로 읽을 수 있는 기억을 남긴다. 같은 앵커의 옛 티어 기억은 replace가 폐기한다.
-  const tier=log.tierChanged as Record<string,Record<string,unknown>>|undefined;
-  if(tier?.to?.label){const target=String(log.target??''),name=this.resolveSpeakers([{npcId:target}])[0]?.name??target;this.memory.replace(memoryRecord({id:`tier:${evidenceId}`,text:`${name}와의 관계가 '${String(tier.to.label)}' 단계가 되었다${tier.from?.label?` (이전: ${String(tier.from.label)})`:''}`,turn:this.#turn,status:'approved',kind:'relation',entities:[target],canonicalAnchors:[`tier:${String(log.scale??'affinity')}:${target}`],importance:7,lifecycle:{state:'active',timeScope:'current'},evidence:[{kind:'event',id:String(journalIndex)}],sourceEventIndexes:[journalIndex]}),this.#turn);}}}
- #sceneId(){const state=this.runtime.state as Record<string,unknown>,core=state.core as Record<string,unknown>|undefined;return String(core?.location??state.location??state.sceneId??this.runtime.project.projectId);}
- #processContinuity(response:NarrativeResponse,assistant:ChatMessage,userMessage:ChatMessage|undefined,events:MemoryEvidenceEvent[]){const factReferenceVerdicts=validateFactReferences(response.factRefs,{hasState:true,...(userMessage?{userMessageId:userMessage.id}:{}),events}),memoryDecisions=ingestMemoryTurn(this.memory,{turn:this.#turn,sceneId:this.#sceneId(),...(userMessage?{userMessage:{id:userMessage.id,content:userMessage.content}}:{}),assistantMessage:{id:assistant.id,content:assistant.content},candidates:response.memories??[],events,userId:this.#persona?.id??'user'}),patch=this.#continuityPatches.propose(response.continuityPatch,this.#turn,this.memory.all().map(record=>record.id)),invalid=factReferenceVerdicts.filter(verdict=>!verdict.ok);if(invalid.length)assistant.chips=[...(assistant.chips??[]),{ok:false,kind:'memory',text:`근거 참조 ${invalid.length}건 검토 필요`}];return{memoryDecisions,factReferenceVerdicts,...(patch?{continuityPatchId:patch.id}:{})};}
- #managementPrompt(eventIds:string[],logs:Record<string,unknown>[],flavorText:string):CompiledPrompt{const history=flavorText&&this.#messages.at(-1)?.role==='user'&&this.#messages.at(-1)?.content===flavorText?this.#messages.slice(0,-1):this.#messages,recent=history.slice(-4).map(message=>({role:message.role,content:message.origin==='greeting'?stripPromptImageMarkup(message.content):message.content})),changes=this.#ledgerDeltas.length?`\n[직전 현장 장면 이후 장부 변화]\n${this.#ledgerDeltas.map(value=>`- ${value}`).join('\n')}`:'',persona=this.#persona?.prompt?.trim()?`\n플레이어 페르소나: ${this.#persona.name}\n${this.#persona.prompt}`:'',catalog=narrativeCatalog(this.runtime.project),npcGuide=[catalog.npcs.length?`[등장 가능한 NPC]\n${catalog.npcs.join('\n')}`:'',catalog.commands.length?`[유효 스프라이트 명령]\n${catalog.commands.join(', ')}`:''].filter(Boolean).join('\n'),context=`[이미 확정·반영된 엔진 결과]\n행동: ${eventIds.join(', ')}\n${JSON.stringify(logs)}${changes}\n\n[현재 엔진 상태]\n${JSON.stringify(this.runtime.state)}${flavorText?`\n\n플레이어의 연출 의도: ${flavorText}`:''}`;return{messages:[{role:'system',content:`${this.#card.name}의 관리 결과를 한국어 250자 안팎의 자연스러운 장면으로 서사화한다.${persona}\n엔진 결과의 수치와 성공·실패를 그대로 따른다. 결과를 바꾸거나 새 사건·날짜 진행·거래·재고 변화를 만들지 않는다. JSON 사건을 제안하지 말고 이야기만 쓴다. 이전 메시지의 이미지 태그를 현재 장면의 화자 근거 없이 복사하지 않는다.${npcGuide?`\n${npcGuide}\n등장인물 이미지를 쓸 때는 위 NPC와 스프라이트 명령만 사용한다.`:''}`},...recent,{role:'user',content:context}],assistantPrefill:'',trace:[],warnings:[]};}
- #syncMessageSeq(){this.#messageSeq=this.#messages.reduce((max,message)=>Math.max(max,Number(message.id.match(/^m(\d+)$/)?.[1]??0)),0);}
- #storedSpeakers(items:readonly SpeakerReference[]){const explicitFocus=items.some(item=>item.focus===true);return this.#snapshotSpeakers(items).map(({npcId,emotion,outfit,focus})=>({npcId,...(emotion===undefined?{}:{emotion}),...(outfit===undefined?{}:{outfit}),...(explicitFocus&&focus?{focus:true}:{})}));}
- #append(role:'user'|'assistant',content:string,origin:ChatMessage['origin']=role==='assistant'?'model':'user',extra:Pick<ChatMessage,'facts'|'chips'|'speakers'>={}){const normalized=role==='assistant'&&extra.speakers?{...extra,speakers:this.#storedSpeakers(extra.speakers)}:extra,message={id:`m${++this.#messageSeq}`,index:this.#messages.length,role,content,createdAt:new Date().toISOString(),origin,...normalized};this.#messages.push(message);this.#notify();return message;}
- async #compile(query:string,continuation=false,signal?:AbortSignal){const retrieval=await planGroundedMemory(this.memory,query,{atTurn:this.#turn,provider:this.#embeddingProvider,viewer:{userId:this.#persona?.id??'user'},sceneId:this.#sceneId(),limit:8,budgetTokens:1000,perKindQuota:3,signal}),memory=retrieval.records.map((value)=>`- ${value.text} [${value.evidence.map((item)=>`${item.kind}:${item.id}`).join(', ')}]`).join('\n');let chat=this.#messages.slice(-this.#historyWindow).map(({role,content,origin})=>({role,content:origin==='greeting'?stripPromptImageMarkup(content):content}));if(continuation)chat.push({role:'user' as const,content:query});/* maxContext는 한·영 가중 근사 토큰 예산이다. 최신 대화는 항상 남기고 오래된 메시지부터 제거한다. */if(this.#maxContext&&this.#maxContext>0)while(chat.length>1&&chat.reduce((sum,message)=>sum+estimateTokens(message.content),0)>this.#maxContext)chat.shift();const lore=activateLore(this.#lore,chat,{seed:this.runtime.snapshot().rng,turn:this.#turn}).entries.map(({content,name})=>({content,name}));return compilePrompt({preset:this.#preset,activeModules:activeModules(this.runtime.project),persona:this.#persona,card:this.#card,lore:{entries:lore},chat,memory,engineContext:{facts:`다음 JSON은 엔진이 소유한 현재 사실이다. 서사로 수치를 바꾸지 말고 이벤트 결과만 따른다.\n${JSON.stringify(this.runtime.state)}`,availableActions:`제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(', ')||'(없음)'}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.`,groundedMemory:retrieval.abstained?'관련 근거가 부족하므로 과거 사실을 추측하지 않는다.':memory}});}
+export class PlaySession {
+  readonly id: string;
+  readonly runtime: ProjectRuntime;
+  readonly memory: MemoryLedger;
+  #provider: ModelProvider;
+  #providerInfo: NonNullable<PlaySessionOptions["providerInfo"]>;
+  #embeddingProvider: EmbeddingProvider | undefined;
+  #preset: PromptPreset;
+  #persona: Persona | null;
+  #maxContext: number | undefined;
+  readonly #card: PlaySessionOptions["card"];
+  readonly #stateOwnership: CardStateOwnership;
+  readonly #lore: LoreEntry[];
+  readonly #repository: SessionRepository<SessionSnapshot> | undefined;
+  readonly #historyWindow: number;
+  readonly #tagTranslator: PlaySessionOptions["tagTranslator"];
+  readonly #speakerExtractor: PlaySessionOptions["speakerExtractor"];
+  #messages: ChatMessage[] = [];
+  #turn = 0;
+  #lastLogs: Record<string, unknown>[] = [];
+  #lastSpeakers: SpeakerReference[] = [];
+  #busy = false;
+  #messageSeq = 0;
+  #auxSeq = 0;
+  #aux: AuxConfig = { enabled: false, slots: {} };
+  #checkpoints: SessionCheckpoint[] = [];
+  #redoStack: SessionCheckpoint[] = [];
+  #alternates: AlternateState[] = [];
+  #responseBranches: ResponseBranchSet[] = [];
+  #promptRuns: PromptRun[] = [];
+  #narrativeIssues: NarrativeIssue[] = [];
+  #ledgerDeltas: string[] = [];
+  #listeners = new Set<() => void>();
+  #regexScripts: RegexScript[];
+  #cbsVariables: Record<string, string>;
+  #journal: SessionJournal;
+  #cardRuntimeJournal: CardRuntimeJournal;
+  #continuityPatches = new ContinuityPatchLedger();
+  // 리스처럼 사용자 입력은 즉시 화면에 올라가야 한다 — UI가 응답을 기다리지 않고 갱신하도록 변경을 알린다.
+  subscribe(listener: () => void) {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+  #engineStateForPrompt() {
+    return { ...this.runtime.state, moduleFacts: this.runtime.promptFacts() };
+  }
+  #notify() {
+    for (const listener of this.#listeners) listener();
+  }
+  constructor(options: PlaySessionOptions) {
+    this.id = options.id;
+    this.runtime = options.runtime;
+    const rawDispatch = this.runtime.dispatch.bind(this.runtime);
+    this.#journal = new SessionJournal(this.runtime, rawDispatch);
+    this.runtime.dispatch = (id, params = {}) =>
+      this.#journal.append(id, params);
+    this.#provider = options.provider;
+    this.#providerInfo = clone(options.providerInfo ?? {});
+    this.#embeddingProvider = options.embeddingProvider;
+    this.#aux = options.aux
+      ? clone(options.aux)
+      : { enabled: false, slots: {} };
+    this.#preset = clone(options.preset);
+    this.#persona = options.persona ? clone(options.persona) : null;
+    this.#maxContext = options.maxContext;
+    this.#card = clone(options.card);
+    this.#stateOwnership = options.stateOwnership ?? "card";
+    this.#lore = normalizeLoreEntries(options.loreEntries ?? []);
+    this.memory = options.memory ?? new MemoryLedger();
+    this.#repository = options.repository;
+    this.#historyWindow = Math.max(8, options.historyWindow ?? 40);
+    this.#tagTranslator = options.tagTranslator;
+    this.#speakerExtractor = options.speakerExtractor;
+    this.#regexScripts = clone(options.regexScripts ?? []);
+    this.#cbsVariables = clone(options.defaultVariables ?? {});
+    const seed =
+      parseInt(fnv1a(`${this.id}:${this.runtime.project.projectId}`), 16) >>> 0;
+    this.#cardRuntimeJournal = new CardRuntimeJournal({
+      variables: this.#cbsVariables,
+      randomState: seed || 1,
+      logicalTimeMs: 1_700_000_000_000,
+    });
+    setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
+  }
+  get messages() {
+    return this.#messages.map((value) => ({
+      ...value,
+      origin: value.origin ?? (value.role === "assistant" ? "model" : "user"),
+    }));
+  }
+  get turn() {
+    return this.#turn;
+  }
+  get busy() {
+    return this.#busy;
+  }
+  get regexScripts() {
+    return clone(this.#regexScripts);
+  }
+  get cbsVariables() {
+    return this.#cbsVariables;
+  }
+  get lastLogs() {
+    return structuredClone(this.#lastLogs);
+  }
+  get promptRuns() {
+    return clone(this.#promptRuns);
+  }
+  get narrativeIssues() {
+    return structuredClone(this.#narrativeIssues);
+  }
+  get continuityPatches() {
+    return this.#continuityPatches.all();
+  }
+  get rawLastSpeakers() {
+    return structuredClone(this.#lastSpeakers);
+  }
+  get lastSpeakers() {
+    return this.resolveSpeakers(this.#lastSpeakers);
+  }
+  resolveSpeakers(items: readonly SpeakerReference[] = []) {
+    return resolveSpeakerList(
+      this.runtime.project.schema,
+      this.runtime.state,
+      items,
+    );
+  }
+  #snapshotSpeakers(
+    items: readonly SpeakerReference[] = [],
+  ): SpeakerReference[] {
+    return this.resolveSpeakers(items).map(
+      ({ npcId, emotion, outfit, focus }) => ({
+        npcId,
+        ...(emotion === undefined ? {} : { emotion }),
+        ...(outfit === undefined ? {} : { outfit }),
+        ...(focus ? { focus: true } : {}),
+      }),
+    );
+  }
+  get checkpointDepth() {
+    return this.#checkpoints.length;
+  }
+  get redoDepth() {
+    return this.#redoStack.length;
+  }
+  get alternateCount() {
+    const id = this.#lastModelResponseId();
+    return id ? this.responseAlternateCount(id) : this.#alternates.length;
+  }
+  responseAlternateCount(messageId: string) {
+    const branch = this.#responseBranches.find(
+      (value) => value.messageId === messageId,
+    );
+    return branch ? Math.max(0, branch.variants.length - 1) : 0;
+  }
+  responseAlternateIndex(messageId: string) {
+    return (
+      this.#responseBranches.find((value) => value.messageId === messageId)
+        ?.active ?? 0
+    );
+  }
+  canRerollResponse(messageId: string) {
+    const index = this.#messages.findIndex(
+        (message) => message.id === messageId,
+      ),
+      message = this.#messages[index];
+    return (
+      !!message &&
+      message.role === "assistant" &&
+      message.origin === "model" &&
+      index > 0 &&
+      this.#messages[index - 1]?.role === "user" &&
+      this.#checkpoints.some((value) => value.messageCount === index - 1)
+    );
+  }
+  get eventCount() {
+    return this.#journal.length;
+  }
+  get eventCursor() {
+    return this.#journal.cursor;
+  }
+  get journalSnapshotIndexes() {
+    return this.#journal.snapshotIndexes;
+  }
+  get journal() {
+    return this.#journal.toJSON();
+  }
+  stateAt(index: number) {
+    return this.#journal.stateAt(index);
+  }
+  async truncateTo(index: number) {
+    const head = this.#journal.truncateTo(index);
+    this.#checkpoints = this.#checkpoints.filter(
+      (value) => value.journalCursor <= index,
+    );
+    this.#redoStack = this.#redoStack.filter(
+      (value) => value.journalCursor <= index,
+    );
+    this.#alternates = this.#alternates.filter(
+      (value) => (value.journalCursor ?? 0) <= index,
+    );
+    this.#responseBranches = this.#responseBranches
+      .map((branch) => ({
+        ...branch,
+        variants: branch.variants.filter(
+          (value) => (value.journalCursor ?? 0) <= index,
+        ),
+      }))
+      .filter((branch) => branch.variants.length)
+      .map((branch) => ({
+        ...branch,
+        active: Math.min(branch.active, branch.variants.length - 1),
+      }));
+    reconcileMemorySources(this.memory, {
+      messageIds: this.#messages.map((message) => message.id),
+      eventIndexes: this.#journal.activeIndexes(),
+      atTurn: this.#turn,
+    });
+    await this.save();
+    this.#notify();
+    return head;
+  }
+  async dispatchEngineEvent(id: string, params: Record<string, unknown> = {}) {
+    return this.runLedgerAction(id, params);
+  }
+  async approveMemory(id: string) {
+    this.memory.approve(id);
+    await this.save();
+    this.#notify();
+  }
+  async rejectMemory(id: string) {
+    this.memory.reject(id);
+    await this.save();
+    this.#notify();
+  }
+  async applyContinuityPatch(id: string) {
+    this.#continuityPatches.apply(id, this.memory, this.#turn);
+    await this.save();
+    this.#notify();
+  }
+  async rejectContinuityPatch(id: string) {
+    this.#continuityPatches.reject(id);
+    await this.save();
+    this.#notify();
+  }
+  get cardRuntimeRevision() {
+    const card = this.#cardRuntimeJournal.state;
+    return stableHash({
+      turn: this.#turn,
+      eventCursor: this.#journal.cursor,
+      cardCursor: this.#cardRuntimeJournal.cursor,
+      variables: this.#cbsVariables,
+      randomState: card.randomState,
+      logicalTimeMs: card.logicalTimeMs,
+    });
+  }
+  cardRuntimeSnapshot(): CardRuntimeSnapshot {
+    const card = this.#cardRuntimeJournal.state;
+    return {
+      sessionId: this.id,
+      cardId: this.runtime.project.projectId,
+      revision: this.cardRuntimeRevision,
+      variables: clone(this.#cbsVariables),
+      randomState: card.randomState,
+      logicalTimeMs: card.logicalTimeMs,
+      stateOwnership: this.#stateOwnership,
+    };
+  }
+  async applyCardRuntimeTransaction(
+    response: RuntimeWorkerSuccess,
+    expectedRequestId: string,
+  ): Promise<{ applied: true } | { applied: false; reason: string }> {
+    if (response.requestId !== expectedRequestId)
+      return { applied: false, reason: "request_mismatch" };
+    if (response.sessionId !== this.id)
+      return { applied: false, reason: "session_mismatch" };
+    if (response.cardId !== this.runtime.project.projectId)
+      return { applied: false, reason: "card_mismatch" };
+    if (response.baseRevision !== this.cardRuntimeRevision)
+      return { applied: false, reason: "revision_mismatch" };
+    if (response.effects.some((effect) => effect.disposition === "apply"))
+      return { applied: false, reason: "effects_unclassified" };
+    if (this.#stateOwnership === "engine" && response.patch.length)
+      return { applied: false, reason: "engine_owned_state_write" };
+    const currentRuntime = this.#cardRuntimeJournal.state;
+    if (
+      !Number.isInteger(response.randomState) ||
+      response.randomState < 0 ||
+      response.randomState > 0xffff_ffff
+    )
+      return { applied: false, reason: "invalid_random_state" };
+    if (response.logicalTimeMs !== currentRuntime.logicalTimeMs + 1_000)
+      return { applied: false, reason: "invalid_logical_time" };
+    const next = clone(this.#cbsVariables);
+    for (const patch of response.patch) {
+      if (!safeRuntimeKey(patch.key))
+        return { applied: false, reason: "unsafe_patch_key" };
+      if (patch.op === "set") {
+        if (typeof patch.value !== "string")
+          return { applied: false, reason: "invalid_patch_value" };
+        next[patch.key] = patch.value;
+      } else if (patch.op === "delete") delete next[patch.key];
+      else return { applied: false, reason: "invalid_patch_op" };
+    }
+    const committed = this.#cardRuntimeJournal.append(
+      response.requestId,
+      response.patch,
+      response.randomState,
+      response.logicalTimeMs,
+    );
+    this.#cbsVariables = committed.variables;
+    setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
+    await this.save();
+    this.#notify();
+    return { applied: true };
+  }
+  // 설정 변경 시 세션을 재생성하면 현재 작업 이력이 갈라지므로 provider만 교체한다(감사 #11).
+  setProvider(
+    provider: ModelProvider,
+    providerInfo?: PlaySessionOptions["providerInfo"],
+  ) {
+    this.#provider = provider;
+    if (providerInfo) this.#providerInfo = clone(providerInfo);
+  }
+  setPreset(preset: PromptPreset) {
+    this.#preset = clone(preset);
+  }
+  setRegexScripts(scripts: readonly RegexScript[]) {
+    this.#regexScripts = clone([...scripts]);
+    setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
+    this.#notify();
+  }
+  setPersona(persona: Persona | null) {
+    this.#persona = persona ? clone(persona) : null;
+  }
+  setMaxContext(value?: number) {
+    this.#maxContext = value;
+  }
+  setEmbeddingProvider(provider?: EmbeddingProvider) {
+    this.#embeddingProvider = provider;
+  }
+  setAux(aux: AuxConfig) {
+    this.#aux = clone(aux);
+  }
+  async seedGreeting(text: string) {
+    if (this.#messages.length || !text.trim()) return;
+    this.#append("assistant", text.trim(), "greeting");
+    await this.save();
+  }
+  async replaceGreeting(text: string) {
+    if (this.#messages.length !== 1 || this.#messages[0]?.role !== "assistant")
+      throw new Error("greeting_locked");
+    if (!text.trim()) throw new Error("message_empty");
+    this.#messages[0] = { ...this.#messages[0], content: text.trim() };
+    this.#notify();
+    await this.save();
+  }
+  async summarizeForMemory(text: string) {
+    const sourceText = text.trim();
+    if (!sourceText) throw new Error("memory_summary_empty");
+    const provider = auxProviderFor("memory", this.#aux, this.#provider),
+      prompt: CompiledPrompt = {
+        messages: [
+          {
+            role: "system",
+            content: "장기 기억으로 보존할 핵심 사실만 짧고 정확하게 요약한다.",
+          },
+          { role: "user", content: sourceText },
+        ],
+        assistantPrefill: "",
+        trace: [],
+        warnings: [],
+      },
+      response = await provider.complete({ prompt, format: "prose" }),
+      summary = response.text.trim();
+    if (!summary) throw new Error("memory_summary_empty");
+    const id = `aux-memory:${this.#turn}:${++this.#auxSeq}`;
+    this.memory.add(
+      memoryRecord({
+        id,
+        text: summary,
+        turn: this.#turn,
+        status: "candidate",
+        evidence: [{ kind: "message", id: `aux-source:${this.#turn}` }],
+      }),
+    );
+    await this.save();
+    return summary;
+  }
+  async translateMessage(id: string, target = "한국어", retranslate = false) {
+    const index = this.#messages.findIndex((message) => message.id === id);
+    if (index < 0) throw new Error(`message_not_found:${id}`);
+    const message = this.#messages[index]!;
+    if (message.role !== "assistant")
+      throw new Error("translation_assistant_only");
+    if (message.translation && !retranslate) return message.translation;
+    const provider = auxProviderFor("translation", this.#aux, this.#provider),
+      prompt: CompiledPrompt = {
+        messages: [
+          {
+            role: "system",
+            content: `다음 채팅 응답을 자연스러운 ${target}로 번역한다. 설명이나 머리말 없이 번역문만 출력한다. HTML 태그, {{...}} 매크로, [ysp_...] 태그, 파일명과 에셋 식별자는 원문 그대로 보존한다.`,
+          },
+          { role: "user", content: message.content },
+        ],
+        assistantPrefill: "",
+        trace: [],
+        warnings: [],
+      },
+      response = await provider.complete({ prompt, format: "prose" }),
+      translation = response.text.trim();
+    if (!translation) throw new Error("translation_empty");
+    this.#messages[index] = { ...message, translation };
+    await this.save();
+    this.#notify();
+    return translation;
+  }
+  async clearMessageTranslation(id: string) {
+    const index = this.#messages.findIndex((message) => message.id === id);
+    if (index < 0) throw new Error(`message_not_found:${id}`);
+    const message = this.#messages[index]!;
+    delete message.translation;
+    await this.save();
+    this.#notify();
+  }
+  // 편집·삭제 후 대안은 편집 전 본문을 되살릴 수 있으므로 폐기한다. 삭제 시 잘린 지점 이후를 담은 체크포인트도
+  // 함께 버린다 — 남겨두면 되돌리기가 '지운 미래'를 부활시킨다(감사 #3).
+  async editMessage(id: string, content: string) {
+    if (!content.trim()) throw new Error("message_empty");
+    const index = this.#messages.findIndex((message) => message.id === id);
+    if (index < 0) throw new Error(`message_not_found:${id}`);
+    const { translation: _, ...previous } = this.#messages[index]!;
+    this.#messages[index] = { ...previous, content };
+    this.#alternates = [];
+    this.#responseBranches = [];
+    await this.save();
+    this.#notify();
+  }
+  // 메시지 편집·삭제는 서사 기록만 바꾸며 엔진 상태와 근거 기억은 사건 경로 밖에서 변경하지 않는다.
+  async removeMessage(id: string, cascade = false) {
+    const index = this.#messages.findIndex((message) => message.id === id);
+    if (index < 0) throw new Error(`message_not_found:${id}`);
+    if (cascade) this.#messages = this.#messages.slice(0, index);
+    else this.#messages.splice(index, 1);
+    this.#messages = this.#messages.map((message, messageIndex) => ({
+      ...message,
+      index: messageIndex,
+    }));
+    this.#checkpoints = this.#checkpoints.filter(
+      (snapshot) => snapshot.messageCount <= index,
+    );
+    this.#alternates = [];
+    const ids = new Set(this.#messages.map((message) => message.id));
+    this.#responseBranches = this.#responseBranches.filter((branch) =>
+      ids.has(branch.messageId),
+    );
+    reconcileMemorySources(this.memory, {
+      messageIds: this.#messages.map((message) => message.id),
+      eventIndexes: this.#journal.activeIndexes(),
+      atTurn: this.#turn,
+    });
+    await this.save();
+  }
+  async undoTurn() {
+    const checkpoint = this.#checkpoints.at(-1);
+    if (!checkpoint) throw new Error("no_checkpoint");
+    this.#redoStack.push(this.#captureCheckpoint(true));
+    this.#checkpoints.pop();
+    this.#restoreCheckpoint(checkpoint);
+    this.#alternates = [];
+    await this.save();
+  }
+  async redoTurn() {
+    const future = this.#redoStack.pop();
+    if (!future) throw new Error("no_redo");
+    this.#checkpoints.push(this.#captureCheckpoint());
+    if (this.#checkpoints.length > 30) this.#checkpoints.shift();
+    this.#restoreCheckpoint(future);
+    this.#alternates = [];
+    await this.save();
+  }
+  async reroll(signal?: AbortSignal) {
+    const id = this.#lastModelResponseId();
+    if (!id) throw new Error("no_checkpoint");
+    return this.rerollResponse(id, signal);
+  }
+  async rerollResponse(messageId: string, signal?: AbortSignal) {
+    const index = this.#messages.findIndex(
+      (message) => message.id === messageId,
+    );
+    if (!this.canRerollResponse(messageId) || index < 1)
+      throw new Error("no_checkpoint");
+    const checkpoint = this.#checkpoints.find(
+        (value) => value.messageCount === index - 1,
+      ),
+      input = this.#messages[index - 1]?.content;
+    if (!checkpoint || !input) throw new Error("no_checkpoint");
+    let branch = this.#responseBranches.find(
+      (value) => value.messageId === messageId,
+    );
+    if (!branch) {
+      branch = {
+        messageId,
+        active: 0,
+        variants: [this.#captureResponseState(messageId)],
+      };
+      this.#responseBranches.push(branch);
+    }
+    this.#restoreCheckpoint(checkpoint);
+    this.#checkpoints = this.#checkpoints.filter(
+      (value) => value.messageCount <= checkpoint.messageCount,
+    );
+    this.#redoStack = [];
+    this.#alternates = [];
+    const result = await this.#send(input, signal, false),
+      generated = this.#messages.at(-1);
+    if (!generated || generated.role !== "assistant")
+      throw new Error("reroll_response_missing");
+    const current =
+      this.#responseBranches.find((value) => value.messageId === messageId) ??
+      branch;
+    current.variants = [
+      ...current.variants,
+      this.#captureResponseState(generated.id),
+    ].slice(-10);
+    current.active = current.variants.length - 1;
+    current.messageId = generated.id;
+    const ids = new Set(this.#messages.map((message) => message.id));
+    this.#responseBranches = this.#responseBranches.filter((value) =>
+      ids.has(value.messageId),
+    );
+    this.#syncLegacyAlternates(current);
+    await this.save();
+    this.#notify();
+    return result;
+  }
+  async showAlternate(index: number) {
+    const id = this.#lastModelResponseId();
+    if (!id) throw new Error(`alternate_not_found:${index}`);
+    return this.showResponseAlternate(id, index);
+  }
+  async showResponseAlternate(messageId: string, index: number) {
+    let branch = this.#responseBranches.find(
+      (value) => value.messageId === messageId,
+    );
+    if (
+      !branch &&
+      messageId === this.#lastModelResponseId() &&
+      this.#alternates.length
+    ) {
+      branch = {
+        messageId,
+        active: this.#alternates.length,
+        variants: [
+          ...clone(this.#alternates),
+          this.#captureResponseState(messageId),
+        ],
+      };
+      this.#responseBranches.push(branch);
+    }
+    const alternate = branch?.variants[index];
+    if (!branch || !alternate) throw new Error(`alternate_not_found:${index}`);
+    this.#restoreAlternate(alternate);
+    branch.active = index;
+    const targetIndex = this.#messages.findIndex(
+      (message) => message.id === messageId,
+    );
+    this.#checkpoints = this.#checkpoints.filter(
+      (value) => value.messageCount <= Math.max(0, targetIndex - 1),
+    );
+    this.#redoStack = [];
+    const ids = new Set(this.#messages.map((message) => message.id));
+    this.#responseBranches = this.#responseBranches.filter((value) =>
+      ids.has(value.messageId),
+    );
+    this.#syncLegacyAlternates(branch);
+    await this.save();
+    this.#notify();
+  }
+  async send(content: string, signal?: AbortSignal) {
+    return this.#send(
+      applyRegexScripts(content, this.#regexScripts, "input"),
+      signal,
+      true,
+    );
+  }
+  async continueGeneration(signal?: AbortSignal) {
+    return this.#send(
+      "Continue the last assistant response naturally without repeating it.",
+      signal,
+      true,
+      false,
+    );
+  }
+  async runLedgerAction(id: string, params: Record<string, unknown> = {}) {
+    if (this.#busy) throw new Error("session_busy");
+    this.#busy = true;
+    this.#notify();
+    try {
+      this.#pushCheckpoint();
+      const result = this.runtime.dispatch(id, params),
+        logs = clone(result.log as Record<string, unknown>[]);
+      this.#lastLogs = logs;
+      this.#lastSpeakers = [];
+      this.#narrativeIssues = [];
+      this.#recordEngineFacts(id, logs, this.#journal.cursor);
+      for (const log of logs)
+        if (log.ok) this.#ledgerDeltas.push(`${id}: ${JSON.stringify(log)}`);
+      this.#append("assistant", "장부에 반영되었습니다.", "ledger", {
+        facts: logs,
+      });
+      this.#turn += 1;
+      await this.save();
+      return result;
+    } finally {
+      this.#busy = false;
+      this.#notify();
+    }
+  }
+  async runManagementTurn(
+    id: string,
+    params: Record<string, unknown> = {},
+    flavorText = "",
+    signal?: AbortSignal,
+  ) {
+    return this.runManagementBatch([{ id, params }], flavorText, signal);
+  }
+  async runManagementBatch(
+    events: Array<{ id: string; params?: Record<string, unknown> }>,
+    flavorText = "",
+    signal?: AbortSignal,
+  ) {
+    if (this.#busy) throw new Error("session_busy");
+    if (!events.length) throw new Error("management_events_empty");
+    this.#busy = true;
+    this.#notify();
+    const started = Date.now(),
+      stateBefore = this.runtime.snapshot();
+    try {
+      this.#pushCheckpoint();
+      const intent = applyRegexScripts(
+        flavorText,
+        this.#regexScripts,
+        "input",
+      ).trim();
+      if (intent) this.#append("user", intent, "user");
+      const logs: Record<string, unknown>[] = [],
+        eventEvidence: MemoryEvidenceEvent[] = [];
+      for (const event of events) {
+        const rows = this.runtime.dispatch(event.id, event.params ?? {})
+            .log as Record<string, unknown>[],
+          journalIndex = this.#journal.cursor;
+        logs.push(...rows);
+        this.#recordEngineFacts(event.id, rows, journalIndex);
+        eventEvidence.push({
+          id: event.id,
+          index: journalIndex,
+          ok: rows.some((row) => row.ok === true),
+          summary: JSON.stringify(rows),
+        });
+      }
+      this.#lastLogs = clone(logs);
+      const prompt = this.#managementPrompt(
+          events.map((event) => event.id),
+          logs,
+          intent,
+        ),
+        chips: MessageChip[] = [];
+      let response: NarrativeResponse | undefined,
+        text = "관리 결과가 반영되었습니다.",
+        proposed: ProposedEvent[] = [];
+      try {
+        response = await this.#provider.complete({
+          prompt,
+          format: "prose",
+          purpose: "management",
+          ...(signal ? { signal } : {}),
+        });
+        if (!response || typeof response.text !== "string")
+          throw new Error("model_response_invalid");
+        const translated = this.#tagTranslator?.(response.text),
+          translatedEvents = translated?.events ?? [];
+        proposed = [...(response.events ?? []), ...translatedEvents];
+        if (proposed.length)
+          chips.push({
+            ok: false,
+            kind: "system",
+            text: `서사화 사건 ${proposed.length}개 무시됨`,
+          });
+        text = (translated?.residue ?? response.text).trim() || text;
+        this.#lastSpeakers = clone(
+          response.speakers?.length
+            ? response.speakers
+            : (this.#speakerExtractor?.(text) ?? []),
+        );
+      } catch {
+        chips.push({
+          ok: false,
+          kind: "system",
+          text: "서사화 API 오류 · 엔진 결과 유지",
+        });
+        this.#lastSpeakers = [];
+      }
+      this.#narrativeIssues = verifyNarrative({
+        narrative: text,
+        evidenceTexts: [
+          JSON.stringify(logs),
+          JSON.stringify(this.runtime.state),
+          intent,
+        ],
+        hasFailedProposedEvent: logs.some((log) => log.ok === false),
+      }).issues;
+      const assistant = this.#append("assistant", text, "engine", {
+          facts: logs,
+          chips,
+          speakers: this.rawLastSpeakers,
+        }),
+        continuity = this.#processContinuity(
+          response ?? { text },
+          assistant,
+          intent ? this.#messages.at(-2) : undefined,
+          eventEvidence,
+        );
+      const inputTokens =
+          response?.usage?.inputTokens ??
+          prompt.messages.reduce(
+            (sum, message) => sum + estimateTokens(message.content),
+            0,
+          ),
+        outputTokens = response?.usage?.outputTokens ?? estimateTokens(text),
+        stateAfter = this.runtime.snapshot(),
+        run: PromptRun = {
+          id: `run:${this.#turn}:${assistant.id}`,
+          turn: this.#turn,
+          kind: "management",
+          createdAt: new Date().toISOString(),
+          prompt: clone(prompt),
+          promptHash: stableHash(prompt),
+          responseText: text,
+          proposedEvents: clone(proposed),
+          logs: this.lastLogs,
+          ...continuity,
+          stateBefore: clone(stateBefore),
+          stateAfter,
+          stateBeforeHash: stableHash(stateBefore),
+          stateAfterHash: stableHash(stateAfter),
+          issues: this.narrativeIssues,
+          durationMs: Date.now() - started,
+          inputTokens,
+          outputTokens,
+          tokensEstimated:
+            response?.usage?.inputTokens === undefined ||
+            response.usage.outputTokens === undefined,
+          ...(this.#providerInfo.provider
+            ? { provider: this.#providerInfo.provider }
+            : {}),
+          ...((response?.model ?? this.#providerInfo.model)
+            ? { model: response?.model ?? this.#providerInfo.model }
+            : {}),
+          ...(response?.finishReason
+            ? { finishReason: response.finishReason }
+            : {}),
+          ...(response?.generationId
+            ? { generationId: response.generationId }
+            : {}),
+        };
+      this.#promptRuns = compactPromptRuns([...this.#promptRuns, run]);
+      this.#ledgerDeltas = [];
+      this.#turn += 1;
+      await this.save();
+      return { logs: this.lastLogs, response: { ...response, text }, prompt };
+    } finally {
+      this.#busy = false;
+      this.#notify();
+    }
+  }
+  async #send(
+    content: string,
+    signal: AbortSignal | undefined,
+    checkpoint: boolean,
+    appendUser = true,
+  ) {
+    const text = content.trim();
+    if (!text) throw new Error("message_empty");
+    if (this.#busy) throw new Error("session_busy");
+    this.#busy = true;
+    const redoBefore = this.#redoStack.slice();
+    try {
+      if (checkpoint) {
+        this.#checkpoints.push(this.#captureCheckpoint());
+        if (this.#checkpoints.length > 30) this.#checkpoints.shift();
+        this.#redoStack = [];
+        this.#alternates = [];
+      }
+      if (appendUser) this.#append("user", text, "user");
+      let prompt!: CompiledPrompt, response!: NarrativeResponse;
+      const stateBefore = this.runtime.snapshot(),
+        requestStarted = Date.now();
+      // 모델 호출 실패 시 user 메시지·체크포인트를 되감는다 — 방치하면 응답 없는 유저 메시지가
+      // 다음 턴 체크포인트에 정상인 양 굳는다(감사 #2). 응답 도착 이후의 실패는 여기 대상이 아니다.
+      // 카드 태그 번역기가 있는 리스 카드는 산문을 보존하고, SimPack만 구조화 JSON 계약을 사용한다.
+      try {
+        prompt = await this.#compile(text, !appendUser, signal);
+        response = await this.#provider.complete({
+          prompt,
+          format: this.#tagTranslator ? "prose" : "json",
+          ...(signal ? { signal } : {}),
+        });
+        if (!response || typeof response.text !== "string")
+          throw new Error("model_response_invalid");
+      } catch (error) {
+        if (appendUser) {
+          this.#messages.pop();
+          this.#messageSeq -= 1;
+        }
+        if (checkpoint) {
+          this.#checkpoints.pop();
+          this.#redoStack = redoBefore;
+        }
+        throw error;
+      }
+      this.#lastLogs = [];
+      this.#lastSpeakers = structuredClone(
+        response.speakers?.length
+          ? response.speakers
+          : (this.#speakerExtractor?.(response.text) ?? []),
+      );
+      const eventEvidence: MemoryEvidenceEvent[] = [];
+      const record = (eventId: string, logs: Record<string, unknown>[]) => {
+        const journalIndex = this.#journal.cursor;
+        this.#lastLogs.push(...logs);
+        this.#recordEngineFacts(eventId, logs, journalIndex);
+        eventEvidence.push({
+          id: eventId,
+          index: journalIndex,
+          ok: logs.some((log) => log.ok === true),
+          summary: JSON.stringify(logs),
+        });
+      };
+      const allowed = new Set(this.runtime.allowedModelEventIds());
+      for (const event of response.events ?? []) {
+        if (!event || !this.runtime.registry.hasEvent(event.id)) {
+          this.#lastLogs.push({
+            ok: false,
+            event: String(event?.id ?? ""),
+            reason: "unregistered_model_event",
+          });
+          continue;
+        }
+        if (!allowed.has(event.id)) {
+          this.#lastLogs.push({
+            ok: false,
+            event: event.id,
+            reason: "model_event_not_allowed",
+          });
+          continue;
+        }
+        record(
+          event.id,
+          this.runtime.dispatch(event.id, event.params ?? {}).log,
+        );
+      }
+      const translated = this.#tagTranslator?.(response.text),
+        assistantText = translated?.residue ?? response.text;
+      for (const event of translated?.events ?? []) {
+        if (BUTTON_ONLY_EVENTS.has(event.id)) {
+          this.#lastLogs.push({
+            ok: false,
+            event: event.id,
+            reason: "card_tag_blocked",
+          });
+          continue;
+        }
+        if (!CARD_TAG_EVENTS.has(event.id)) {
+          this.#lastLogs.push({
+            ok: false,
+            event: event.id,
+            reason: "card_tag_not_allowed",
+          });
+          continue;
+        }
+        if (!this.runtime.registry.hasEvent(event.id)) {
+          this.#lastLogs.push({
+            ok: false,
+            event: event.id,
+            reason: "card_tag_unregistered",
+          });
+          continue;
+        }
+        record(event.id, this.runtime.dispatch(event.id, event.params).log);
+      }
+      this.#narrativeIssues = verifyNarrative({
+        narrative: assistantText,
+        evidenceTexts: [
+          JSON.stringify(this.#lastLogs),
+          JSON.stringify(this.runtime.state),
+          text,
+        ],
+        hasFailedProposedEvent: this.#lastLogs.some((log) => log.ok === false),
+      }).issues;
+      const assistant = this.#append("assistant", assistantText, "model", {
+          speakers: this.rawLastSpeakers,
+        }),
+        userMessage = appendUser ? this.#messages.at(-2) : undefined,
+        continuity = this.#processContinuity(
+          response,
+          assistant,
+          userMessage,
+          eventEvidence,
+        );
+      const reportedUsage = response.usage,
+        inputTokens =
+          reportedUsage?.inputTokens ??
+          prompt.messages.reduce(
+            (sum, message) => sum + estimateTokens(message.content),
+            estimateTokens(prompt.assistantPrefill),
+          ),
+        outputTokens =
+          reportedUsage?.outputTokens ?? estimateTokens(assistantText),
+        tokensEstimated =
+          reportedUsage?.inputTokens === undefined ||
+          reportedUsage.outputTokens === undefined;
+      const stateAfter = this.runtime.snapshot(),
+        run: PromptRun = {
+          id: `run:${this.#turn}:${assistant.id}`,
+          turn: this.#turn,
+          kind: !appendUser ? "continue" : checkpoint ? "send" : "reroll",
+          createdAt: new Date().toISOString(),
+          prompt: clone(prompt),
+          promptHash: stableHash(prompt),
+          responseText: assistantText,
+          proposedEvents: clone(response.events ?? []),
+          logs: this.lastLogs,
+          ...continuity,
+          stateBefore: clone(stateBefore),
+          stateAfter,
+          stateBeforeHash: stableHash(stateBefore),
+          stateAfterHash: stableHash(stateAfter),
+          issues: this.narrativeIssues,
+          durationMs: Date.now() - requestStarted,
+          inputTokens,
+          outputTokens,
+          tokensEstimated,
+          ...(this.#providerInfo.provider
+            ? { provider: this.#providerInfo.provider }
+            : {}),
+          ...((response.model ?? this.#providerInfo.model)
+            ? { model: response.model ?? this.#providerInfo.model }
+            : {}),
+          ...(response.finishReason
+            ? { finishReason: response.finishReason }
+            : {}),
+          ...(response.generationId
+            ? { generationId: response.generationId }
+            : {}),
+        };
+      this.#promptRuns = compactPromptRuns([...this.#promptRuns, run]);
+      this.#turn += 1;
+      await this.save();
+      return {
+        response: { ...response, text: assistantText },
+        logs: this.lastLogs,
+        prompt,
+      };
+    } finally {
+      this.#busy = false;
+    }
+  }
+  async save() {
+    if (!this.#repository) return;
+    await this.#repository.put({
+      id: this.id,
+      schemaHash: this.runtime.project.projectId,
+      title: this.#card.name,
+      updatedAt: Date.now(),
+      payload: this.snapshot(),
+    });
+  }
+  snapshot(): SessionSnapshot {
+    const patches = this.continuityPatches,
+      base = {
+        contract: "simbot-play-session/0.1" as const,
+        id: this.id,
+        projectId: this.runtime.project.projectId,
+        schemaFingerprint: runtimeSchemaFingerprint(this.runtime),
+        turn: this.#turn,
+        messages: this.messages,
+        engine: this.runtime.snapshot(),
+        memory: this.memory.all(),
+        ...(patches.length ? { continuityPatches: patches } : {}),
+        lastLogs: this.lastLogs,
+        cbsVariables: clone(this.#cbsVariables),
+        cardRuntimeJournal: this.#cardRuntimeJournal.toJSON(),
+        lastSpeakers: this.rawLastSpeakers,
+        journal: this.#journal.toJSON(),
+        history: {
+          undo: clone(this.#checkpoints),
+          redo: clone(this.#redoStack),
+        },
+        bindings: {
+          persona: clone(this.#persona),
+          preset: clone(this.#preset),
+        },
+        ...(this.#ledgerDeltas.length
+          ? { ledgerDeltas: clone(this.#ledgerDeltas) }
+          : {}),
+        ...(this.#alternates.length
+          ? { alternates: clone(this.#alternates) }
+          : {}),
+        ...(this.#responseBranches.length
+          ? { responseBranches: clone(this.#responseBranches) }
+          : {}),
+        ...(this.#promptRuns.length
+          ? { promptRuns: clone(this.#promptRuns) }
+          : {}),
+      };
+    return { ...base, integrity: sessionIntegrity(base) };
+  }
+  restore(value: SessionSnapshot) {
+    if (
+      value.contract !== "simbot-play-session/0.1" ||
+      value.projectId !== this.runtime.project.projectId
+    )
+      throw new Error("session_snapshot_incompatible");
+    // 무결성 해시는 필수 — 해시 필드를 지우는 것만으로 변조 검증을 우회할 수 있으므로(감사 Critical)
+    // 누락도 거부한다. 프리릴리스 조이기: 현행 저장 경로는 전부 해시를 실으므로 하위호환 예외를 없앤다.
+    if (value.integrity !== sessionIntegrity(value))
+      throw new Error("session_corrupt:integrity");
+    const currentFingerprint = runtimeSchemaFingerprint(this.runtime),
+      compiled = !!this.runtime.project.schema._compiler;
+    if (
+      (value.schemaFingerprint &&
+        value.schemaFingerprint !== currentFingerprint) ||
+      (compiled && !value.schemaFingerprint)
+    )
+      throw new Error("session_schema_incompatible");
+    const data = clone(value); // 프록시일 수 있는 입력을 여기서 한 번 평평하게 만든다(엔진·원장 내부 clone 보호).
+    if (data.journal) {
+      this.#journal.restore(data.journal);
+      if (
+        stableStringify(this.runtime.snapshot()) !==
+        stableStringify(data.engine)
+      )
+        throw new Error("session_corrupt:journal_engine");
+    } else {
+      this.runtime.restore(data.engine);
+      this.#journal.reset(data.engine);
+    }
+    this.#turn = data.turn;
+    this.#messages = data.messages.map((message) => ({
+      ...message,
+      origin:
+        message.origin ?? (message.role === "assistant" ? "model" : "user"),
+    }));
+    this.#lastLogs = data.lastLogs;
+    this.#lastSpeakers = clone(data.lastSpeakers ?? []);
+    this.#alternates = clone(data.alternates ?? []);
+    this.#responseBranches = clone(data.responseBranches ?? []);
+    this.#promptRuns = compactPromptRuns(clone(data.promptRuns ?? []));
+    this.#cbsVariables = clone(data.cbsVariables ?? {});
+    if (data.cardRuntimeJournal) {
+      this.#cardRuntimeJournal.restore(data.cardRuntimeJournal);
+      const cardState = this.#cardRuntimeJournal.state;
+      if (
+        stableStringify(cardState.variables) !==
+        stableStringify(this.#cbsVariables)
+      )
+        throw new Error("session_corrupt:card_runtime_variables");
+    } else {
+      const seed =
+        parseInt(fnv1a(`${this.id}:${this.runtime.project.projectId}`), 16) >>>
+        0;
+      this.#cardRuntimeJournal = new CardRuntimeJournal({
+        variables: this.#cbsVariables,
+        randomState: seed || 1,
+        logicalTimeMs: 1_700_000_000_000,
+      });
+    }
+    this.#ledgerDeltas = clone(data.ledgerDeltas ?? []);
+    this.#checkpoints = clone(data.history?.undo ?? []).slice(-30);
+    this.#redoStack = clone(data.history?.redo ?? []).slice(-30);
+    if (data.bindings) {
+      this.#persona = clone(data.bindings.persona);
+      this.#preset = clone(data.bindings.preset);
+    }
+    setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
+    this.memory.reset(data.memory);
+    this.#continuityPatches.reset(data.continuityPatches ?? []);
+    this.#syncMessageSeq();
+    const last = this.#lastModelResponseId();
+    if (!this.#responseBranches.length && this.#alternates.length && last)
+      this.#responseBranches = [
+        {
+          messageId: last,
+          active: this.#alternates.length,
+          variants: [
+            ...clone(this.#alternates),
+            this.#captureResponseState(last),
+          ],
+        },
+      ];
+    this.#notify();
+  }
+  #captureCheckpoint(includeMessages = false): SessionCheckpoint {
+    return {
+      turn: this.#turn,
+      messageCount: this.#messages.length,
+      ...(includeMessages ? { messages: this.messages } : {}),
+      memory: this.memory.all(),
+      continuityPatches: this.continuityPatches,
+      lastLogs: this.lastLogs,
+      cbsVariables: clone(this.#cbsVariables),
+      lastSpeakers: this.rawLastSpeakers,
+      alternates: clone(this.#alternates),
+      ledgerDeltas: clone(this.#ledgerDeltas),
+      journalCursor: this.#journal.cursor,
+      cardRuntimeCursor: this.#cardRuntimeJournal.cursor,
+      bindings: { persona: clone(this.#persona), preset: clone(this.#preset) },
+    };
+  }
+  #restoreCheckpoint(value: SessionCheckpoint) {
+    const messages = value.messages
+      ? clone(value.messages)
+      : this.#messages.slice(0, value.messageCount);
+    this.#journal.moveTo(value.journalCursor);
+    this.#turn = value.turn;
+    this.#messages = messages;
+    this.memory.reset(value.memory);
+    this.#continuityPatches.reset(value.continuityPatches ?? []);
+    this.#lastLogs = clone(value.lastLogs);
+    if (value.cardRuntimeCursor !== undefined) {
+      const card = this.#cardRuntimeJournal.moveTo(value.cardRuntimeCursor);
+      if (
+        stableStringify(card.variables) !== stableStringify(value.cbsVariables)
+      )
+        throw new Error("card_runtime_checkpoint_diverged");
+      this.#cbsVariables = card.variables;
+    } else this.#cbsVariables = clone(value.cbsVariables);
+    this.#lastSpeakers = clone(value.lastSpeakers);
+    this.#alternates = clone(value.alternates);
+    this.#ledgerDeltas = clone(value.ledgerDeltas ?? []);
+    this.#persona = clone(value.bindings.persona);
+    this.#preset = clone(value.bindings.preset);
+    setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
+    this.#syncMessageSeq();
+    this.#notify();
+  }
+  #lastModelResponseId() {
+    return [...this.#messages]
+      .reverse()
+      .find(
+        (message) => message.role === "assistant" && message.origin === "model",
+      )?.id;
+  }
+  #captureResponseState(messageId: string): AlternateState {
+    const index = this.#messages.findIndex(
+      (message) => message.id === messageId,
+    );
+    if (index < 0) throw new Error(`message_not_found:${messageId}`);
+    const next = this.#checkpoints.find(
+        (value) => value.messageCount === index + 1,
+      ),
+      atHead = index === this.#messages.length - 1,
+      turn = atHead ? this.#turn : (next?.turn ?? this.#turn),
+      journalCursor = atHead
+        ? this.#journal.cursor
+        : (next?.journalCursor ?? this.#journal.cursor),
+      cardRuntimeCursor = atHead
+        ? this.#cardRuntimeJournal.cursor
+        : (next?.cardRuntimeCursor ?? this.#cardRuntimeJournal.cursor),
+      messages = this.messages.slice(0, index + 1),
+      bindings = atHead
+        ? { persona: clone(this.#persona), preset: clone(this.#preset) }
+        : clone(
+            next?.bindings ?? { persona: this.#persona, preset: this.#preset },
+          );
+    return {
+      messages,
+      engine: this.#journal.stateAt(journalCursor),
+      logs: atHead ? this.lastLogs : clone(next?.lastLogs ?? []),
+      memory: atHead ? this.memory.all() : clone(next?.memory ?? []),
+      continuityPatches: atHead
+        ? this.continuityPatches
+        : clone(next?.continuityPatches ?? []),
+      speakers: atHead ? this.rawLastSpeakers : clone(next?.lastSpeakers ?? []),
+      promptRuns: this.promptRuns.filter(
+        (run) =>
+          messages.some((message) => run.id.endsWith(`:${message.id}`)) ||
+          run.turn < turn,
+      ),
+      ledgerDeltas: atHead
+        ? clone(this.#ledgerDeltas)
+        : clone(next?.ledgerDeltas ?? []),
+      journalCursor,
+      cardRuntimeCursor,
+      turn,
+      cbsVariables: atHead
+        ? clone(this.#cbsVariables)
+        : clone(next?.cbsVariables ?? {}),
+      bindings,
+    };
+  }
+  #restoreAlternate(value: AlternateState) {
+    this.#messages = clone(value.messages);
+    this.#lastLogs = clone(value.logs);
+    this.#lastSpeakers = clone(value.speakers);
+    this.#promptRuns = compactPromptRuns(clone(value.promptRuns ?? []));
+    this.#ledgerDeltas = clone(value.ledgerDeltas ?? []);
+    if (value.journalCursor === undefined) {
+      this.runtime.restore(value.engine);
+      this.#journal.reset(value.engine);
+    } else {
+      const engine = this.#journal.stateAt(value.journalCursor);
+      if (stableStringify(engine) !== stableStringify(value.engine))
+        throw new Error("session_corrupt:alternate_journal");
+      this.#journal.moveTo(value.journalCursor);
+    }
+    this.#turn = value.turn ?? this.#turn;
+    this.memory.reset(value.memory);
+    this.#continuityPatches.reset(value.continuityPatches ?? []);
+    if (value.cardRuntimeCursor !== undefined) {
+      const card = this.#cardRuntimeJournal.moveTo(value.cardRuntimeCursor);
+      if (
+        value.cbsVariables &&
+        stableStringify(card.variables) !== stableStringify(value.cbsVariables)
+      )
+        throw new Error("session_corrupt:alternate_card_runtime");
+      this.#cbsVariables = card.variables;
+    } else this.#cbsVariables = clone(value.cbsVariables ?? this.#cbsVariables);
+    if (value.bindings) {
+      this.#persona = clone(value.bindings.persona);
+      this.#preset = clone(value.bindings.preset);
+    }
+    setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
+    this.#syncMessageSeq();
+  }
+  #syncLegacyAlternates(branch: ResponseBranchSet) {
+    this.#alternates = branch.variants
+      .filter((_, index) => index !== branch.active)
+      .map((value) => clone(value));
+  }
+  #pushCheckpoint() {
+    this.#checkpoints.push(this.#captureCheckpoint());
+    if (this.#checkpoints.length > 30) this.#checkpoints.shift();
+    this.#redoStack = [];
+    this.#alternates = [];
+  }
+  #recordEngineFacts(
+    eventId: string,
+    logs: Record<string, unknown>[],
+    journalIndex = this.#journal.cursor,
+  ) {
+    for (const [index, log] of logs.entries())
+      if (log.ok) {
+        const evidenceId = `${this.#turn}:${eventId}:${index}`;
+        this.memory.replace(
+          memoryRecord({
+            id: `engine:${evidenceId}`,
+            text: `${eventId} 결과: ${JSON.stringify(log)}`,
+            turn: this.#turn,
+            status: "approved",
+            kind: "engine-fact",
+            canonicalAnchors: [engineMemoryAnchor(eventId, log)],
+            importance: 5,
+            lifecycle: { state: "active", timeScope: "current" },
+            evidence: [{ kind: "event", id: String(journalIndex) }],
+            sourceEventIndexes: [journalIndex],
+          }),
+          this.#turn,
+        );
+        // 티어 통과는 장기 회상 앵커가 된다 — "N일차에 신뢰가 되었다"를 나중에 사람 말로 찾을 수 있게
+        // JSON 사실과 별도로 읽을 수 있는 기억을 남긴다. 같은 앵커의 옛 티어 기억은 replace가 폐기한다.
+        const tier = log.tierChanged as
+          | Record<string, Record<string, unknown>>
+          | undefined;
+        if (tier?.to?.label) {
+          const target = String(log.target ?? ""),
+            name = this.resolveSpeakers([{ npcId: target }])[0]?.name ?? target;
+          this.memory.replace(
+            memoryRecord({
+              id: `tier:${evidenceId}`,
+              text: `${name}와의 관계가 '${String(tier.to.label)}' 단계가 되었다${tier.from?.label ? ` (이전: ${String(tier.from.label)})` : ""}`,
+              turn: this.#turn,
+              status: "approved",
+              kind: "relation",
+              entities: [target],
+              canonicalAnchors: [
+                `tier:${String(log.scale ?? "affinity")}:${target}`,
+              ],
+              importance: 7,
+              lifecycle: { state: "active", timeScope: "current" },
+              evidence: [{ kind: "event", id: String(journalIndex) }],
+              sourceEventIndexes: [journalIndex],
+            }),
+            this.#turn,
+          );
+        }
+      }
+  }
+  #sceneId() {
+    const state = this.runtime.state as Record<string, unknown>,
+      core = state.core as Record<string, unknown> | undefined;
+    return String(
+      core?.location ??
+        state.location ??
+        state.sceneId ??
+        this.runtime.project.projectId,
+    );
+  }
+  #processContinuity(
+    response: NarrativeResponse,
+    assistant: ChatMessage,
+    userMessage: ChatMessage | undefined,
+    events: MemoryEvidenceEvent[],
+  ) {
+    const factReferenceVerdicts = validateFactReferences(response.factRefs, {
+        hasState: true,
+        ...(userMessage ? { userMessageId: userMessage.id } : {}),
+        events,
+      }),
+      memoryDecisions = ingestMemoryTurn(this.memory, {
+        turn: this.#turn,
+        sceneId: this.#sceneId(),
+        ...(userMessage
+          ? {
+              userMessage: { id: userMessage.id, content: userMessage.content },
+            }
+          : {}),
+        assistantMessage: { id: assistant.id, content: assistant.content },
+        candidates: response.memories ?? [],
+        events,
+        userId: this.#persona?.id ?? "user",
+      }),
+      patch = this.#continuityPatches.propose(
+        response.continuityPatch,
+        this.#turn,
+        this.memory.all().map((record) => record.id),
+      ),
+      invalid = factReferenceVerdicts.filter((verdict) => !verdict.ok);
+    if (invalid.length)
+      assistant.chips = [
+        ...(assistant.chips ?? []),
+        {
+          ok: false,
+          kind: "memory",
+          text: `근거 참조 ${invalid.length}건 검토 필요`,
+        },
+      ];
+    return {
+      memoryDecisions,
+      factReferenceVerdicts,
+      ...(patch ? { continuityPatchId: patch.id } : {}),
+    };
+  }
+  #managementPrompt(
+    eventIds: string[],
+    logs: Record<string, unknown>[],
+    flavorText: string,
+  ): CompiledPrompt {
+    const history =
+        flavorText &&
+        this.#messages.at(-1)?.role === "user" &&
+        this.#messages.at(-1)?.content === flavorText
+          ? this.#messages.slice(0, -1)
+          : this.#messages,
+      recent = history
+        .slice(-4)
+        .map((message) => ({
+          role: message.role,
+          content:
+            message.origin === "greeting"
+              ? stripPromptImageMarkup(message.content)
+              : message.content,
+        })),
+      changes = this.#ledgerDeltas.length
+        ? `\n[직전 현장 장면 이후 장부 변화]\n${this.#ledgerDeltas.map((value) => `- ${value}`).join("\n")}`
+        : "",
+      persona = this.#persona?.prompt?.trim()
+        ? `\n플레이어 페르소나: ${this.#persona.name}\n${this.#persona.prompt}`
+        : "",
+      catalog = narrativeCatalog(this.runtime.project),
+      npcGuide = [
+        catalog.npcs.length
+          ? `[등장 가능한 NPC]\n${catalog.npcs.join("\n")}`
+          : "",
+        catalog.commands.length
+          ? `[유효 스프라이트 명령]\n${catalog.commands.join(", ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      context = `[이미 확정·반영된 엔진 결과]\n행동: ${eventIds.join(", ")}\n${JSON.stringify(logs)}${changes}\n\n[현재 엔진 상태]\n${JSON.stringify(this.#engineStateForPrompt())}${flavorText ? `\n\n플레이어의 연출 의도: ${flavorText}` : ""}`;
+    return {
+      messages: [
+        {
+          role: "system",
+          content: `${this.#card.name}의 관리 결과를 한국어 250자 안팎의 자연스러운 장면으로 서사화한다.${persona}\n엔진 결과의 수치와 성공·실패를 그대로 따른다. 결과를 바꾸거나 새 사건·날짜 진행·거래·재고 변화를 만들지 않는다. JSON 사건을 제안하지 말고 이야기만 쓴다. 이전 메시지의 이미지 태그를 현재 장면의 화자 근거 없이 복사하지 않는다.${npcGuide ? `\n${npcGuide}\n등장인물 이미지를 쓸 때는 위 NPC와 스프라이트 명령만 사용한다.` : ""}`,
+        },
+        ...recent,
+        { role: "user", content: context },
+      ],
+      assistantPrefill: "",
+      trace: [],
+      warnings: [],
+    };
+  }
+  #syncMessageSeq() {
+    this.#messageSeq = this.#messages.reduce(
+      (max, message) =>
+        Math.max(max, Number(message.id.match(/^m(\d+)$/)?.[1] ?? 0)),
+      0,
+    );
+  }
+  #storedSpeakers(items: readonly SpeakerReference[]) {
+    const explicitFocus = items.some((item) => item.focus === true);
+    return this.#snapshotSpeakers(items).map(
+      ({ npcId, emotion, outfit, focus }) => ({
+        npcId,
+        ...(emotion === undefined ? {} : { emotion }),
+        ...(outfit === undefined ? {} : { outfit }),
+        ...(explicitFocus && focus ? { focus: true } : {}),
+      }),
+    );
+  }
+  #append(
+    role: "user" | "assistant",
+    content: string,
+    origin: ChatMessage["origin"] = role === "assistant" ? "model" : "user",
+    extra: Pick<ChatMessage, "facts" | "chips" | "speakers"> = {},
+  ) {
+    const normalized =
+        role === "assistant" && extra.speakers
+          ? { ...extra, speakers: this.#storedSpeakers(extra.speakers) }
+          : extra,
+      message = {
+        id: `m${++this.#messageSeq}`,
+        index: this.#messages.length,
+        role,
+        content,
+        createdAt: new Date().toISOString(),
+        origin,
+        ...normalized,
+      };
+    this.#messages.push(message);
+    this.#notify();
+    return message;
+  }
+  async #compile(query: string, continuation = false, signal?: AbortSignal) {
+    const retrieval = await planGroundedMemory(this.memory, query, {
+        atTurn: this.#turn,
+        provider: this.#embeddingProvider,
+        viewer: { userId: this.#persona?.id ?? "user" },
+        sceneId: this.#sceneId(),
+        limit: 8,
+        budgetTokens: 1000,
+        perKindQuota: 3,
+        signal,
+      }),
+      memory = retrieval.records
+        .map(
+          (value) =>
+            `- ${value.text} [${value.evidence.map((item) => `${item.kind}:${item.id}`).join(", ")}]`,
+        )
+        .join("\n");
+    let chat = this.#messages
+      .slice(-this.#historyWindow)
+      .map(({ role, content, origin }) => ({
+        role,
+        content:
+          origin === "greeting" ? stripPromptImageMarkup(content) : content,
+      }));
+    if (continuation) chat.push({ role: "user" as const, content: query });
+    /* maxContext는 한·영 가중 근사 토큰 예산이다. 최신 대화는 항상 남기고 오래된 메시지부터 제거한다. */ if (
+      this.#maxContext &&
+      this.#maxContext > 0
+    )
+      while (
+        chat.length > 1 &&
+        chat.reduce(
+          (sum, message) => sum + estimateTokens(message.content),
+          0,
+        ) > this.#maxContext
+      )
+        chat.shift();
+    const lore = activateLore(this.#lore, chat, {
+      seed: this.runtime.snapshot().rng,
+      turn: this.#turn,
+    }).entries.map(({ content, name }) => ({ content, name }));
+    return compilePrompt({
+      preset: this.#preset,
+      activeModules: activeModules(this.runtime.project),
+      persona: this.#persona,
+      card: this.#card,
+      lore: { entries: lore },
+      chat,
+      memory,
+      engineContext: {
+        facts: `다음 JSON은 엔진이 소유한 현재 사실이다. 서사로 수치를 바꾸지 말고 이벤트 결과만 따른다.\n${JSON.stringify(this.#engineStateForPrompt())}`,
+        availableActions: `제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(", ") || "(없음)"}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.`,
+        groundedMemory: retrieval.abstained
+          ? "관련 근거가 부족하므로 과거 사실을 추측하지 않는다."
+          : memory,
+      },
+    });
+  }
 }
 
 // 체크포인트·redo·대안·사건 원장은 snapshot에 저장되며 무결성 해시로 함께 봉인한다.
-export * from './chat-store.ts';
-export * from './providers/index.ts';
+export * from "./chat-store.ts";
+export * from "./providers/index.ts";
