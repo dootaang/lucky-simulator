@@ -1,5 +1,6 @@
 import type { ModuleDefinition, RuntimeRecord } from "@simbot/kernel";
 import {
+  type Context,
   fail,
   list,
   moduleDefinition,
@@ -226,6 +227,196 @@ function facilityCost(definition: RuntimeRecord, level: number) {
       Math.floor(number(value) * factor),
     ]),
   );
+}
+
+type GflCombatant = RuntimeRecord & {
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  power: number;
+};
+
+function resolveSortie(c: Context) {
+  const gfl = state(c.state),
+    sortie = record(gfl.sortie),
+    operation = mission(c.schema, sortie.missionId),
+    entry = formation(c.state, sortie.echelonId);
+  if (!sortie.active || !operation || !entry)
+    return fail(c, "gfl_sortie_missing");
+
+  const values = owned(c.state),
+    allies: GflCombatant[] = list<unknown>(entry.slots)
+      .filter(Boolean)
+      .map((rawId) => record(values[string(rawId)]))
+      .filter((unit) => Object.keys(unit).length > 0)
+      .map((unit) => {
+        const hp = record(unit.hp);
+        return {
+          id: string(unit.id),
+          name: string(unit.name),
+          hp: Math.max(0, number(hp.cur)),
+          maxHp: Math.max(1, number(hp.max, 1)),
+          power: Math.max(1, number(unit.power, 1)),
+          grade: number(unit.grade, 1),
+        };
+      });
+  if (!allies.some((unit) => unit.hp > 0))
+    return fail(c, "gfl_echelon_incapacitated");
+
+  const configured = list<RuntimeRecord>(operation.enemies),
+    enemyCount = configured.length
+      ? Math.min(5, configured.length)
+      : clamp(
+          Math.round(
+            number(
+              operation.enemyCount,
+              Math.ceil(Math.max(1, number(operation.power)) / 1200),
+            ),
+          ),
+          1,
+          5,
+        ),
+    totalEnemyPower = Math.max(100, number(operation.power, 100)),
+    enemies: GflCombatant[] = Array.from({ length: enemyCount }, (_, index) => {
+      const source = configured[index] ?? {},
+        unitPower = Math.max(
+          20,
+          number(source.power, Math.round(totalEnemyPower / enemyCount)),
+        ),
+        maxHp = Math.max(80, number(source.hp, Math.round(unitPower * 0.75)));
+      return {
+        id: string(source.id || `enemy-${index + 1}`),
+        name: string(
+          source.name ||
+            (enemyCount === 1
+              ? operation.enemy || "적대 세력"
+              : `${operation.enemy || "적대 세력"} ${index + 1}`),
+        ),
+        hp: maxHp,
+        maxHp,
+        power: unitPower,
+      };
+    }),
+    rounds: RuntimeRecord[] = [],
+    defenseReduction =
+      DEFENSE_REDUCTION[facilityLevel(c.state, "base2") - 1] ?? 0;
+
+  for (let round = 1; round <= 8; round++) {
+    const exchanges: RuntimeRecord[] = [];
+    for (const ally of allies.filter((unit) => unit.hp > 0)) {
+      const target = enemies.find((unit) => unit.hp > 0);
+      if (!target) break;
+      const roll = c.rng.int(1, 20),
+        critical = roll === 20,
+        hit = roll + number(ally.grade, 1) >= 8,
+        dealt = hit
+          ? Math.max(
+              1,
+              Math.round(
+                ally.power * 0.24 * (critical ? 1.6 : 1) - target.power * 0.02,
+              ),
+            )
+          : 0;
+      target.hp = Math.max(0, target.hp - dealt);
+      exchanges.push({
+        side: "ally",
+        actorId: ally.id,
+        targetId: target.id,
+        roll,
+        hit,
+        critical,
+        damage: dealt,
+        targetHp: target.hp,
+      });
+    }
+    for (const foe of enemies.filter((unit) => unit.hp > 0)) {
+      const living = allies.filter((unit) => unit.hp > 0);
+      if (!living.length) break;
+      const target = living[c.rng.int(0, living.length - 1)]!,
+        roll = c.rng.int(1, 20),
+        critical = roll === 20,
+        hit = roll >= 8,
+        raw = hit
+          ? Math.max(
+              1,
+              Math.round(
+                foe.power * 0.16 * (critical ? 1.5 : 1) - target.power * 0.015,
+              ),
+            )
+          : 0,
+        dealt = Math.max(0, Math.round(raw * (1 - defenseReduction / 100)));
+      target.hp = Math.max(0, target.hp - dealt);
+      exchanges.push({
+        side: "enemy",
+        actorId: foe.id,
+        targetId: target.id,
+        roll,
+        hit,
+        critical,
+        damage: dealt,
+        targetHp: target.hp,
+      });
+    }
+    rounds.push({ round, exchanges });
+    if (!enemies.some((unit) => unit.hp > 0) || !allies.some((unit) => unit.hp > 0))
+      break;
+  }
+
+  const outcome = enemies.every((unit) => unit.hp <= 0) ? "victory" : "defeat";
+  for (const ally of allies) {
+    const unit = record(values[ally.id]),
+      hp = record(unit.hp);
+    hp.cur = ally.hp;
+    unit.hp = hp;
+    unit.status = ally.hp <= 0 ? "대파" : ally.hp < ally.maxHp ? "손상" : "대기";
+  }
+  let reward = null;
+  if (outcome === "victory") {
+    rewards(c.state, operation.rewards, c);
+    reward = operation.rewards ?? null;
+    const next = state(c.state);
+    next.completedMissions = [
+      ...new Set([
+        ...list<string>(next.completedMissions),
+        string(operation.id),
+      ]),
+    ];
+  }
+  const allyResults = allies.map(({ id, name, hp, maxHp }) => ({
+      id,
+      name,
+      hp,
+      maxHp,
+    })),
+    enemyResults = enemies.map(({ id, name, hp, maxHp }) => ({
+      id,
+      name,
+      hp,
+      maxHp,
+    })),
+    next = state(c.state);
+  next.lastBattle = {
+    missionId: operation.id,
+    outcome,
+    rounds: rounds.length,
+    allies: allyResults,
+    enemies: enemyResults,
+  };
+  next.sortie = null;
+  c.state.gfl = next;
+  // 이전 버전에서 이미 범용 전투창을 연 저장본도 새 일괄 전투로 안전하게 빠져나온다.
+  c.state.combat = null;
+  return ok(c, {
+    outcome,
+    missionId: operation.id,
+    roundCount: rounds.length,
+    rounds,
+    allies: allyResults,
+    enemies: enemyResults,
+    rewards: reward,
+    llmCallsRequired: 0,
+  });
 }
 
 export function gflModule(): ModuleDefinition {
@@ -729,94 +920,11 @@ export function gflModule(): ModuleDefinition {
           travelCost,
         });
       }),
-      "gfl/sortie/engage": scoped((c) => {
-        const gfl = state(c.state),
-          sortie = record(gfl.sortie),
-          operation = mission(c.schema, sortie.missionId);
-        if (!sortie.active || !operation) return fail(c, "gfl_sortie_missing");
-        if (sortie.engaged) return fail(c, "gfl_sortie_already_engaged");
-        const p = record(c.state.player),
-          pools = record(p.pools);
-        pools.hp = {
-          cur: Math.max(100, number(sortie.power)),
-          max: Math.max(100, number(sortie.power)),
-        };
-        p.pools = pools;
-        p.atk = Math.max(10, Math.round(number(sortie.power) / 20));
-        p.def = Math.max(2, Math.round(number(sortie.power) / 200));
-        p.acc = 5;
-        p.evade = 10;
-        c.state.player = p;
-        const started = c.registry.dispatch(
-          c.schema,
-          c.state,
-          {
-            id: "start_encounter",
-            params: {
-              enemies: [
-                {
-                  name: string(operation.enemy || "적대 세력"),
-                  rank: string(operation.rank || "E"),
-                  hp: Math.max(50, Math.round(number(operation.power) / 2)),
-                  atk: Math.max(5, Math.round(number(operation.power) / 120)),
-                  def: Math.max(1, Math.round(number(operation.power) / 300)),
-                  evade: 8,
-                  acc: 2,
-                },
-              ],
-            },
-          },
-          c.rng,
-        );
-        if (!started.log[0]?.ok) return started;
-        c.state = started.state;
-        const next = state(c.state),
-          nextSortie = record(next.sortie);
-        nextSortie.engaged = true;
-        next.sortie = nextSortie;
-        c.state.gfl = next;
-        return ok(c, {
-          missionId: operation.id,
-          enemies: started.log[0]?.enemies,
-        });
-      }),
-      "gfl/sortie/finish": scoped((c) => {
-        const gfl = state(c.state),
-          sortie = record(gfl.sortie),
-          operation = mission(c.schema, sortie.missionId);
-        if (!sortie.active || !sortie.engaged || !operation)
-          return fail(c, "gfl_sortie_not_engaged");
-        const ended = c.registry.dispatch(
-          c.schema,
-          c.state,
-          { id: "end_encounter", params: {} },
-          c.rng,
-        );
-        if (!ended.log[0]?.ok) return ended;
-        c.state = ended.state;
-        const outcome = string(ended.log[0]?.outcome);
-        if (outcome === "victory") {
-          rewards(c.state, operation.rewards, c);
-          const next = state(c.state);
-          next.completedMissions = [
-            ...new Set([
-              ...list<string>(next.completedMissions),
-              string(operation.id),
-            ]),
-          ];
-          next.sortie = null;
-          c.state.gfl = next;
-          return ok(c, {
-            outcome,
-            missionId: operation.id,
-            rewards: operation.rewards,
-          });
-        }
-        const next = state(c.state);
-        next.sortie = null;
-        c.state.gfl = next;
-        return ok(c, { outcome, missionId: operation.id });
-      }),
+      // 소녀전선 전투는 범용 플레이어 HP를 빌리지 않는다. 편성된 각 인형과 여러 적을
+      // 엔진이 한 이벤트 안에서 끝까지 계산하므로 전투 한 번에 모델 호출을 반복하지 않는다.
+      "gfl/sortie/engage": scoped(resolveSortie),
+      "gfl/sortie/resolve": scoped(resolveSortie),
+      "gfl/sortie/finish": scoped(resolveSortie),
       "gfl/facility/upgrade": scoped((c) => {
         const id = string(c.params.facilityId),
           definition = list<RuntimeRecord>(config(c.schema).facilities).find(
@@ -1254,7 +1362,15 @@ export function gflModule(): ModuleDefinition {
           supplies: record(value.resources).res ?? 0,
         },
         dolls: units,
-        rule: "위치·시간·자원·관계 수치는 엔진 확정값이다. [[aff=...]]·[[mood=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
+        operation: record(gfl.sortie).active
+          ? {
+              status: "교전 대기",
+              missionId: record(gfl.sortie).missionId,
+              instruction:
+                "아직 승패가 확정되지 않았다. 사용자가 채팅 아래 '빠른 교전 시작' 버튼을 누르기 전에는 전투 결과·피해·보상을 서사로 확정하지 않는다.",
+            }
+          : gfl.lastBattle ?? null,
+        rule: "위치·시간·자원·관계·전투 결과는 엔진 확정값이다. [[aff=...]]·[[mood=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
       };
     },
   );

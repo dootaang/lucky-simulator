@@ -170,25 +170,13 @@ describe("Girls Frontline native module", () => {
       game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" })
         .log[0]?.ok,
     ).toBe(true);
-    expect(game.dispatch("gfl/sortie/engage").log[0]?.ok).toBe(true);
-    for (
-      let i = 0;
-      i < 20 && (game.select("combat/console") as any).active;
-      i++
-    ) {
-      const enemy = (game.select("combat/console") as any).enemies.find(
-        (value: any) => !value.dead,
-      );
-      if (!enemy) break;
-      game.dispatch("combat_action", { action: "attack", target: enemy.id });
-      if (!(game.select("combat/console") as any).cleared)
-        game.dispatch("enemy_turn");
-    }
-    expect(game.dispatch("gfl/sortie/finish").log[0]).toMatchObject({
+    expect(game.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({
       ok: true,
       outcome: "victory",
       missionId: "alpha",
+      llmCallsRequired: 0,
     });
+    expect((game.select("combat/console") as any).present).toBe(false);
     expect(game.state.gold).toBeGreaterThan(5000);
     expect(
       game.dispatch("gfl/location/move", { locationId: "base-maintenance" })
@@ -203,6 +191,40 @@ describe("Girls Frontline native module", () => {
     expect(
       (game.select("gfl/dolls") as unknown[]).length,
     ).toBeGreaterThanOrEqual(1);
+  });
+  it("resolves multiple dolls against multiple enemies with doll HP and no generic player HP", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.missions[0]!.enemies = [
+      { id: "jaeger-1", name: "예거 1", power: 350, hp: 300 },
+      { id: "jaeger-2", name: "예거 2", power: 350, hp: 300 },
+    ];
+    const game = runtime(source);
+    game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    game.dispatch("gfl/doll/acquire", { dollId: "ump45" });
+    game.dispatch("gfl/echelon/assign", {
+      echelonId: "e1",
+      slot: 0,
+      dollId: "m4a1",
+    });
+    game.dispatch("gfl/echelon/assign", {
+      echelonId: "e1",
+      slot: 1,
+      dollId: "ump45",
+    });
+    game.dispatch("gfl/sortie/start", {
+      missionId: "alpha",
+      echelonId: "e1",
+    });
+    const playerHpBefore = structuredClone((game.state.player as any).pools.hp);
+    const battle = game.dispatch("gfl/sortie/resolve").log[0] as any;
+    expect(battle).toMatchObject({ ok: true, outcome: "victory" });
+    expect(battle.roundCount).toBeLessThanOrEqual(8);
+    expect(battle.allies).toHaveLength(2);
+    expect(battle.enemies).toHaveLength(2);
+    expect(battle.enemies.every((enemy: any) => enemy.hp === 0)).toBe(true);
+    expect((game.state.player as any).pools.hp).toEqual(playerHpBefore);
+    expect((game.state.gfl as any).sortie).toBeNull();
   });
   it("rejects an empty echelon and insufficient resources without changing state", () => {
     const game = runtime();

@@ -37,6 +37,18 @@ export interface DecisionContext { logs?: ReadonlyArray<Record<string, unknown>>
 
 export function buildDecisionCards(select: (id: string) => unknown, context: DecisionContext = {}): DecisionCardModel[] {
   const cards: DecisionCardModel[] = tierCards(context.logs ?? [], context.turn ?? 0, context.nameFor ?? ((id) => id));
+  const gflStatus = rec(safeSelect(select, 'gfl/status'));
+  const sortie = rec(gflStatus.sortie);
+  if (sortie.active) {
+    cards.push({
+      key: `gfl-sortie:${String(sortie.missionId)}:${String(sortie.echelonId)}`,
+      icon: 'alert',
+      title: '작전 출격 완료 · 교전 대기 중',
+      desc: `제대 ${String(sortie.echelonId)} · 전투력 ${num(sortie.power).toLocaleString()} — 버튼을 누르면 여러 인형과 적의 전투를 엔진이 즉시 계산합니다.`,
+      more: 'LLM 전투 계산 0회',
+      options: [{ label: '빠른 교전 시작', id: 'gfl/sortie/resolve', params: {}, mode: 'narrated', kind: 'primary' }],
+    });
+  }
   const traffic = rec(safeSelect(select, 'inn/traffic'));
   if (!Object.keys(traffic).length) return cards;
   const incident = rec(traffic.incident);

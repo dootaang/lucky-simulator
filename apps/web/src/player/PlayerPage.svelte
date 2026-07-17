@@ -152,7 +152,12 @@
   async function renameChat(id:string){const current=chatIndex.chats.find(c=>c.chatId===id),name=prompt('채팅 이름',current?.name);if(name&&chatStore){await chatStore.rename(id,name);chatIndex=await chatStore.list();}}
   async function removeChat(id:string){if(!chatStore||!confirm('이 채팅을 삭제할까요?'))return;await chatStore.remove(id);chatIndex=await chatStore.list();if(chatIndex.activeChatId)await activateChat(chatIndex.activeChatId);else await createChat();}
   async function removeCard(id:string){const card=cards.find(value=>value.projectId===id);if(!confirm(`“${card?.name??'이 봇'}”과 저장된 모든 채팅을 삭제할까요?\n이 작업은 되돌릴 수 없습니다.`))return;const store=new ChatStore(repository as unknown as SessionRepository<ChatIndex>,id),index=await store.list();for(const chat of index.chats)await store.remove(chat.chatId);await repository.delete(`${id}:chatindex`);await library?.removeCard(id);cards=cards.filter(c=>c.projectId!==id);if(activeProjectId===id){profile=null;passport=null;session=null;activeProjectId=null;}}
-  async function send(text:string){if(!session||!chatStore||!chatIndex.activeChatId)return;scrollRequest+=1;busy=true;controller=new AbortController();try{await session.send(text,controller.signal);await chatStore.touch(chatIndex.activeChatId,session.turn);chatIndex=await chatStore.list();version+=1;}catch(e){if(!controller.signal.aborted)error=e instanceof Error?e.message:String(e);}finally{busy=false;controller=null;}}
+  async function paintBusyState(){await new Promise<void>((resolve)=>requestAnimationFrame(()=>resolve()));}
+  async function send(text:string){if(!session||!chatStore||!chatIndex.activeChatId)return;scrollRequest+=1;busy=true;controller=new AbortController();try{
+    // 대형 카드의 되돌리기 체크포인트 복제가 시작되기 전에 로딩 상태를 한 프레임 먼저 그린다.
+    // 이 양보가 없으면 메인 스레드의 동기 복제 시간 동안 입력창이 멈춘 것처럼 보인다.
+    await paintBusyState();
+    await session.send(text,controller.signal);await chatStore.touch(chatIndex.activeChatId,session.turn);chatIndex=await chatStore.list();version+=1;}catch(e){if(!controller.signal.aborted)error=e instanceof Error?e.message:String(e);}finally{busy=false;controller=null;}}
   async function continueGeneration(){if(!session||!chatStore||!chatIndex.activeChatId)return;busy=true;controller=new AbortController();try{await session.continueGeneration(controller.signal);await chatStore.touch(chatIndex.activeChatId,session.turn);chatIndex=await chatStore.list();version+=1;}catch(e){if(!controller.signal.aborted)error=e instanceof Error?e.message:String(e);}finally{busy=false;controller=null;}}
   // 시뮬레이션 행동은 "눌렀는데 아무 일도 안 일어남"이 가장 흔한 증상이다. 그런데 예외 없이 빈 결과가
   // 돌아오면 진단에 아무것도 안 남는다 — 그러면 사용자는 다시 "반응이 없어요"까지밖에 말할 수 없다.
