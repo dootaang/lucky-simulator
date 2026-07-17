@@ -55,7 +55,7 @@ export function cardToRuntimeProject(parsed: ParsedCard, compiled?:CardCompileAr
     content,featureToggles:{},moduleIds:compiled?.moduleIds??(fixtureInn?['genre.inn']:[])
   };
   const nativeGreeting='그리폰 지휘 시스템이 준비되었습니다. 지휘 콘솔에서 시작 방식을 선택하세요.';
-  const nativeInstruction='[Lucky 소녀전선 서사 모드] 게임의 수치·보상·전투 결과·시간·호감도는 엔진이 계산한다. 그 결과를 바꾸거나 새로운 수치를 만들지 말고, 현재 대화와 엔진이 준 사실만 자연스러운 한국어 장면으로 묘사한다. 원본 카드의 상태창·사이드패널·진행도·저장·배경·로그 같은 UI 태그는 출력하지 않는다. 캐릭터 대사는 [|<img="캐릭터_표정">|"대사"|] 형식을 사용할 수 있다. 장면에 음악이 어울리면 원본 BGM 이름 하나만 |BGM_이름| 형식으로 응답 끝에 한 번 출력한다.';
+  const nativeInstruction='[Lucky 소녀전선 서사 모드] 게임의 수치·보상·전투 결과·시간·호감도는 엔진이 계산한다. 그 결과를 바꾸거나 새로운 수치를 만들지 말고, 현재 대화와 엔진이 준 사실만 자연스러운 한국어 장면으로 묘사한다. 원본 카드의 상태창·사이드패널·진행도·저장·배경·로그 같은 UI 태그는 출력하지 않는다. 인형이 말하는 모든 대사는 반드시 [|<img="캐릭터_표정">|"대사"|] 형식으로 쓰고, 이미지 태그 없이 따옴표 대사만 출력하지 않는다. 캐릭터는 실제 인형 이름, 표정은 normal·smile·sad·angry·surprised처럼 장면에 맞는 영문 소문자를 쓴다. 장면에 음악이 어울리면 원본 BGM 이름 하나만 |BGM_이름| 형식으로 응답 끝에 한 번 출력한다.';
   const runtimeRegexScripts=nativeGfl?[]:regexScripts;
   return {
     project,
