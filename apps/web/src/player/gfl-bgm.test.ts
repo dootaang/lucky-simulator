@@ -12,6 +12,8 @@ describe('Girls Frontline BGM compatibility', () => {
     expect(extractGflBgmCue('BG_지휘관실|day1_오전|대기|N|N|N|BGM_day|\n본문')).toBe('day');
     expect(extractGflBgmCue('본문\n|BGM_daily|')).toBe('daily');
     expect(extractGflBgmCue('|BGM_bgmoff|')).toBe('bgmoff');
+    expect(extractGflBgmCue('|BGM_Dawn|')).toBe('day');
+    expect(gflBgmTrack('BGM_Dawn')?.youtubeId).toBe('92Eyg6ntieA');
   });
 
   it('continues the last assistant track while the commander is typing', () => {

@@ -16,7 +16,7 @@ export const GFL_BGM_TRACKS: readonly GflBgmTrack[] = [
   { cue: 'select', label: '선택', youtubeId: 'ZPg3oPBvC90' },
   { cue: 'tension', label: '긴장', youtubeId: 'SaMjz5QcpWw' },
   { cue: 'mystery', label: '미스터리', youtubeId: 'G10AjhbIxs4' },
-  { cue: 'day', label: '낮', youtubeId: '92Eyg6ntieA' },
+  { cue: 'day', label: '아침·낮', youtubeId: '92Eyg6ntieA' },
   { cue: 'sweet', label: '따뜻한 순간', youtubeId: 'nxdxWhte19c' },
   { cue: 'crisis', label: '위기', youtubeId: '9ccVyzsnWnE' },
   { cue: 'speed', label: '추격', youtubeId: 'ZzUKzKn84YQ' },
@@ -40,10 +40,13 @@ export const GFL_BGM_TRACKS: readonly GflBgmTrack[] = [
 ];
 
 const trackByCue = new Map(GFL_BGM_TRACKS.map(track => [track.cue, track]));
+// 모델이 장면 의미로 쓰는 자연어 별칭. 카드의 검증된 30곡 밖의 임의 영상은 열지 않고,
+// 가장 가까운 원본 제작자 곡으로만 연결한다.
+const cueAliases:Readonly<Record<string,string>>={dawn:'day',morning:'day'};
 
 export function normalizeGflBgmCue(value: string | null | undefined): string | null {
   if (!value) return null;
-  const cue = value.trim().toLowerCase().replace(/^bgm_/, '');
+  const raw = value.trim().toLowerCase().replace(/^bgm_/, ''),cue=cueAliases[raw]??raw;
   if (cue === 'bgmoff') return 'bgmoff';
   return trackByCue.has(cue) ? cue : null;
 }
