@@ -4,11 +4,13 @@ import { buildDecisionCards } from './decision-model';
 const selectFrom = (traffic: unknown) => (id: string) => (id === 'inn/traffic' ? traffic : null);
 
 describe('결정 카드 모델', () => {
-  it('소녀전선 출격 직후 채팅 안에 빠른 교전 버튼을 고정한다', () => {
-    const cards = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: { active: true, missionId: 'alpha', echelonId: 'e1', power: 1800 } } : null);
+  it('소녀전선 작전의 현재 단계를 채팅 안 진행 버튼으로 고정한다', () => {
+    const cards = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: { active: true, missionId: 'alpha', echelonId: 'e1', power: 1800, current: 1, stages: [{type:'recon',completed:true},{type:'battle'},{type:'boss'}] } } : null);
     expect(cards).toHaveLength(1);
-    expect(cards[0]).toMatchObject({ key: 'gfl-sortie:alpha:e1', title: '작전 출격 완료 · 교전 대기 중', more: 'LLM 전투 계산 0회' });
-    expect(cards[0]!.options[0]).toMatchObject({ label: '빠른 교전 시작', id: 'gfl/sortie/resolve', mode: 'narrated' });
+    expect(cards[0]).toMatchObject({ key: 'gfl-sortie:alpha:e1:1', title: '다음 단계 진행 · 2/3 ⚔', more: '단계 시퀀스 확정됨' });
+    expect(cards[0]!.options[0]).toMatchObject({ label: '교전 진행', id: 'gfl/sortie/resolve', mode: 'narrated' });
+    const recon = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: { active: true, missionId: 'alpha', echelonId: 'e1', current: 0, stages: [{type:'recon'},{type:'battle'}] } } : null);
+    expect(recon[0]).toMatchObject({ title: '다음 단계 진행 · 1/2 🔍', options: [{ label: '단계 진행', id: 'gfl/sortie/stage' }] });
   });
   it('대기 중인 첫 영업 파동을 영업 시작(서사)·건너뛰기(장부) 카드로 만든다', () => {
     const cards = buildDecisionCards(selectFrom({ waves: [{ id: 'lunch', label: '점심 영업', available: false, reason: '완료' }, { id: 'dinner', label: '저녁 영업', available: true }], incident: null, lodging: [] }));

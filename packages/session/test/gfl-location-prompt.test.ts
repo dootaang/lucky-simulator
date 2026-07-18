@@ -14,3 +14,12 @@ describe('GFL location narrative grounding',()=>{it('sends the moved Korean loca
   expect(narration).toContain('[|<img="캐릭터_표정">|"대사"|]');
   expect(narration).toContain('대괄호 안에 이름만 넣는 표기는 금지');
 });});
+
+describe('GFL operation stage narrative grounding',()=>{it('injects the recovered stage guide into management narration',async()=>{
+  const guide='정찰 상황. 전투 없이 지형·적정 탐색, 잠입, 관찰을 서술하라. 교전을 넣지 마라.';
+  const runtime=new ProjectRuntime({projectId:'gfl-stage',schema:{locations:[],gfl:{dolls:[],items:[],equipment:[],missions:[],facilities:[],hire:{capacity:[4,8,12,16,20]},progression:{eventGuides:{recon:guide}}},initialState:{day:1,gold:0,resources:{res:0},items:{},player:{},clock:{day:1,hour:8},location:'base-command',gfl:{started:true,dolls:{},echelons:[],facilities:{},manufacturing:[],repairs:[],sortie:{active:true,missionId:'alpha',echelonId:'e1',current:0,stages:[{type:'recon'},{type:'battle'}]}}}},screens:[],navigation:[],content:{nativePresentation:'gfl'},featureToggles:{},moduleIds:['genre.gfl']});
+  let prompt:CompiledPrompt|undefined;const session=new PlaySession({id:'gfl-stage',runtime,preset:defaultCardPreset(),card:{name:'소녀전선'},provider:{async complete(request){prompt=request.prompt;return{text:'정찰을 마쳤다.'};}}});
+  await session.runManagementTurn('gfl/sortie/stage',{});
+  const sent=prompt!.messages.map(message=>message.content).join('\n');
+  expect(sent).toContain('[현재 작전 단계의 원본 서사 지시]');expect(sent).toContain(guide);expect(sent).toContain('교전을 넣지 마라');
+});});

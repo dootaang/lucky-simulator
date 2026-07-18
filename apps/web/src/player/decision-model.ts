@@ -89,13 +89,18 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
   }
   const sortie = rec(gflStatus.sortie);
   if (sortie.active) {
+    const stages = arr(sortie.stages), current = num(sortie.current), stage = stages[current] ?? { type: 'battle' },
+      type = String(stage.type ?? 'battle'), combat = type === 'battle' || type === 'boss', total = Math.max(1, stages.length),
+      icons: Record<string, string> = { battle: '⚔', boss: '👑', recon: '🔍', other: '🚩', mystery: '❓' };
     cards.push({
-      key: `gfl-sortie:${String(sortie.missionId)}:${String(sortie.echelonId)}`,
+      key: `gfl-sortie:${String(sortie.missionId)}:${String(sortie.echelonId)}:${current}`,
       icon: 'alert',
-      title: '작전 출격 완료 · 교전 대기 중',
-      desc: `제대 ${String(sortie.echelonId)} · 전투력 ${num(sortie.power).toLocaleString()} — 버튼을 누르면 여러 인형과 적의 전투를 엔진이 즉시 계산합니다.`,
-      more: 'LLM 전투 계산 0회',
-      options: [{ label: '빠른 교전 시작', id: 'gfl/sortie/resolve', params: {}, mode: 'narrated', kind: 'primary' }],
+      title: `다음 단계 진행 · ${current + 1}/${total} ${icons[type] ?? '·'}`,
+      desc: combat
+        ? `제대 ${String(sortie.echelonId)} · 전투력 ${num(sortie.power).toLocaleString()} — 현재 교전을 엔진이 계산합니다.`
+        : `${icons[type] ?? '·'} ${type} 단계 — 전투 없이 현재 상황을 해소합니다.`,
+      more: sortie.scouted ? '정찰 보정 +1 대기' : '단계 시퀀스 확정됨',
+      options: [{ label: combat ? '교전 진행' : '단계 진행', id: combat ? 'gfl/sortie/resolve' : 'gfl/sortie/stage', params: {}, mode: 'narrated', kind: 'primary' }],
     });
   }
   const traffic = rec(safeSelect(select, 'inn/traffic'));

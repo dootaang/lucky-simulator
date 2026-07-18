@@ -425,6 +425,97 @@ type GflCombatant = RuntimeRecord & {
   boss?: boolean;
 };
 
+type OperationStageType = "battle" | "boss" | "recon" | "other" | "mystery";
+const OPERATION_STAGE_WEIGHTS: Record<string, ReadonlyArray<readonly [OperationStageType, number]>> = {
+  // 다단계 HP 소모전을 500시드로 검산해 원본 제안 45에서 허용 범위 하한인 25로 조정했다.
+  sweep: [["battle", 25], ["recon", 20], ["other", 25], ["mystery", 30]],
+  recon: [["battle", 15], ["recon", 40], ["other", 15], ["mystery", 30]],
+  annihil: [["battle", 60], ["recon", 5], ["other", 10], ["mystery", 25]],
+};
+const DEFAULT_PROGRESS_BY_STAR = [3, 5, 7, 8, 9, 10, 11] as const;
+const DEFAULT_EVENT_GUIDES: Record<OperationStageType, string> = {
+  battle: "교전 상황. 이 단계는 반드시 실제 전투가 벌어져야 하며 우회·회피는 불가하다. 적과의 전투를 서술하라.",
+  boss: "보스 교전. 지역 보스와의 결전을 서술하라.",
+  recon: "정찰 상황. 전투 없이 지형·적정 탐색, 잠입, 관찰을 서술하라. 교전을 넣지 마라.",
+  other: "돌발 상황. 민간인 구호, 지형 장애물, 보급 문제 등 비전투 이벤트를 서술하라. 교전을 넣지 마라.",
+  mystery: "정체불명 상황. 무언가를 발견하거나 인기척을 감지한다. 교전으로 단정하지 말고 긴장감 있게 서술하라.",
+};
+function progressionConfig(schema: RuntimeRecord) {
+  return record(config(schema).progression);
+}
+function stageGuide(schema: RuntimeRecord, type: OperationStageType) {
+  return string(record(progressionConfig(schema).eventGuides)[type] || DEFAULT_EVENT_GUIDES[type]);
+}
+function operationStages(c: Context, operation: RuntimeRecord, missionType: string) {
+  const progression = progressionConfig(c.schema), stars = clamp(Math.floor(number(operation.stars)), 0, 6),
+    byStar = record(progression.byStar), missionTypes = list<RuntimeRecord>(progression.missionTypes),
+    type = missionTypes.find((value) => value.key === missionType),
+    stepMod = type ? number(type.stepMod) : missionType === "recon" ? -1 : missionType === "annihil" ? 1 : 0,
+    count = Math.max(2, number(byStar[String(stars)], DEFAULT_PROGRESS_BY_STAR[stars]!) + stepMod),
+    weights = OPERATION_STAGE_WEIGHTS[missionType]!, stages: RuntimeRecord[] = [];
+  for (let index = 0; index < count; index++) {
+    const roll = c.rng.int(1, 100);
+    let cursor = 0;
+    const selected = weights.find(([, weight]) => (cursor += weight) >= roll)?.[0] ?? "mystery";
+    stages.push({ type: selected });
+  }
+  stages[count - 1] = { type: string(operation.boss).trim() ? "boss" : "battle" };
+  if (missionType !== "recon" && !stages.slice(0, -1).some((value) => value.type === "battle"))
+    stages[count - 2] = { type: "battle" };
+  return stages;
+}
+function rollOperationLoot(c: Context) {
+  const inventory = record(c.state.items), loot: RuntimeRecord[] = [];
+  for (const item of items(c.schema)) {
+    const roll = c.rng.int(1, 100), drop = Math.max(0, number(item.drop));
+    if (roll <= drop) {
+      inventory[string(item.id)] = number(inventory[string(item.id)]) + 1;
+      loot.push({ id: item.id, name: item.name, qty: 1, roll, drop });
+    }
+  }
+  c.state.items = inventory;
+  return loot;
+}
+
+function resolveOperationStage(c: Context) {
+  const gfl = state(c.state), sortie = record(gfl.sortie), stages = list<RuntimeRecord>(sortie.stages);
+  if (!sortie.active || !stages.length) return fail(c, "gfl_sortie_missing");
+  const current = clamp(number(sortie.current), 0, stages.length - 1), stage = record(stages[current]),
+    type = string(stage.type) as OperationStageType, guide = stageGuide(c.schema, type);
+  if (type === "battle" || type === "boss") {
+    if (string(sortie.engagementMode) !== "quick") return fail(c, "gfl_sortie_tactic_required", type);
+    return resolveSortie(c);
+  }
+  const effects: Record<string, () => RuntimeRecord> = {
+    recon: () => { sortie.scouted = true; return { scouted: true }; },
+    other: () => {
+      const roll = c.rng.int(1, 100), found = roll <= 40,
+        amount = found ? 50 + Math.floor((roll - 1) * 100 / 39) : 0,
+        resources = record(c.state.resources);
+      if (found) resources.res = number(resources.res) + amount;
+      c.state.resources = resources;
+      return { roll, found, resource: found ? { id: "res", qty: amount } : null };
+    },
+    mystery: () => {
+      const roll = c.rng.int(1, 100), found = roll <= 50;
+      return { roll, found, loot: found ? rollOperationLoot(c) : [] };
+    },
+  };
+  const result = effects[type]?.() ?? {};
+  stage.completed = true; stage.result = result; sortie.current = current + 1;
+  sortie.lastStage = { index: current, stageType: type, guide, ...result };
+  gfl.sortie = sortie; c.state.gfl = gfl;
+  return ok(c, { stageIndex: current, stageType: type, guide, current: sortie.current, total: stages.length, ...result });
+}
+
+function retreatOperation(c: Context) {
+  const gfl = state(c.state), sortie = record(gfl.sortie);
+  if (!sortie.active) return fail(c, "gfl_sortie_missing");
+  const result = { missionId: sortie.missionId, current: sortie.current, lootKept: true, completed: false };
+  gfl.sortie = null; c.state.gfl = gfl; c.state.combat = null;
+  return ok(c, result);
+}
+
 function resolveSortie(c: Context) {
   const gfl = state(c.state),
     sortie = record(gfl.sortie),
@@ -432,6 +523,9 @@ function resolveSortie(c: Context) {
     entry = formation(c.state, sortie.echelonId);
   if (!sortie.active || !operation || !entry)
     return fail(c, "gfl_sortie_missing");
+  const stages = list<RuntimeRecord>(sortie.stages), currentStageIndex = clamp(number(sortie.current), 0, Math.max(0, stages.length - 1)),
+    currentStage = record(stages[currentStageIndex]), stageType = string(currentStage.type || "battle") as OperationStageType;
+  if (stages.length && stageType !== "battle" && stageType !== "boss") return fail(c, "gfl_sortie_stage_not_combat", stageType);
 
   const commanderBefore = commanderStatus(c.state),
     tactic = string(c.params.tactic || sortie.tactic || "balanced"),
@@ -440,9 +534,9 @@ function resolveSortie(c: Context) {
     missionTotal = missionRoll + risk.modifier,
     condition = missionRoll === 20 || (missionRoll !== 1 && missionTotal >= 8) ? missionTotal >= 15 ? "favorable" : "steady" : missionTotal <= 2 ? "disastrous" : "unfavorable",
     conditionHit = condition === "favorable" ? 2 : condition === "unfavorable" ? -2 : condition === "disastrous" ? -4 : 0,
-    tacticHit = tactic === "focus" ? 2 : tactic === "cover" ? -2 : 0,
+    tacticHit = (tactic === "focus" ? 2 : tactic === "cover" ? -2 : 0) + (sortie.scouted ? 1 : 0),
     allyDamageFactor = tactic === "focus" ? 1.15 : tactic === "cover" ? .85 : 1,
-    incomingFactor = (tactic === "focus" ? 1.15 : tactic === "cover" ? .7 : 1) * (condition === "favorable" ? .85 : condition === "unfavorable" ? 1.15 : condition === "disastrous" ? 1.3 : 1),
+    incomingFactor = (tactic === "focus" ? 1.15 : tactic === "cover" ? .7 : 1) * (condition === "favorable" ? .85 : condition === "unfavorable" ? 1.15 : condition === "disastrous" ? 1.3 : 1) * (stages.length ? .8 : 1),
     values = owned(c.state), missionFaction = factionSummary(operation),
     allies: GflCombatant[] = list<unknown>(entry.slots)
       .map((rawId, index) => ({ unit: record(values[string(rawId)]), row: gflFormationRow(index) }))
@@ -475,14 +569,15 @@ function resolveSortie(c: Context) {
           1,
           5,
         ),
-    totalEnemyPower = Math.max(100, number(operation.power, 100)),
+    stageEncounterScale = stages.length >= 7 ? .9 : 1,
+    totalEnemyPower = Math.max(100, number(operation.power, 100) * stageEncounterScale),
     enemies: GflCombatant[] = Array.from({ length: enemyCount }, (_, index) => {
       const isBoss = !configured.length && Boolean(bossName) && index === 0, source = configured[index] ?? {},
         unitPower = Math.max(
           20,
-          number(source.power, Math.round(isBoss ? totalEnemyPower * .5 : bossName && !configured.length && enemyCount > 1 ? totalEnemyPower * .5 / (enemyCount - 1) : totalEnemyPower / enemyCount)),
+          source.power === undefined ? Math.round(isBoss ? totalEnemyPower * .5 : bossName && !configured.length && enemyCount > 1 ? totalEnemyPower * .5 / (enemyCount - 1) : totalEnemyPower / enemyCount) : number(source.power) * stageEncounterScale,
         ),
-        maxHp = Math.max(80, number(source.hp, Math.round(isBoss ? unitPower * 1.1 : unitPower * .75)));
+        maxHp = Math.max(80, source.hp === undefined ? Math.round(isBoss ? unitPower * 1.1 : unitPower * .75) : number(source.hp) * stageEncounterScale);
       return {
         id: string(source.id || (isBoss ? "boss" : `enemy-${index + 1}`)),
         name: string(
@@ -534,6 +629,7 @@ function resolveSortie(c: Context) {
         targetHp: target.hp,
         counter,
         hitBuff: hgHitBuff,
+        scoutedHit: sortie.scouted ? 1 : 0,
         roundFactor,
         rowFactor,
         maxHpFactor,
@@ -584,8 +680,10 @@ function resolveSortie(c: Context) {
     unit.hp = hp;
     unit.status = ally.hp <= 0 ? "대파" : ally.hp < ally.maxHp ? "손상" : "대기";
   }
+  const loot = outcome === "victory" ? rollOperationLoot(c) : [],
+    operationComplete = outcome === "victory" && (!stages.length || currentStageIndex >= stages.length - 1);
   let reward = null, rewardRate = 0, commanderExp = { gained: 0, total: commanderBefore.exp, level: commanderBefore.level }, levelUp: RuntimeRecord | null = null;
-  if (outcome === "victory") {
+  if (operationComplete) {
     const firstClear = !list<string>(state(c.state).completedMissions).includes(string(operation.id));
     rewardRate = firstClear ? 1 : .35;
     const rawReward = record(operation.rewards), scaledReward = Object.fromEntries(Object.entries(rawReward).map(([key, value]) => [key, Math.floor(number(value) * rewardRate)]));
@@ -638,10 +736,23 @@ function resolveSortie(c: Context) {
     commanderExp,
     ...(levelUp ? { levelUp } : {}),
     factionLabel: missionFaction.counterLabel,
+    stageIndex: currentStageIndex,
+    stageType,
+    guide: stageGuide(c.schema, stageType),
+    loot,
+    operationComplete,
   };
-  next.sortie = null;
+  if (outcome === "defeat" || operationComplete || !stages.length) next.sortie = null;
+  else {
+    currentStage.completed = true;
+    currentStage.result = { outcome, loot };
+    sortie.current = currentStageIndex + 1;
+    sortie.scouted = false;
+    sortie.lastStage = { index: currentStageIndex, stageType, guide: stageGuide(c.schema, stageType), outcome, loot };
+    next.sortie = sortie;
+  }
   c.state.gfl = next;
-  const dailyAwards = markDaily(c, "sortiesCompleted");
+  const dailyAwards = operationComplete ? markDaily(c, "sortiesCompleted") : [];
   // 이전 버전에서 이미 범용 전투창을 연 저장본도 새 일괄 전투로 안전하게 빠져나온다.
   c.state.combat = null;
   return ok(c, {
@@ -658,6 +769,13 @@ function resolveSortie(c: Context) {
     commanderExp,
     ...(levelUp ? { levelUp } : {}),
     factionLabel: missionFaction.counterLabel,
+    stageIndex: currentStageIndex,
+    stageType,
+    guide: stageGuide(c.schema, stageType),
+    loot,
+    operationComplete,
+    current: next.sortie ? number(record(next.sortie).current) : stages.length,
+    total: stages.length || 1,
     dailyAwards,
     llmCallsRequired: 0,
   });
@@ -1307,13 +1425,16 @@ export function gflModule(): ModuleDefinition {
         }
         const operation = mission(c.schema, c.params.missionId),
           entry = formation(c.state, c.params.echelonId),
-          command = string(c.params.command || "field");
+          command = string(c.params.command || "field"),
+          missionType = string(c.params.missionType || "sweep");
         if (!operation)
           return fail(c, "gfl_unknown_mission", c.params.missionId);
         if (!missionUnlocked(c.schema, c.state, operation)) return fail(c, "gfl_mission_locked", c.params.missionId);
         if (!entry) return fail(c, "gfl_unknown_echelon", c.params.echelonId);
         if (!["field", "remote"].includes(command))
           return fail(c, "gfl_sortie_command_invalid", command);
+        if (!OPERATION_STAGE_WEIGHTS[missionType])
+          return fail(c, "gfl_sortie_mission_type_invalid", missionType);
         const members = list<unknown>(entry.slots).filter(Boolean),
       formationPower = effectivePower(c.state, entry), daily = dailyState(c.state);
         if (!members.length) return fail(c, "gfl_echelon_empty");
@@ -1326,6 +1447,7 @@ export function gflModule(): ModuleDefinition {
           if (missing)
             return fail(c, "gfl_sortie_travel_funds_missing", travelCost);
         }
+        const stages = operationStages(c, operation, missionType);
         gfl.sortie = {
           active: true,
           missionId: operation.id,
@@ -1337,6 +1459,10 @@ export function gflModule(): ModuleDefinition {
           returnLocation: baseLocation(c.state),
           travelCost,
           engagementMode: string(c.params.engagementMode || "tactical"),
+          missionType,
+          stages,
+          current: 0,
+          scouted: false,
         };
         daily.sortiesUsed = number(daily.sortiesUsed) + 1;
         c.state.gfl = gfl;
@@ -1345,6 +1471,9 @@ export function gflModule(): ModuleDefinition {
           echelonId: entry.id,
           power: formationPower,
           command,
+          missionType,
+          stages,
+          current: 0,
           travelCost,
           risk: missionRisk(formationPower, number(operation.power), commander.checkBonus),
           sortiesRemaining: Math.max(0, commander.sortieLimit - number(daily.sortiesUsed)),
@@ -1355,6 +1484,8 @@ export function gflModule(): ModuleDefinition {
       "gfl/sortie/engage": scoped(resolveSortie),
       "gfl/sortie/resolve": scoped(resolveSortie),
       "gfl/sortie/finish": scoped(resolveSortie),
+      "gfl/sortie/stage": scoped(resolveOperationStage),
+      "gfl/sortie/retreat": scoped(retreatOperation),
       "gfl/facility/upgrade": scoped((c) => {
         const id = string(c.params.facilityId),
           definition = list<RuntimeRecord>(config(c.schema).facilities).find(
@@ -1643,6 +1774,7 @@ export function gflModule(): ModuleDefinition {
                 }
               : { id: locationId, name: location?.name ?? locationId },
           sortie: sortie.active ? sortie : null,
+          missionTypes: list<RuntimeRecord>(progressionConfig(schema).missionTypes),
           lastCheck: gfl.lastCheck ?? null,
           lastBattle: gfl.lastBattle ?? null,
           featuredDollId: gfl.featuredDollId ?? null,

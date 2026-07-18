@@ -1847,12 +1847,16 @@ export class PlaySession {
       ]
         .filter(Boolean)
         .join("\n"),
+      stageGuides = [...new Set(logs.map((log) => typeof log.guide === "string" ? log.guide.trim() : "").filter(Boolean))],
+      stageGuide = stageGuides.length
+        ? `\n[현재 작전 단계의 원본 서사 지시]\n${stageGuides.join("\n")}\n이 지시는 엔진이 확정한 현재 단계에만 적용하며, 지시와 모순되는 전투·사건을 추가하지 않는다.`
+        : "",
       context = `[이미 확정·반영된 엔진 결과]\n행동: ${eventIds.join(", ")}\n${JSON.stringify(logs)}${changes}\n\n[현재 엔진 상태]\n${JSON.stringify(this.#engineStateForPrompt())}${flavorText ? `\n\n플레이어의 연출 의도: ${flavorText}` : ""}`;
     return {
       messages: [
         {
           role: "system",
-          content: `${this.#card.name}의 관리 결과를 한국어 250자 안팎의 자연스러운 장면으로 서사화한다.${persona}\n엔진 결과의 수치와 성공·실패를 그대로 따른다. 결과를 바꾸거나 새 사건·날짜 진행·거래·재고 변화를 만들지 않는다. JSON 사건을 제안하지 말고 이야기만 쓴다. 이전 메시지의 이미지 태그를 현재 장면의 화자 근거 없이 복사하지 않는다.${npcGuide ? `\n${npcGuide}\n등장인물 이미지를 쓸 때는 위 NPC와 스프라이트 명령만 사용한다.` : ""}`,
+          content: `${this.#card.name}의 관리 결과를 한국어 250자 안팎의 자연스러운 장면으로 서사화한다.${persona}\n엔진 결과의 수치와 성공·실패를 그대로 따른다. 결과를 바꾸거나 새 사건·날짜 진행·거래·재고 변화를 만들지 않는다. JSON 사건을 제안하지 말고 이야기만 쓴다. 이전 메시지의 이미지 태그를 현재 장면의 화자 근거 없이 복사하지 않는다.${stageGuide}${npcGuide ? `\n${npcGuide}\n등장인물 이미지를 쓸 때는 위 NPC와 스프라이트 명령만 사용한다.` : ""}`,
         },
         ...recent,
         { role: "user", content: context },

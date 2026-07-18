@@ -88,7 +88,7 @@ const schema = {
         description: "404 소대장",
       },
     ],
-    items: [{ id: "ration", name: "전투식량", price: 50 }],
+    items: [{ id: "ration", name: "전투식량", price: 50, drop: 100 }, { id: "ring", name: "서약반지", price: 10_000, drop: 0 }],
     equipment: [
       { id: "scope", name: "옵티컬", price: 100, power: 50, ban: ["SG"] },
     ],
@@ -131,6 +131,15 @@ const schema = {
       doll: { gold: 100, res: 100 },
       equipment: { gold: 100, res: 100 },
       heavy: { gold: 500, res: 500 },
+    },
+    progression: {
+      byStar: { 0: 3, 1: 5, 2: 7, 3: 8, 4: 9, 5: 10, 6: 11 },
+      missionTypes: [
+        { key: "recon", name: "🔍 정찰 임무", stepMod: -1, hint: "교전 최소화" },
+        { key: "sweep", name: "⚔️ 소탕 임무", stepMod: 0, hint: "표준" },
+        { key: "annihil", name: "💥 섬멸 임무", stepMod: 1, hint: "완전 섬멸" },
+      ],
+      eventGuides: { battle: "교전 지시", boss: "보스 지시", recon: "정찰 지시", other: "돌발 지시", mystery: "미확인 지시" },
     },
   },
 };
@@ -175,6 +184,26 @@ function sortieGame(options: { stars?: number; boss?: string; exp?: number; seed
   game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
   return game;
 }
+function playNextStage(game: ReturnType<typeof runtime>) {
+  const sortie = (game.state.gfl as any).sortie;
+  if (!sortie) return null;
+  const type = sortie.stages?.[sortie.current]?.type;
+  return game.dispatch(type === "battle" || type === "boss" ? "gfl/sortie/resolve" : "gfl/sortie/stage").log[0] as any;
+}
+function completeOperation(game: ReturnType<typeof runtime>) {
+  let result: any = null;
+  while ((game.state.gfl as any).sortie?.active) result = playNextStage(game);
+  return result;
+}
+function reachCombat(game: ReturnType<typeof runtime>) {
+  while ((game.state.gfl as any).sortie?.active) {
+    const sortie = (game.state.gfl as any).sortie;
+    const type = sortie.stages?.[sortie.current]?.type;
+    if (type === "battle" || type === "boss") return game.dispatch("gfl/sortie/resolve").log[0] as any;
+    game.dispatch("gfl/sortie/stage");
+  }
+  return null;
+}
 describe("Girls Frontline native module", () => {
   it("applies deterministic class, row, faction, and boss combat composition rules", () => {
     const source: any = structuredClone(schema);
@@ -188,7 +217,7 @@ describe("Girls Frontline native module", () => {
       { id:"rf",name:"RF",class:"RF",grade:1,maxHp:800,power:180 },
     ];
     source.gfl.missions[0] = { id:"alpha",name:"ALPHA",power:1800,enemy:"철혈",enemyCount:3,factions:["철혈"],boss:"Scarecrow",rewards:{} };
-    const fight = () => { const game=runtime(structuredClone(source),91); game.dispatch("gfl/start",{mode:"commander"}); for(const [slot,unit] of source.gfl.dolls.slice(0,5).entries()){game.dispatch("gfl/doll/acquire",{dollId:unit.id});game.dispatch("gfl/echelon/assign",{echelonId:"e1",slot,dollId:unit.id});} game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); return game.dispatch("gfl/sortie/resolve").log[0] as any; };
+    const fight = () => { const game=runtime(structuredClone(source),91); game.dispatch("gfl/start",{mode:"commander"}); for(const [slot,unit] of source.gfl.dolls.slice(0,5).entries()){game.dispatch("gfl/doll/acquire",{dollId:unit.id});game.dispatch("gfl/echelon/assign",{echelonId:"e1",slot,dollId:unit.id});} game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); return reachCombat(game); };
     const first=fight(), second=fight(), allies=first.rounds.flatMap((round:any)=>round.exchanges.filter((row:any)=>row.side==="ally"));
     expect(first).toEqual(second); // 가중 타겟팅도 같은 시드면 같은 결과
     expect(allies.some((row:any)=>row.hitBuff===1)).toBe(true);
@@ -202,7 +231,7 @@ describe("Girls Frontline native module", () => {
   });
   it("applies the RF maximum-HP target multiplier", () => {
     const source:any=structuredClone(schema); source.gfl.dolls=[{id:"rf",name:"RF",class:"RF",grade:5,maxHp:900,power:200}]; source.gfl.missions[0].enemies=[{id:"large",power:100,hp:1000},{id:"small",power:100,hp:200}];
-    const game=runtime(source,4); game.dispatch("gfl/start",{mode:"commander"}); game.dispatch("gfl/doll/acquire",{dollId:"rf"}); game.dispatch("gfl/echelon/assign",{echelonId:"e1",slot:4,dollId:"rf"}); game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); const battle=game.dispatch("gfl/sortie/resolve").log[0] as any;
+    const game=runtime(source,4); game.dispatch("gfl/start",{mode:"commander"}); game.dispatch("gfl/doll/acquire",{dollId:"rf"}); game.dispatch("gfl/echelon/assign",{echelonId:"e1",slot:4,dollId:"rf"}); game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); const battle=reachCombat(game);
     expect(battle.rounds[0].exchanges.find((row:any)=>row.side==="ally")).toMatchObject({actorId:"rf",maxHpFactor:1.3,rowFactor:1.38});
   });
   it("runs start, echelon, sortie, combat settlement, repair and manufacturing deterministically", () => {
@@ -223,7 +252,7 @@ describe("Girls Frontline native module", () => {
       game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" })
         .log[0]?.ok,
     ).toBe(true);
-    expect(game.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({
+    expect(completeOperation(game)).toMatchObject({
       ok: true,
       outcome: "victory",
       missionId: "alpha",
@@ -270,13 +299,14 @@ describe("Girls Frontline native module", () => {
       echelonId: "e1",
     });
     const playerHpBefore = structuredClone((game.state.player as any).pools.hp);
-    const battle = game.dispatch("gfl/sortie/resolve").log[0] as any;
+    const battle = completeOperation(game) as any;
     expect(battle).toMatchObject({ ok: true, outcome: "victory" });
     expect(battle.roundCount).toBeLessThanOrEqual(8);
     expect(battle.allies).toHaveLength(2);
     expect(battle.enemies).toHaveLength(2);
     expect(battle.enemies.every((enemy: any) => enemy.hp === 0)).toBe(true);
     expect((game.state.player as any).pools.hp).toEqual(playerHpBefore);
+    completeOperation(game);
     expect((game.state.gfl as any).sortie).toBeNull();
   });
   it("rejects an empty echelon and insufficient resources without changing state", () => {
@@ -310,10 +340,10 @@ describe("Girls Frontline native module", () => {
         .log[0],
     ).toMatchObject({ ok: true });
     expect(game.select("gfl/shop")).toMatchObject({
-      catalog: [
-        { id: "ration", owned: 0 },
-        { id: "scope", owned: 0 },
-      ],
+      catalog: expect.arrayContaining([
+        expect.objectContaining({ id: "ration", owned: 0 }),
+        expect.objectContaining({ id: "scope", owned: 0 }),
+      ]),
       fairies: [{ id: "command", level: 1 }],
     });
   });
@@ -550,6 +580,58 @@ describe("Girls Frontline native module", () => {
     const game = runtime(source); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
     expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", engagementMode: "tactical" }).log[0]).toMatchObject({ ok: true, power: 1100, risk: { ratio: 22, label: "극위험" }, sortiesRemaining: 2 });
   });
+  it("별점·임무 유형으로 단계 수를 정하고 시작 때 시퀀스와 RNG를 한 번에 봉인한다", () => {
+    const first = sortieGame({ stars: 4, boss: "Scarecrow", seed: 2026 });
+    const before = first.snapshot().rng;
+    const started = first.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "annihil" }).log[0] as any;
+    expect(started.stages).toHaveLength(10); // 4★ 기본 9 + 섬멸 1
+    expect(started.stages.at(-1)).toEqual({ type: "boss" });
+    expect(started.stages.some((stage: any) => stage.type === "battle")).toBe(true);
+    const expected = createRng(0); expected.restore(before);
+    for (let index = 0; index < 10; index++) expected.int(1, 100);
+    expect(first.snapshot().rng).toBe(expected.snapshot());
+    const second = sortieGame({ stars: 4, boss: "Scarecrow", seed: 2026 });
+    expect(second.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "annihil" }).log[0]).toMatchObject({ stages: started.stages });
+    const recon = sortieGame({ stars: 0 });
+    expect(recon.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "recon" }).log[0]).toMatchObject({ stages: expect.arrayContaining([expect.any(Object)]) });
+    expect(((recon.state.gfl as any).sortie.stages as any[])).toHaveLength(2);
+    const invalid = sortieGame();
+    expect(invalid.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "escort" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_mission_type_invalid" });
+  });
+  it("정찰 명중 보정은 다음 전투 한 번만 쓰고 단계별 HP·루팅은 작전 끝까지 이어진다", () => {
+    const game = sortieGame({ seed: 44 });
+    game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    const sortie = (game.state.gfl as any).sortie;
+    sortie.stages = [{ type: "recon" }, { type: "battle" }, { type: "battle" }]; sortie.current = 0;
+    expect(game.dispatch("gfl/sortie/stage").log[0]).toMatchObject({ stageType: "recon", guide: "정찰 지시", scouted: true, current: 1, total: 3 });
+    const first = game.dispatch("gfl/sortie/resolve").log[0] as any;
+    expect(first.operationComplete).toBe(false);
+    expect(first.rounds.flatMap((round: any) => round.exchanges).find((row: any) => row.side === "ally")).toMatchObject({ scoutedHit: 1 });
+    expect(first.loot).toEqual([expect.objectContaining({ id: "ration", qty: 1 })]);
+    expect((game.state.items as any).ration).toBe(1);
+    const hpAfterFirst = (game.state.gfl as any).dolls.m4a1.hp.cur;
+    const final = game.dispatch("gfl/sortie/resolve").log[0] as any;
+    expect(final.rounds.flatMap((round: any) => round.exchanges).find((row: any) => row.side === "ally")).toMatchObject({ scoutedHit: 0 });
+    expect(final.operationComplete).toBe(true);
+    expect((game.state.gfl as any).dolls.m4a1.hp.cur).toBeLessThanOrEqual(hpAfterFirst);
+    expect((game.state.items as any).ration).toBe(2);
+    expect((game.state.gfl as any).completedMissions).toEqual(["alpha"]);
+  });
+  it("mystery는 무발견도 판정 1회를 소비하고 발견 시 모든 아이템을 독립 굴림하며 퇴각해도 전리품을 보존한다", () => {
+    const game = sortieGame({ seed: 77 });
+    game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    const sortie = (game.state.gfl as any).sortie;
+    sortie.stages = [{ type: "mystery" }, { type: "battle" }]; sortie.current = 0;
+    const before = game.snapshot().rng, result = game.dispatch("gfl/sortie/stage").log[0] as any,
+      expected = createRng(0); expected.restore(before); expected.int(1, 100);
+    if (result.found) for (const _item of schema.gfl.items) expected.int(1, 100);
+    expect(game.snapshot().rng).toBe(expected.snapshot());
+    expect(result).toMatchObject({ stageType: "mystery", guide: "미확인 지시", loot: expect.any(Array) });
+    const inventoryBefore = structuredClone(game.state.items);
+    expect(game.dispatch("gfl/sortie/retreat").log[0]).toMatchObject({ ok: true, lootKept: true, completed: false });
+    expect(game.state.items).toEqual(inventoryBefore);
+    expect((game.state.gfl as any).completedMissions).toEqual([]);
+  });
   it("같은 전선의 작전 지역을 이전 지역 클리어 순서로 개방한다", () => {
     const source = structuredClone(schema) as any; source.gfl.missions[0].theater = "front"; source.gfl.missions.push({ id: "beta", name: "BETA", theater: "front", power: 100, enemy: "철혈", rewards: {} });
     const game = runtime(source); expect(game.select("gfl/missions")).toMatchObject([{ id: "alpha", unlocked: true }, { id: "beta", unlocked: false }]);
@@ -559,7 +641,7 @@ describe("Girls Frontline native module", () => {
     const game = runtime(); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
     expect(game.dispatch("gfl/doll/feature", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: true }); expect(game.dispatch("gfl/settings/update", { relationDifficulty: "strict" }).log[0]).toMatchObject({ ok: true });
     expect(game.select("gfl/status")).toMatchObject({ featuredDollId: "m4a1", settings: { relationDifficulty: "strict" } });
-    for (let count = 0; count < 3; count++) { game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); game.dispatch("gfl/sortie/resolve"); const unit=(game.state.gfl as any).dolls.m4a1; unit.hp.cur=unit.hp.max; }
+    for (let count = 0; count < 3; count++) { game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); completeOperation(game); const unit=(game.state.gfl as any).dolls.m4a1; unit.hp.cur=unit.hp.max; }
     expect(game.select("gfl/daily")).toMatchObject({ sortiesUsed: 3, sortiesRemaining: 0, sortieLimit: 3 }); expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_daily_limit" });
   });
   it("관계 선택지를 티어·일일 사용량 기반으로 제시하고 잠금 사유를 밝힌다", () => {
@@ -678,25 +760,25 @@ describe("Girls Frontline native module", () => {
     for (const [stars, expected] of COMMANDER_EXP_BY_STAR.entries()) {
       const game = sortieGame({ stars });
       game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
-      expect((game.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(expected);
+      expect(completeOperation(game).commanderExp.gained).toBe(expected);
     }
     const boss = sortieGame({ stars: 3, boss: "Scarecrow" });
     boss.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
-    expect((boss.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(45);
+    expect(completeOperation(boss).commanderExp.gained).toBe(45);
     boss.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
-    expect((boss.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(16);
+    expect(completeOperation(boss).commanderExp.gained).toBe(16);
     const minimum = sortieGame({ stars: 0 });
     (minimum.state.gfl as any).completedMissions = ["alpha"];
     minimum.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
-    expect((minimum.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(4);
+    expect(completeOperation(minimum).commanderExp.gained).toBe(4);
   });
   it("29 EXP 경계와 한 번에 여러 레벨 상승을 전투 로그에 남긴다", () => {
     const boundary = sortieGame({ exp: 29, stars: 0 });
     boundary.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
-    expect(boundary.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({ commanderExp: { gained: 10, total: 39, level: 2 }, levelUp: { from: 1, to: 2 } });
+    expect(completeOperation(boundary)).toMatchObject({ commanderExp: { gained: 10, total: 39, level: 2 }, levelUp: { from: 1, to: 2 } });
     const multi = sortieGame({ exp: 29, stars: 6, boss: "Scarecrow" });
     multi.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
-    expect(multi.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({ commanderExp: { gained: 105, total: 134, level: 3 }, levelUp: { from: 1, to: 3 } });
+    expect(completeOperation(multi)).toMatchObject({ commanderExp: { gained: 105, total: 134, level: 3 }, levelUp: { from: 1, to: 3 } });
   });
   it("Lv4·12에서 일일 작전 상한을 4·5회로 해금하고 다음 출격을 막는다", () => {
     for (const [exp, limit] of [[150, 4], [1430, 5]] as const) {
@@ -714,7 +796,7 @@ describe("Girls Frontline native module", () => {
       const game = sortieGame({ exp });
       const start = game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0] as any;
       expect(start.risk.commanderBonus).toBe(bonus);
-      const battle = game.dispatch("gfl/sortie/resolve").log[0] as any;
+      const battle = reachCombat(game);
       expect(battle.missionCheck.commanderBonus).toBe(bonus);
       expect(battle.missionCheck.total).toBe(battle.missionCheck.roll + battle.missionCheck.modifier);
     }
@@ -722,7 +804,7 @@ describe("Girls Frontline native module", () => {
   it("패배는 EXP를 주지 않고 Lv20은 초과 EXP를 보존하며 칭호만 표시한다", () => {
     const defeat = sortieGame({ exp: 29, stars: 6, enemyPower: 100_000, seed: 11 });
     defeat.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
-    expect(defeat.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({ outcome: "defeat", commanderExp: { gained: 0, total: 29, level: 1 } });
+    expect(reachCombat(defeat)).toMatchObject({ outcome: "defeat", commanderExp: { gained: 0, total: 29, level: 1 } });
     const capped = sortieGame({ exp: 5000 });
     expect(capped.select("gfl/status")).toMatchObject({ commander: { level: 20, exp: 5000, expIntoLevel: 1010, expForNext: null, sortieLimit: 5, checkBonus: 2, title: "백전의 지휘관" } });
   });

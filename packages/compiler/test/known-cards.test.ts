@@ -10,7 +10,7 @@ function gfl(): ParsedCard {
       (_, i) => `["D${i + 1}"]="${i === 0 ? "MG3" : i === 1 ? "??" : "AR"}"`,
     ).join(","),
     grades = Array.from({ length: 20 }, (_, i) => `["D${i + 1}"]=3`).join(","),
-    lua = `local DOLL_CLASS={${classes}}\nlocal DOLL_GRADE={${grades}}\nlocal MOD_POWER={[1]=111,[2]=222,[3]=333}\nlocal base_defaults={base1={gold="4000",res="2000"},base2={gold="4000",res="2000"},base3={gold="4000",res="2000"},base4={gold="5000",res="3000"},base5={gold="3000",res="1000"}}\nlocal ITEM_DATA={["RAM"]={price=100,type="use",desc="회복"}}\nlocal EQUIP_DATA={["SCOPE"]={price=200,power=10}}\nlocal MISSION_DATA={["ALPHA"]={name="ALPHA",diff="★★★★☆",power="800",reward="자금 +500 / 부품 +100",enemy="철혈 / 감염체 / 패러데우스",boss=" Scarecrow "},["BETA"]={name="BETA",diff="☆☆☆☆☆",power="900",boss=" "},["GAMMA"]={name="GAMMA",power="1000"}}\n${"-- filler\n".repeat(1200)}`;
+    lua = `local DOLL_CLASS={${classes}}\nlocal DOLL_GRADE={${grades}}\nlocal MOD_POWER={[1]=111,[2]=222,[3]=333}\nlocal base_defaults={base1={gold="4000",res="2000"},base2={gold="4000",res="2000"},base3={gold="4000",res="2000"},base4={gold="5000",res="3000"},base5={gold="3000",res="1000"}}\nlocal ITEM_DATA={["RAM"]={price=100,type="use",desc="회복",drop=4},["AUTO"]={price=500,type="use",desc="자동"}}\nlocal EQUIP_DATA={["SCOPE"]={price=200,power=10}}\nlocal PROG_BY_STAR={[0]=3,[1]=5,[2]=7,[3]=8,[4]=9,[5]=10,[6]=11}\nlocal MISSION_TYPES={{key="recon",name="🔍 정찰 임무",step_mod=-1,hint="교전 최소화. 빠르게 끝나지만 보상 적음."},{key="sweep",name="⚔️ 소탕 임무",step_mod=0,hint="구역의 적을 소탕. 표준 난이도·보상."},{key="annihil",name="💥 섬멸 임무",step_mod=1,hint="거점 완전 섬멸. 길고 어렵지만 보상 큼."}}\nlocal EV_GUIDE={battle="교전 지시",boss="보스 지시",recon="정찰 지시",other="돌발 지시",mystery="미확인 지시"}\nlocal MISSION_DATA={["ALPHA"]={name="ALPHA",diff="★★★★☆",power="800",reward="자금 +500 / 부품 +100",enemy="철혈 / 감염체 / 패러데우스",boss=" Scarecrow "},["BETA"]={name="BETA",diff="☆☆☆☆☆",power="900",boss=" "},["GAMMA"]={name="GAMMA",power="1000"}}\n${"-- filler\n".repeat(1200)}`;
   return {
     format: "png",
     source: "gfl.png",
@@ -66,6 +66,19 @@ describe("known card compiler", () => {
     expect((result?.schema.gfl as any).missions[0]).toMatchObject({factions:["철혈","E.L.I.D","패러데우스"],boss:"Scarecrow"});
     expect((result?.schema.gfl as any).missions.map((mission:any)=>mission.stars)).toEqual([4,0,0]);
     expect((result?.schema.gfl as any).missions[1]).not.toHaveProperty("boss");
+    expect((result?.schema.gfl as any).progression).toEqual({
+      byStar: { 0: 3, 1: 5, 2: 7, 3: 8, 4: 9, 5: 10, 6: 11 },
+      missionTypes: [
+        { key: "recon", name: "🔍 정찰 임무", stepMod: -1, hint: "교전 최소화. 빠르게 끝나지만 보상 적음." },
+        { key: "sweep", name: "⚔️ 소탕 임무", stepMod: 0, hint: "구역의 적을 소탕. 표준 난이도·보상." },
+        { key: "annihil", name: "💥 섬멸 임무", stepMod: 1, hint: "거점 완전 섬멸. 길고 어렵지만 보상 큼." },
+      ],
+      eventGuides: { battle: "교전 지시", boss: "보스 지시", recon: "정찰 지시", other: "돌발 지시", mystery: "미확인 지시" },
+    });
+    expect((result?.schema.gfl as any).items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "RAM", drop: 4 }),
+      expect.objectContaining({ name: "AUTO", drop: 60 }),
+    ]));
     expect(result?.issues.map(issue=>issue.message).join(" ")).toContain("병과 오타 정규화(MG3→MG)");
     expect(result?.issues.map(issue=>issue.message).join(" ")).toContain("미지 병과 ??");
     expect((result?.schema.initialState as any).gold).toBe(5000);

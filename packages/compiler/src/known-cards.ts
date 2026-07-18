@@ -126,6 +126,10 @@ function dollRows(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
 function itemRows(mined: ReturnType<typeof mineCard>) {
   return Object.entries(table(mined.tables.ITEM_DATA)).map(([name, value]) => {
     const row = record(value);
+    const grade = number(row.price) + number(row.power) * 3;
+    const drop = Number.isFinite(Number(row.drop))
+      ? number(row.drop)
+      : grade >= 8000 ? 3 : grade >= 3000 ? 10 : grade >= 1000 ? 30 : grade >= 300 ? 60 : 85;
     return {
       id: id(name),
       name,
@@ -133,9 +137,28 @@ function itemRows(mined: ReturnType<typeof mineCard>) {
       type: text(row.type),
       description: text(row.desc),
       effect: record(row.effect),
+      drop,
       asset: name,
     };
   });
+}
+
+function progression(mined: ReturnType<typeof mineCard>) {
+  const byStar = Object.fromEntries(
+    Object.entries(table(mined.tables.PROG_BY_STAR)).map(([key, value]) => [key, number(value)]),
+  );
+  const missionTypes = (Array.isArray(mined.tables.MISSION_TYPES) ? mined.tables.MISSION_TYPES : [])
+    .map((value) => record(value))
+    .map((value) => ({
+      key: text(value.key),
+      name: text(value.name),
+      stepMod: number(value.step_mod),
+      hint: text(value.hint),
+    }));
+  const eventGuides = Object.fromEntries(
+    Object.entries(table(mined.tables.EV_GUIDE)).map(([key, value]) => [key, text(value)]),
+  );
+  return { byStar, missionTypes, eventGuides };
 }
 function classList(value: unknown) {
   return (Array.isArray(value) ? value : [])
@@ -333,6 +356,7 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
           arrivalSteps: 1,
         },
         timePhases: ["오전", "오후", "저녁", "밤", "심야", "새벽"],
+        progression: progression(mined),
         relation: {
           names: table(mined.tables).REL_NAMES ?? mined.tables.REL_NAMES,
           thresholds: mined.tables.REL_THRES,
@@ -474,6 +498,13 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
     },
     {
       level: "warn",
+      path: "gfl.progression",
+      message:
+        "단계 수·임무 유형·서사 지침과 아이템 drop%는 원본에서 회수했습니다. 단계 타입 가중치·정찰 보정·돌발 자원·미확인 발견률·소모전 보정은 Lucky 규칙입니다.",
+      source: "template",
+    },
+    {
+      level: "warn",
       path: "gfl.manufacturing",
       message:
         "인형 고용은 원본의 일일 목록·숙소 정원·저격 추가금 규칙을 사용하지만, 별도 제조 비용은 Lucky 규칙입니다(인형 500/300 · 장비 300/200 · 중형 1500/1000/코어1).",
@@ -494,6 +525,7 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
       "AI 상태 태그는 게임 상태를 직접 변경하지 않습니다.",
       `인형 ${recovered}/${dollCount}명의 능력치(HP·MP·전투력·기분)를 카드 defaultVariables에서 회수했습니다.`,
       "MOD 개조 전투력과 지휘관 시작 자금 10,000은 원본 Lua에서 회수했습니다.",
+      "작전 단계 수 7개·임무 유형 3종·단계 지침 5종과 아이템 drop%를 원본 Lua에서 회수했습니다.",
     ],
     attempts: [],
     diagnosis,

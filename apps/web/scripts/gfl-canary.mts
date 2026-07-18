@@ -18,6 +18,10 @@ const modulePaths=(args.length>1?args.slice(1):[
 const started=performance.now(),parsed=parseCard(new Uint8Array(await readFile(cardPath)),cardPath),compiled=compileKnownCard(parsed);
 assert(compiled,'실카드가 인증된 소녀전선 구조로 탐지되지 않았습니다.');
 const profile=cardToRuntimeProject(parsed,compiled),runtime=new ProjectRuntime(profile.project,20260717);
+const nativeSchema=compiled.schema.gfl as{dolls:Array<Record<string,unknown>>;missions:Array<Record<string,unknown>>;items:Array<Record<string,unknown>>;progression:{byStar:Record<string,number>;missionTypes:Array<Record<string,unknown>>;eventGuides:Record<string,string>}};
+assert.deepEqual(nativeSchema.progression.byStar,{0:3,1:5,2:7,3:8,4:9,5:10,6:11});
+assert.equal(nativeSchema.progression.missionTypes.length,3);assert.equal(Object.keys(nativeSchema.progression.eventGuides).length,5);
+assert.equal(nativeSchema.items.filter(item=>typeof item.drop==='number').length,nativeSchema.items.length);
 assert(runtime.registry.hasEvent('gfl/start'));
 const registration=runtime.dispatch('gfl/start',{mode:'commander'});
 assert.equal(registration.log[0]?.ok,true);
@@ -41,7 +45,7 @@ for(const modulePath of modulePaths){const moduleStarted=performance.now(),asset
 console.log(JSON.stringify({
   card:{name:parsed.name,format:parsed.format,bytes:parsed.sourceBytes.length,embeddedAssets:parsed.assets.length},
   runtime:compiled.diagnosis.runtime,
-  native:{modules:compiled.moduleIds,dolls:(compiled.schema.gfl as{dolls:unknown[]}).dolls.length,missions:(compiled.schema.gfl as{missions:unknown[]}).missions.length,theaters:theaters.map(value=>value.name),echelons:echelons.length,starter:null,hired:owned[0]!.name,hireOffers:hire.offers.length,dormCapacity:hire.capacity,m4ContractPrice:m4?.price,facilityCosts:[firstUpgrade.log[0]?.cost,secondUpgrade.log[0]?.cost]},
+  native:{modules:compiled.moduleIds,dolls:nativeSchema.dolls.length,missions:nativeSchema.missions.length,theaters:theaters.map(value=>value.name),echelons:echelons.length,starter:null,hired:owned[0]!.name,hireOffers:hire.offers.length,dormCapacity:hire.capacity,m4ContractPrice:m4?.price,facilityCosts:[firstUpgrade.log[0]?.cost,secondUpgrade.log[0]?.cost],progression:{byStar:nativeSchema.progression.byStar,missionTypes:nativeSchema.progression.missionTypes.length,eventGuides:Object.keys(nativeSchema.progression.eventGuides).length,itemDrops:nativeSchema.items.filter(item=>typeof item.drop==='number').length}},
   assetModules,
   assetModuleTotals:{modules:assetModules.length,entries:assetModules.reduce((sum,module)=>sum+module.entries,0),images:assetModules.reduce((sum,module)=>sum+module.images,0),centralDirectoryBytes:assetModules.reduce((sum,module)=>sum+module.centralDirectoryBytes,0),indexMs:Math.round(performance.now()-assetStarted)},
   totalMs:Math.round(performance.now()-started)
