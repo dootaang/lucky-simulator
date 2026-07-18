@@ -32,7 +32,7 @@ function tierCards(logs: ReadonlyArray<Record<string, unknown>>, turn: number, n
   }
   // GFL 관계 판정·대화 마무리의 티어 승급 — 같은 "엔진이 시점을, LLM이 장면을" 분업을 그대로 쓴다.
   for (const log of logs) {
-    if (log.ok !== true || (log.event !== 'gfl/relation/check' && log.event !== 'gfl/relation/session/end')) continue;
+    if (log.ok !== true || (log.event !== 'gfl/relation/check' && log.event !== 'gfl/relation/session/end' && log.event !== 'gfl/relation/outing')) continue;
     const tier = rec(log.tierChanged), from = rec(tier.from), to = rec(tier.to);
     if (!to.label) continue;
     const name = String(log.name ?? log.dollId ?? ''), label = String(to.label);

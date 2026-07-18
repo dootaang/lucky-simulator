@@ -142,6 +142,7 @@ function acquire(
     status,
     equipment: [],
     records: { kills: 0, crits: 0, guarded: 0 },
+    confirmedTier: relationFor(c.schema, 0).index, // 합류 순간의 중립 티어로 확정 초기화(승급 게이트)
     hiredDay: day(c.state),
     secretHobby: SECRET_HOBBIES[stableIndex(`${definition.id}:${day(c.state)}`, SECRET_HOBBIES.length)],
     ...(definition.squad ? { squad: definition.squad } : {}),
@@ -507,16 +508,16 @@ function confirmTrauma(unit: RuntimeRecord) {
 // 선택지 구성·DC·증감은 Lucky 합성 규칙이다(원본 Choice 캡슐의 %는 LLM 임의값이라 회수 대상이 아님).
 // talk/nickname/encourage 3종의 id와 수치는 기존 저장 회차가 재생하는 값이므로 바꾸지 않는다.
 const RELATION_CHOICES: Record<string, RelationChoice> = {
-  talk: { label: "차분히 대화한다", dc: 8, affinity: 3, mood: 10, tierOffset: -3, followups: ["nickname", "encourage"] },
-  nickname: { label: "서로 부를 별명을 정한다", dc: 10, affinity: 5, mood: 25, tierOffset: 0, followups: ["encourage"] },
-  encourage: { label: "진심으로 격려한다", dc: 12, affinity: 8, mood: 20, tierOffset: 0, followups: ["ask-past"] },
-  "ask-past": { label: "지난 이야기를 묻는다", dc: 10, affinity: 5, mood: 15, tierOffset: 1, followups: ["confide"] },
-  coffee: { label: "함께 커피를 마신다", dc: 9, affinity: 4, mood: 25, tierOffset: 1, followups: ["walk"] },
-  train: { label: "함께 훈련한다", dc: 12, affinity: 7, mood: 15, tierOffset: 2, followups: ["encourage"] },
-  walk: { label: "기지 주변을 함께 걷는다", dc: 11, affinity: 6, mood: 30, tierOffset: 2, followups: ["confide"] },
-  confide: { label: "속마음을 나눈다", dc: 13, affinity: 10, mood: 25, tierOffset: 3, followups: ["promise"] },
-  promise: { label: "소중한 약속을 나눈다", dc: 14, affinity: 12, mood: 30, tierOffset: 5, followups: [] },
-  hobby: { label: "취미를 함께한다", dc: 7, affinity: 6, mood: 15, tierOffset: 0, followups: [] },
+  talk: { label: "차분히 대화한다", dc: 8, affinity: 6, mood: 10, tierOffset: -3, followups: ["nickname", "encourage"] },
+  nickname: { label: "서로 부를 별명을 정한다", dc: 10, affinity: 10, mood: 25, tierOffset: 0, followups: ["encourage"] },
+  encourage: { label: "진심으로 격려한다", dc: 12, affinity: 16, mood: 20, tierOffset: 0, followups: ["ask-past"] },
+  "ask-past": { label: "지난 이야기를 묻는다", dc: 10, affinity: 10, mood: 15, tierOffset: 1, followups: ["confide"] },
+  coffee: { label: "함께 커피를 마신다", dc: 9, affinity: 8, mood: 25, tierOffset: 1, followups: ["walk"] },
+  train: { label: "함께 훈련한다", dc: 12, affinity: 14, mood: 15, tierOffset: 2, followups: ["encourage"] },
+  walk: { label: "기지 주변을 함께 걷는다", dc: 11, affinity: 12, mood: 30, tierOffset: 2, followups: ["confide"] },
+  confide: { label: "속마음을 나눈다", dc: 13, affinity: 20, mood: 25, tierOffset: 3, followups: ["promise"] },
+  promise: { label: "소중한 약속을 나눈다", dc: 14, affinity: 24, mood: 30, tierOffset: 5, followups: [] },
+  hobby: { label: "취미를 함께한다", dc: 7, affinity: 12, mood: 15, tierOffset: 0, followups: [] },
 };
 // 하루 상한 — 같은 인형에게 4회, 같은 선택지는 2회(2회째는 효과 절반). 격려 연타 파밍 차단.
 const RELATION_DAILY_LIMIT = 4,
@@ -541,13 +542,14 @@ function relationUsage(value: RuntimeRecord, dollId: string) {
   const entry = record(record(log.dolls)[dollId]);
   return { total: number(entry.total), choices: record(entry.choices) };
 }
-function markRelationUse(c: Context, dollId: string, choiceId: string) {
+function markRelationUse(c: Context, dollId: string, choiceId: string, success = false) {
   const gfl = state(c.state), today = day(c.state);
   let log = record(gfl.relationLog);
   if (number(log.day) !== today) log = { day: today, dolls: {} };
   const dolls = record(log.dolls), entry = record(dolls[dollId]), choices = record(entry.choices);
   choices[choiceId] = number(choices[choiceId]) + 1;
   entry.total = number(entry.total) + 1;
+  entry.streak = success ? number(entry.streak) + 1 : 0; // 연속 성공 콤보(다음 판정 +1씩, 상한은 판정부)
   entry.choices = choices;
   dolls[dollId] = entry;
   log.dolls = dolls;
@@ -575,6 +577,45 @@ function relationFor(schema: RuntimeRecord, affinity: unknown) {
     if (score >= number(thresholds[at])) index = at;
   }
   return { label: names[index] ?? "첫 만남", description: descriptions[index] ?? "", index };
+}
+function tierByIndex(schema: RuntimeRecord, index: number) {
+  const relation = record(config(schema).relation),
+    names = list<string>(relation.names),
+    descriptions = list<string>(relation.descriptions);
+  return { label: names[index] ?? "첫 만남", description: string(descriptions[index] ?? ""), index };
+}
+function neutralTierIndex(schema: RuntimeRecord) {
+  return relationFor(schema, 0).index;
+}
+// 승급 게이트(연애 밸런스) — 호감도 '수치' 티어와 '확정' 티어를 분리한다. 수치는 선물·전투 등으로
+// 자유롭게 오르지만 관계의 질적 전환(확정 승급)은 대화·세션·외출·서약 의식으로만 일어난다.
+// 하락은 게이트 없이 즉시 반영되고, 회복 시에는 이미 확정했던 단계까지는 재의식 없이 돌아온다.
+function ensureConfirmedTier(schema: RuntimeRecord, unit: RuntimeRecord) {
+  if (typeof unit.confirmedTier !== "number" || !Number.isFinite(unit.confirmedTier))
+    unit.confirmedTier = relationFor(schema, unit.affinity).index; // 델타 적용 전 스냅샷 — 기존 진행 존중
+}
+function effectiveRelation(schema: RuntimeRecord, unit: RuntimeRecord) {
+  const value = relationFor(schema, unit.affinity),
+    raw = unit.confirmedTier,
+    confirmed = typeof raw === "number" && Number.isFinite(raw) ? raw : value.index,
+    index = Math.min(confirmed, value.index);
+  return { ...tierByIndex(schema, index), valueIndex: value.index, pending: value.index > index };
+}
+// 확정 승급 한 단계 — 대화 성공은 신뢰(중립+3)까지, 세션·외출은 사랑(중립+5)까지, 반지 의식은 서약(+6)까지.
+function confirmTierStep(schema: RuntimeRecord, unit: RuntimeRecord, maxOffset: number) {
+  const effective = effectiveRelation(schema, unit);
+  if (!effective.pending) return null;
+  const target = effective.index + 1;
+  if (target > neutralTierIndex(schema) + maxOffset) return null;
+  unit.confirmedTier = target;
+  return { from: { label: effective.label, index: effective.index }, to: tierByIndex(schema, target) };
+}
+// 하락 동기화 — 수치가 확정 아래로 떨어지면 확정도 따라 내린다(악화는 문을 두드리지 않는다).
+function syncTierDown(schema: RuntimeRecord, unit: RuntimeRecord) {
+  const raw = unit.confirmedTier;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return;
+  const valueIndex = relationFor(schema, unit.affinity).index;
+  if (valueIndex < raw) unit.confirmedTier = valueIndex;
 }
 function hireOffers(c: Parameters<Parameters<typeof scoped>[0]>[0]) {
   const gfl = state(c.state),
@@ -1654,7 +1695,8 @@ export function gflModule(): ModuleDefinition {
         const dialogue = activeDialogue(c.state);
         if (dialogue && string(dialogue.dollId) !== dollId)
           return fail(c, "gfl_dialogue_other_doll", string(dialogue.name));
-        const beforeTier = relationFor(c.schema, unit.affinity),
+        ensureConfirmedTier(c.schema, unit);
+        const beforeTier = effectiveRelation(c.schema, unit),
           requiredTier = choiceRequiredTier(c.schema, choice);
         if (beforeTier.index < requiredTier)
           return fail(c, "gfl_relation_tier_locked", relationTierName(c.schema, requiredTier));
@@ -1676,9 +1718,10 @@ export function gflModule(): ModuleDefinition {
           preference = preferenceOf(unit), preferenceMod = choiceId === preference.preferred ? -2 : choiceId === preference.disliked ? 2 : 0,
           dc = Math.max(2, choice.dc + number(followOption?.dcMod) + preferenceMod),
           roll = c.rng.int(1, 20),
+          combo = Math.min(3, number(record(record(record(state(c.state).relationLog).dolls)[dollId]).streak)),
           modifier =
             Math.floor(number(unit.affinity) / 50) +
-            Math.floor(number(unit.mood) / 100) + (unit.callsign ? 1 : 0),
+            Math.floor(number(unit.mood) / 100) + (unit.callsign ? 1 : 0) + combo,
           total = roll + modifier,
           success = total >= dc,
           tier = success
@@ -1699,24 +1742,24 @@ export function gflModule(): ModuleDefinition {
           repeatFactor = used > 0 ? 0.5 : 1,
           difficulty = relationDifficulty(c.state),
           anniversaryFactor = number(unit.anniversaryDay) === day(c.state) ? 1.5 : 1,
-          affinityDelta = Math.round(choice.affinity * multiplier * (multiplier < 0 ? difficulty.loss : difficulty.gain) * repeatFactor * anniversaryFactor),
+          preferredFactor = success && choiceId === preference.preferred ? 1.5 : 1,
+          giftGlow = success && number(unit.giftGlow, -1) === number(record(c.state.clock).turn),
+          affinityDelta = tier === "failure"
+            ? 1 // 서툴렀지만 노력은 전해졌다 — 실패 위로(대실패 제외)
+            : Math.round(choice.affinity * multiplier * (multiplier < 0 ? difficulty.loss : difficulty.gain) * repeatFactor * anniversaryFactor * preferredFactor * (giftGlow ? 1.5 : 1)),
           moodDelta = Math.round(choice.mood * multiplier * repeatFactor * anniversaryFactor);
         unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
         unit.mood = moodClamp(unit, number(unit.mood) + moodDelta);
-        markRelationUse(c, dollId, choiceId);
+        if (giftGlow) delete unit.giftGlow; // 이야기꽃은 한 번 — 선물 직후 그 시간대의 첫 성공에만
+        markRelationUse(c, dollId, choiceId, success);
         // 항명 해소 — 마음이 풀리면 총을 든다.
         if (success && unit.refusal === true) unit.refusal = false;
         if (success && choiceId === preference.preferred) unit.preferenceKnown = true;
         if (tier === "critical_success" && !unit.callsign) unit.callsignEligible = true;
         markInteraction(c.state, dollId);
-        const afterTier = relationFor(c.schema, unit.affinity),
-          tierChanged =
-            afterTier.index > beforeTier.index
-              ? {
-                  from: { label: beforeTier.label, index: beforeTier.index },
-                  to: { label: afterTier.label, index: afterTier.index, description: afterTier.description },
-                }
-              : null,
+        syncTierDown(c.schema, unit);
+        const tierChanged = success ? confirmTierStep(c.schema, unit, 3) : null,
+          afterTier = effectiveRelation(c.schema, unit),
           remainingToday = Math.max(0, RELATION_DAILY_LIMIT - (number(usage.total) + 1)),
           followUps =
             remainingToday > 0 && (tier === "success" || tier === "critical_success")
@@ -1753,11 +1796,14 @@ export function gflModule(): ModuleDefinition {
           difficulty: difficulty.id,
           relation: afterTier.label,
           repeated: used > 0,
+          combo,
+          ...(giftGlow ? { giftGlow: true } : {}),
           preferenceMod,
           preferenceRevealed: unit.preferenceKnown === true,
           remainingToday,
           ...(followOption ? { followUpBonus: number(followOption.dcMod) } : {}),
           ...(tierChanged ? { tierChanged } : {}),
+          ...(afterTier.pending ? { pendingTier: tierByIndex(c.schema, afterTier.index + 1).label } : {}),
         };
         const gfl = state(c.state);
         gfl.lastCheck = result;
@@ -1808,7 +1854,7 @@ export function gflModule(): ModuleDefinition {
         };
         markInteraction(c.state, dollId);
         c.state.gfl = gfl;
-        const tier = relationFor(c.schema, unit.affinity);
+        const tier = effectiveRelation(c.schema, unit);
         return ok(c, {
           dollId,
           name: unit.name,
@@ -1830,16 +1876,18 @@ export function gflModule(): ModuleDefinition {
           return fail(c, "gfl_doll_not_owned", dollId);
         }
         // 보너스는 엔진 고정값(난이도 배율만 적용) — 대화 길이·내용으로 수치를 흥정할 수 없다.
+        ensureConfirmedTier(c.schema, unit);
         const difficulty = relationDifficulty(c.state),
-          beforeTier = relationFor(c.schema, unit.affinity),
           dialogueFactor = dialogue.noBonus === true ? 0 : Object.keys(record(dialogue.intruder)).length ? .5 : 1,
           anniversaryFactor = number(unit.anniversaryDay) === day(c.state) ? 1.5 : 1,
-          affinityDelta = Math.round(2 * difficulty.gain * dialogueFactor * anniversaryFactor),
+          affinityDelta = Math.round(5 * difficulty.gain * dialogueFactor * anniversaryFactor),
           moodDelta = Math.round(10 * dialogueFactor * anniversaryFactor),
           promiseRoll = c.rng.int(1, 100);
         unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
         unit.mood = moodClamp(unit, number(unit.mood) + moodDelta);
-        const afterTier = relationFor(c.schema, unit.affinity),
+        syncTierDown(c.schema, unit);
+        const sessionTierChanged = confirmTierStep(c.schema, unit, 5),
+          afterTier = effectiveRelation(c.schema, unit),
           days = record(gfl.dialogueDays);
         days[dollId] = number(dialogue.day, day(c.state));
         gfl.dialogueDays = days;
@@ -1862,14 +1910,8 @@ export function gflModule(): ModuleDefinition {
           affinity: unit.affinity,
           mood: unit.mood,
           relation: afterTier.label,
-          ...(afterTier.index > beforeTier.index
-            ? {
-                tierChanged: {
-                  from: { label: beforeTier.label, index: beforeTier.index },
-                  to: { label: afterTier.label, index: afterTier.index, description: afterTier.description },
-                },
-              }
-            : {}),
+          ...(sessionTierChanged ? { tierChanged: sessionTierChanged } : {}),
+          ...(afterTier.pending ? { pendingTier: tierByIndex(c.schema, afterTier.index + 1).label } : {}),
           dailyAwards,
           narrativeFact: `${string(unit.name)}와의 대화를 마무리했다. 기지의 시간이 다시 흐른다.`,
         });
@@ -1880,7 +1922,7 @@ export function gflModule(): ModuleDefinition {
         if (fieldSortie(c.state)) return fail(c, "gfl_commander_in_field");
         if (activeDialogue(c.state)) return fail(c, "gfl_dialogue_active");
         if (string(unit.status) !== "대기") return fail(c, "gfl_outing_doll_unavailable", string(unit.status));
-        if (relationFor(c.schema, unit.affinity).index < relationFor(c.schema, 0).index + 3) return fail(c, "gfl_relation_tier_locked", "신뢰");
+        if (effectiveRelation(c.schema, unit).index < neutralTierIndex(c.schema) + 3) return fail(c, "gfl_relation_tier_locked", "신뢰");
         const outingDays = record(gfl.outingDays); if (number(outingDays[dollId]) === today) return fail(c, "gfl_outing_daily_limit", dollId);
         if (string(record(c.state.clock).phase) === "새벽") return fail(c, "gfl_dawn_requires_end_day");
         const jealousyRoll = c.rng.int(1, 100), hobbyRoll = c.rng.int(1, 100), jealousy = string(record(gfl.settings).jealousy || "mild"), interactions = record(gfl.lastInteractions), neutral = relationFor(c.schema, 0).index,
@@ -1898,14 +1940,18 @@ export function gflModule(): ModuleDefinition {
         const nextOutings = record(next.outingDays); nextOutings[dollId] = today; next.outingDays = nextOutings; c.state.gfl = next;
         markInteraction(c.state, dollId);
         if (number(nextUnit.anniversaryDay) === day(c.state)) fulfillPromise(c.state, dollId, "anniversary");
+        ensureConfirmedTier(c.schema, nextUnit);
+        syncTierDown(c.schema, nextUnit);
+        const outingTierChanged = confirmTierStep(c.schema, nextUnit, 5); // 외출도 마음을 나누는 의식이다
         return ok(c, { dollId, name: nextUnit.name, place, affinityDelta, moodDelta, timeAdvanced: true, phase: row.phase, jealousyRoll, hobbyRoll, hobbyDiscovered: hobbyRoll <= 15,
+          ...(outingTierChanged ? { tierChanged: outingTierChanged } : {}),
           intruder: intruderId && jealousy !== "off" ? { dollId: intruderId, name: intruder.name, mode: jealousy } : null, narrativeFact: `${string(nextUnit.name)}와 ${place}로 외출했다. 기지 시간대가 한 칸 흘렀다.` });
       }),
       "gfl/relation/heal-trauma": scoped((c) => {
         const dialogue = activeDialogue(c.state), dollId = string(c.params.dollId || dialogue?.dollId), unit = record(owned(c.state)[dollId]);
         if (!dialogue || string(dialogue.dollId) !== dollId) return fail(c, "gfl_dialogue_missing");
         if (!unit.trauma) return fail(c, "gfl_trauma_missing", dollId);
-        const roll = c.rng.int(1, 20), modifier = relationFor(c.schema, unit.affinity).index, total = roll + modifier, success = total >= 12;
+        const roll = c.rng.int(1, 20), modifier = effectiveRelation(c.schema, unit).index, total = roll + modifier, success = total >= 12;
         if (success) unit.traumaProgress = Math.min(3, number(unit.traumaProgress) + 1);
         else { const active = record(state(c.state).dialogue); active.noBonus = true; state(c.state).dialogue = active; }
         let medal = null; if (number(unit.traumaProgress) >= 3) { medal = string(unit.trauma); unit.overcomeMedal = medal; unit.trauma = null; unit.traumaProgress = 3; }
@@ -2348,7 +2394,8 @@ export function gflModule(): ModuleDefinition {
           return fail(c, "gfl_doll_not_owned", dollId);
         if (number(inventory[itemId]) < 1)
           return fail(c, "gfl_item_not_owned", itemId);
-        const effect = record(definition.effect), beforeTier = relationFor(c.schema, unit.affinity),
+        ensureConfirmedTier(c.schema, unit);
+        const effect = record(definition.effect), beforeTier = effectiveRelation(c.schema, unit),
           oathEligible = string(definition.name) === "서약반지" && unit.oathed !== true && beforeTier.index >= loveTierIndex(c.schema),
           hp = record(unit.hp),
           mp = record(unit.mp);
@@ -2358,17 +2405,22 @@ export function gflModule(): ModuleDefinition {
           mp.cur = clamp(number(mp.cur) + number(effect.mp), 0, number(mp.max));
         if ("mood" in effect)
           unit.mood = moodClamp(unit, number(unit.mood) + number(effect.mood));
-        if ("aff" in effect)
+        if ("aff" in effect) {
           unit.affinity = clamp(
             number(unit.affinity) + number(effect.aff),
             -200,
             500,
           );
+          syncTierDown(c.schema, unit);
+          // 선물 이야기꽃 — 같은 시간대 안의 첫 대화 성공이 ×1.5가 된다(선물이 대화의 소재가 되도록).
+          if (number(effect.aff) > 0) unit.giftGlow = number(record(c.state.clock).turn);
+        }
         unit.hp = hp;
         unit.mp = mp;
         if (oathEligible) {
           unit.oathed = true;
           unit.mood = moodClamp(unit, number(unit.mood));
+          confirmTierStep(c.schema, unit, 6); // 반지 의식 — 서약 티어 확정
         }
         inventory[itemId] = number(inventory[itemId]) - 1;
         c.state.items = inventory;
@@ -2593,7 +2645,7 @@ export function gflModule(): ModuleDefinition {
           entries = Object.values(owned(value)).map((raw) => {
             const unit = record(raw),
               dollId = string(unit.id),
-              tier = relationFor(schema, unit.affinity),
+              tier = effectiveRelation(schema, unit),
               usage = relationUsage(value, dollId),
               choices = Object.entries(RELATION_CHOICES)
                 .filter(([id]) => id !== "hobby" || unit.hobbyKnown === true)
@@ -2627,7 +2679,7 @@ export function gflModule(): ModuleDefinition {
             return [
               dollId,
               {
-                tier: { label: tier.label, index: tier.index },
+                tier: { label: tier.label, index: tier.index, pending: tier.pending, ...(tier.pending ? { pendingLabel: tierByIndex(schema, tier.index + 1).label } : {}) },
                 remaining: Math.max(0, RELATION_DAILY_LIMIT - usage.total),
                 dialogueUsed: number(days[dollId]) === today,
                 outingUsed: number(record(state(value).outingDays)[dollId]) === today,
@@ -2683,7 +2735,7 @@ export function gflModule(): ModuleDefinition {
     const schema = record(args[0]);
     return Object.values(owned(record(args[1]))).map((raw) => {
       const unit = record(raw), { secretHobby, ...visible } = unit;
-      return { ...visible, ...(unit.hobbyKnown === true ? { secretHobby } : {}), oathed: unit.oathed === true, relation: relationFor(schema, unit.affinity) };
+      return { ...visible, ...(unit.hobbyKnown === true ? { secretHobby } : {}), oathed: unit.oathed === true, relation: effectiveRelation(schema, unit) };
     });
   },
       "gfl/echelons": (...args) =>
@@ -2832,7 +2884,7 @@ export function gflModule(): ModuleDefinition {
             name: unit.name,
         mood: unit.mood,
         affinity: unit.affinity,
-        relation: relationFor(schema, unit.affinity).label,
+        relation: effectiveRelation(schema, unit).label,
         status: unit.status,
           };
         }), ace = Object.values(owned(value)).map(record).sort((a, b) => number(record(b.records).kills) - number(record(a.records).kills))[0],
@@ -2867,7 +2919,7 @@ export function gflModule(): ModuleDefinition {
           if (!dialogue) return {};
           const unit = record(owned(value)[string(dialogue.dollId)]),
             name = string(unit.name || dialogue.name),
-            tier = relationFor(schema, unit.affinity);
+            tier = effectiveRelation(schema, unit);
           return {
             dialogue: {
               with: name,

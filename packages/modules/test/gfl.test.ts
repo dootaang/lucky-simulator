@@ -822,7 +822,7 @@ describe("Girls Frontline native module", () => {
     expect(byId.talk).toMatchObject({ available: true, dc: 8 });
     expect(byId.nickname).toMatchObject({ available: true });
     expect(byId["ask-past"]).toMatchObject({ available: false, reason: "tier_locked", requiredTierLabel: "신뢰" });
-    (game.state.gfl as any).dolls.m4a1.affinity = 60;
+    (game.state.gfl as any).dolls.m4a1.affinity = 60; delete (game.state.gfl as any).dolls.m4a1.confirmedTier;
     const after = (game.select("gfl/relation/options") as any).dolls.m4a1;
     const afterById = Object.fromEntries(after.choices.map((choice: any) => [choice.id, choice]));
     expect(after.tier.index).toBe(1);
@@ -850,7 +850,7 @@ describe("Girls Frontline native module", () => {
       [400, ["talk", "nickname", "encourage", "ask-past", "coffee", "train", "walk", "confide", "promise"], "서약"],
     ];
     for (const [affinity, ids, label] of expected) {
-      (game.state.gfl as any).dolls.m4a1.affinity = affinity;
+      (game.state.gfl as any).dolls.m4a1.affinity = affinity; delete (game.state.gfl as any).dolls.m4a1.confirmedTier;
       const entry = (game.select("gfl/relation/options") as any).dolls.m4a1;
       expect(entry.tier.label).toBe(label);
       const available = entry.choices.filter((choice: any) => choice.available).map((choice: any) => choice.id);
@@ -915,8 +915,8 @@ describe("Girls Frontline native module", () => {
     expect(game.dispatch("gfl/relation/session/start", { dollId: "ump45" }).log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_active" });
     expect(game.dispatch("gfl/relation/check", { dollId: "ump45", choice: "talk" }).log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_other_doll" });
     const before = Number((game.state.gfl as any).dolls.m4a1.affinity);
-    expect(game.dispatch("gfl/relation/session/end").log[0]).toMatchObject({ ok: true, affinityDelta: 2, moodDelta: 10 });
-    expect(Number((game.state.gfl as any).dolls.m4a1.affinity)).toBe(before + 2);
+    expect(game.dispatch("gfl/relation/session/end").log[0]).toMatchObject({ ok: true, affinityDelta: 5, moodDelta: 10 });
+    expect(Number((game.state.gfl as any).dolls.m4a1.affinity)).toBe(before + 5);
     expect(game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_daily_limit" });
     expect((game.select("gfl/relation/options") as any).dolls.m4a1.dialogueUsed).toBe(true);
     expect(game.dispatch("gfl/relation/session/start", { dollId: "ump45" }).log[0]).toMatchObject({ ok: true });
@@ -1036,7 +1036,7 @@ describe("Girls Frontline native module", () => {
     const source: any = structuredClone(schema); source.gfl.relation = { names: ["첫 만남", "사랑", "서약"], thresholds: [0, 150, 400], descriptions: ["", "", ""] };
     source.gfl.items = [{ id: "ring", name: "서약반지", type: "use", effect: { aff: 500 }, price: 10000 }, { id: "shock", name: "충격", type: "use", effect: { mood: -100 }, price: 0 }];
     const game = runtime(source); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
-    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 150; (game.state.items as any).ring = 1; (game.state.items as any).shock = 1;
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 150; delete unit.confirmedTier; (game.state.items as any).ring = 1; (game.state.items as any).shock = 1;
     expect((game.select("gfl/echelons") as any)[0].power).toBe(1100);
     expect(game.dispatch("gfl/item/use", { itemId: "ring", dollId: "m4a1" }).log[0]).toMatchObject({ ok: true, oathApplied: true, oathed: true });
     expect((game.select("gfl/echelons") as any)[0].power).toBe(1155);
@@ -1359,7 +1359,7 @@ describe("Girls Frontline native module", () => {
     const end = game.dispatch("gfl/time/end-day").log[0] as any;
     expect(end.anniversaries).toHaveLength(2); expect(end.anniversaries.map((entry: any) => entry.days)).toEqual([7, 7]);
     const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.mood = 1000;
-    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0]).toMatchObject({ ok: true, affinityDelta: 5, moodDelta: 15 });
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0]).toMatchObject({ ok: true, affinityDelta: 9, moodDelta: 15 });
   });
 
   it("외출은 신뢰·대기 조건과 일일 제한을 지키며 시간대 한 칸을 비용으로 쓴다", () => {
@@ -1367,7 +1367,7 @@ describe("Girls Frontline native module", () => {
     const game = runtime(source, 11); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
     const unit = (game.state.gfl as any).dolls.m4a1;
     expect(game.dispatch("gfl/relation/outing", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_relation_tier_locked" });
-    unit.affinity = 80; (game.state.gfl as any).promises = [{ dollId: "m4a1", type: "anniversary", deadline: 7, fulfilled: false }]; const beforeTurn = Number((game.state.clock as any).turn), outing = game.dispatch("gfl/relation/outing", { dollId: "m4a1" }).log[0] as any;
+    unit.affinity = 80; delete unit.confirmedTier; (game.state.gfl as any).promises = [{ dollId: "m4a1", type: "anniversary", deadline: 7, fulfilled: false }]; const beforeTurn = Number((game.state.clock as any).turn), outing = game.dispatch("gfl/relation/outing", { dollId: "m4a1" }).log[0] as any;
     expect(outing).toMatchObject({ ok: true, affinityDelta: 4, moodDelta: 20, timeAdvanced: true }); expect(["시장 거리", "강변 방벽", "옛 카페"]).toContain(outing.place);
     expect(Number((game.state.clock as any).turn)).toBe(beforeTurn + 1);
     expect((game.state.gfl as any).promises[0].fulfilled).toBe(false);
@@ -1428,6 +1428,95 @@ describe("Girls Frontline native module", () => {
     const criticalSeed=Array.from({length:200},(_,i)=>i+1).find((candidate)=>{const probe=runtime(schema,candidate);probe.dispatch("gfl/start",{mode:"commander"});probe.dispatch("gfl/doll/acquire",{dollId:"m4a1"});const doll=(probe.state.gfl as any).dolls.m4a1;doll.affinity=490;doll.mood=1000;return (probe.dispatch("gfl/relation/check",{dollId:"m4a1",choice:"talk"}).log[0] as any).tier==="critical_success";})!;
     const named=runtime(schema,criticalSeed); named.dispatch("gfl/start",{mode:"commander"}); named.dispatch("gfl/doll/acquire",{dollId:"m4a1"}); const candidate=(named.state.gfl as any).dolls.m4a1;candidate.affinity=490;candidate.mood=1000;expect(named.dispatch("gfl/relation/check",{dollId:"m4a1",choice:"talk"}).log[0]).toMatchObject({tier:"critical_success"}); expect((named.select("gfl/relation/options") as any).dolls.m4a1.callsignEligible).toBe(true);
     expect(named.dispatch("gfl/relation/callsign",{dollId:"m4a1",callsign:"별빛"}).log[0]).toMatchObject({ok:true,callsign:"별빛"}); expect(named.dispatch("gfl/relation/callsign",{dollId:"m4a1",callsign:"다른 이름"}).log[0]).toMatchObject({ok:false,reason:"gfl_callsign_locked"});
-    const renamed=(named.state.gfl as any).dolls.m4a1; renamed.affinity=100; renamed.mood=100; const checked=named.dispatch("gfl/relation/check",{dollId:"m4a1",choice:"nickname"}).log[0] as any; expect(checked.modifier).toBe(4);
+    const renamed=(named.state.gfl as any).dolls.m4a1; renamed.affinity=100; renamed.mood=100; const checked=named.dispatch("gfl/relation/check",{dollId:"m4a1",choice:"nickname"}).log[0] as any; expect(checked.modifier).toBe(5); expect(checked.combo).toBe(1); // 직전 성공 콤보 +1 포함
+  });
+
+  it("승급 게이트: 수치는 선물로 올라도 티어 확정은 대화·세션·외출·의식으로만 된다", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.relation = { names: ["적대","경계","불편","첫 만남","익숙해짐","호감을 가짐","신뢰","소중히 여김","사랑","서약","???"], thresholds: [-150,-80,-20,0,20,50,80,120,150,400,400], descriptions: [] };
+    source.gfl.items = [
+      { id: "cake", name: "케이크", price: 100, type: "use", effect: { aff: 200 } },
+      { id: "ring", name: "서약반지", price: 100, type: "use", effect: { aff: 500 } },
+      { id: "stone", name: "돌맹이", price: 10, type: "use", effect: { aff: -500 } },
+    ];
+    source.items = source.gfl.items;
+    const game = runtime(source, 21);
+    game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    game.dispatch("gfl/shop/buy", { itemId: "cake" });
+    game.dispatch("gfl/item/use", { itemId: "cake", dollId: "m4a1" }); // 수치는 사랑 구간(200)으로 점프
+    const options = (game.select("gfl/relation/options") as any).dolls.m4a1;
+    expect(options.tier).toMatchObject({ label: "첫 만남", pending: true, pendingLabel: "익숙해짐" }); // 확정은 그대로
+    (game.state.gfl as any).dolls.m4a1.mood = 1000; // 판정 상시 성공(보정 +14)
+    for (const expected of ["익숙해짐", "호감을 가짐", "신뢰"]) { // 대화 성공은 한 단계씩, 신뢰(중립+3)까지
+      const log = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: expected === "익숙해짐" ? "talk" : expected === "호감을 가짐" ? "nickname" : "encourage" }).log[0] as any;
+      expect(log.ok).toBe(true);
+      expect(log.tierChanged?.to?.label).toBe(expected);
+    }
+    const fourth = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "coffee" }).log[0] as any;
+    expect(fourth.ok).toBe(true);
+    expect(fourth.tierChanged).toBeUndefined(); // 소중히(중립+4)는 대화 성공으로 확정 불가
+    expect(fourth.pendingTier).toBe("소중히 여김");
+    game.dispatch("gfl/relation/session/start", { dollId: "m4a1" });
+    expect((game.dispatch("gfl/relation/session/end").log[0] as any).tierChanged?.to?.label).toBe("소중히 여김");
+    expect((game.dispatch("gfl/relation/outing", { dollId: "m4a1" }).log[0] as any).tierChanged?.to?.label).toBe("사랑");
+    game.dispatch("gfl/shop/buy", { itemId: "ring" });
+    expect((game.dispatch("gfl/item/use", { itemId: "ring", dollId: "m4a1" }).log[0] as any).ok).toBe(true);
+    expect((game.select("gfl/dolls") as any[])[0].relation.label).toBe("서약"); // 반지 의식이 서약을 확정
+    game.dispatch("gfl/shop/buy", { itemId: "stone" });
+    game.dispatch("gfl/item/use", { itemId: "stone", dollId: "m4a1" }); // 대폭 하락
+    const dropped = (game.select("gfl/dolls") as any[])[0].relation;
+    expect(dropped.label).toBe("첫 만남"); // 하락은 게이트 없이 즉시 — 서약 확정도 값 티어까지 끌려 내려간다
+    expect(dropped.pending).toBe(false);
+  });
+  it("대화 리밸런스: 실패 +1·연속 콤보 상한·취향 1.5배 곱연산이 작동한다", () => {
+    const failSeed = Array.from({ length: 400 }, (_, i) => i + 1).find((candidate) => { const roll = createRng(candidate).int(1, 20); return roll >= 2 && roll <= 7; })!;
+    const failGame = runtime(structuredClone(schema), failSeed);
+    failGame.dispatch("gfl/start", { mode: "commander" }); failGame.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    (failGame.state.gfl as any).dolls.m4a1.mood = 0;
+    expect(failGame.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0]).toMatchObject({ ok: true, tier: "failure", affinityDelta: 1 }); // 서툴러도 노력은 전해졌다
+    const combo = runtime(structuredClone(schema), 5);
+    combo.dispatch("gfl/start", { mode: "commander" }); combo.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (combo.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.mood = 1000; delete unit.confirmedTier;
+    const combos = ["talk", "nickname", "encourage", "coffee"].map((choice) => (combo.dispatch("gfl/relation/check", { dollId: "m4a1", choice }).log[0] as any).combo);
+    expect(combos).toEqual([0, 1, 2, 3]); // 연속 성공 +1씩, 상한 +3
+    const pref = runtime(structuredClone(schema), 5);
+    pref.dispatch("gfl/start", { mode: "commander" }); pref.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const ar = (pref.state.gfl as any).dolls.m4a1; ar.affinity = 490; ar.mood = 1000; delete ar.confirmedTier;
+    const train = pref.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "train" }).log[0] as any; // AR 선호
+    expect(train.preferenceMod).toBe(-2);
+    expect([21, 42]).toContain(train.affinityDelta); // 14 × (1|크리2) × 1.5
+  });
+  it("선물 이야기꽃은 같은 시간대의 첫 대화 성공만 1.5배로 만들고 시간이 지나면 꺼진다", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.items = [{ id: "cake", name: "케이크", price: 100, type: "use", effect: { aff: 5 } }];
+    source.items = source.gfl.items;
+    const game = runtime(source, 5);
+    game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 480; unit.mood = 1000; delete unit.confirmedTier;
+    game.dispatch("gfl/shop/buy", { itemId: "cake" }); game.dispatch("gfl/shop/buy", { itemId: "cake" });
+    game.dispatch("gfl/item/use", { itemId: "cake", dollId: "m4a1" });
+    const glowing = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0] as any;
+    expect(glowing.giftGlow).toBe(true);
+    expect([9, 18]).toContain(glowing.affinityDelta); // 6 × (1|2) × 1.5
+    const again = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "nickname" }).log[0] as any;
+    expect(again.giftGlow).toBeUndefined(); // 불씨는 한 번 — 소비 후 꺼짐
+    game.dispatch("gfl/item/use", { itemId: "cake", dollId: "m4a1" });
+    game.dispatch("gfl/time/advance");
+    const cold = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "encourage" }).log[0] as any;
+    expect(cold.ok).toBe(true);
+    expect(cold.giftGlow).toBeUndefined(); // 시간대가 넘어가면 이야기꽃은 지나간 이야기
+  });
+  it("확정 티어 하위 호환: 필드 없는 저장은 값 티어로 표시되고 첫 상호작용에서 소급 강등 없이 초기화된다", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.relation = { names: ["첫 만남","익숙해짐","호감을 가짐","신뢰"], thresholds: [0, 20, 50, 80], descriptions: [] };
+    const game = runtime(source, 5);
+    game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 100; unit.mood = 1000; delete unit.confirmedTier; // 에폭 이전 저장 모사
+    expect((game.select("gfl/relation/options") as any).dolls.m4a1.tier).toMatchObject({ label: "신뢰", pending: false });
+    const log = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0] as any;
+    expect(log.ok).toBe(true);
+    expect(log.tierChanged).toBeUndefined(); // 이미 신뢰 — 소급 강등도, 유령 승급도 없다
+    expect(Number((game.state.gfl as any).dolls.m4a1.confirmedTier)).toBe(3);
   });
 });
