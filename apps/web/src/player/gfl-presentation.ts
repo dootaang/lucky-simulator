@@ -19,9 +19,15 @@ const escapeHtml=(value:string)=>value.replace(/&/g,'&amp;').replace(/</g,'&lt;'
 
 function projectDialogueFrames(source:string,replace:(asset:string,quote:string)=>string){
   return source
-    .replace(/\[전투\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([\s\S]*?)["“”]?\|HP=\d+>\d+\|MP=\d+>\d+\|\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)))
-    .replace(/\[(?:엑스|적대)\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([\s\S]*?)["“”]?\|\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)))
-    .replace(/\[\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([\s\S]*?)["“”]?\|\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)));
+    .replace(/\[\s*전투\s*\|\s*(?:<|&lt;)?img\s*=\s*["“”]?([^"“”>]+?)["“”]?\s*(?:>|&gt;)?\s*\|\s*["“”]?([\s\S]*?)["“”]?\s*\|\s*HP=\d+>\d+\s*\|\s*MP=\d+>\d+\s*\|\s*\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)))
+    .replace(/\[\s*(?:엑스|적대)\s*\|\s*(?:<|&lt;)?img\s*=\s*["“”]?([^"“”>]+?)["“”]?\s*(?:>|&gt;)?\s*\|\s*["“”]?([\s\S]*?)["“”]?\s*\|\s*\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)))
+    .replace(/\[\s*\|\s*(?:<|&lt;)?img\s*=\s*["“”]?([^"“”>]+?)["“”]?\s*(?:>|&gt;)?\s*\|\s*["“”]?([\s\S]*?)["“”]?\s*\|\s*\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)))
+    .replace(/{{\s*img\s*::\s*([^{}]+?)\s*}}\s*\r?\n\s*>\s*([^\n]+)/gi,(_all,asset,quote)=>replace(String(asset),String(quote)));
+}
+
+export function isNativeGflPresentation(project:{content?:unknown;moduleIds?:readonly string[]}){
+  const content=project.content&&typeof project.content==='object'&&!Array.isArray(project.content)?project.content as Record<string,unknown>:{};
+  return content.nativePresentation==='gfl'||project.moduleIds?.includes('genre.gfl')===true;
 }
 
 function cleanGflNarrative(source:string){

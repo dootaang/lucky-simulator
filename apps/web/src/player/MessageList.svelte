@@ -9,7 +9,7 @@
   import { presentNarrativeIssues } from './narrative-issues';
   import {buildNpcClusters,extractAssetSpeakers,type NpcCluster} from './npc-gallery';
   import {stripGflBgmMarkers} from './gfl-bgm';
-  import {renderGflNarrative} from './gfl-presentation';
+  import {isNativeGflPresentation,renderGflNarrative} from './gfl-presentation';
   import {tick} from 'svelte';
 
   let {session,version,assetRevision=0,scrollRequest=0,greetings=[],cardName,userName='나',userPortrait=null,botPortrait=null,model,waiting=false,assets=[],npcGroups=[],assetWidth=32,portraitFor,assetUrlFor=null,onassetneeded=()=>{},onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;assetRevision?:number;scrollRequest?:number;greetings?:string[];cardName:string;userName?:string;userPortrait?:string|null;botPortrait?:string|null;model:string;waiting?:boolean;assets?:CardAsset[];npcGroups?:NpcCluster[];assetWidth?:number;portraitFor:(id:string,emotion?:string,outfit?:number)=>string|null;assetUrlFor?:((asset:CardAsset)=>string|null)|null;onassetneeded?:(name:string)=>void;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
@@ -88,7 +88,7 @@
   function tokenLabel(message:ChatMessage){const run=runFor(message);if(!run)return'';return `${run.tokensEstimated?'≈':''}${(run.inputTokens??0)+(run.outputTokens??0)} tok`;}
   function factsFor(message:ChatMessage,index:number){return(message.facts??(index===messages.length-1?session.lastLogs:[])).map(toFactLine);}
   function speakersFor(message:ChatMessage){return session.resolveSpeakers(message.speakers??[]);}
-  let nativeGfl=$derived(session.runtime.project.moduleIds?.includes('genre.gfl')??false),resolvedNpcGroups=$derived(npcGroups.length?npcGroups:buildNpcClusters(assets));
+  let nativeGfl=$derived(isNativeGflPresentation(session.runtime.project)),resolvedNpcGroups=$derived(npcGroups.length?npcGroups:buildNpcClusters(assets));
   const speakerKey=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9가-힣]+/g,'');
   function stageSpeakersFor(message:ChatMessage){assetRevision;if(message.role!=='assistant')return[];const options=assetOptions(),prepared=prepareDisplayContent(message.content,userName,cardName,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1,options.activeModules),inline=new Set(extractAssetSpeakers(prepared,resolvedNpcGroups).map(item=>speakerKey(item.npcId)));return speakersFor(message).filter(item=>!inline.has(speakerKey(item.npcId))&&!!portraitFor(item.npcId,item.emotion,item.outfit));}
   function avatarFor(message:ChatMessage){return message.role==='user'?userPortrait:botPortrait;}
