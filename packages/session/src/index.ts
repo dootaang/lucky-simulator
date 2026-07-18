@@ -29,6 +29,7 @@ import {
   stripPromptImageMarkup,
   type CardRuntimeSnapshot,
   type CardStateOwnership,
+  type AssetMacroAsset,
   type CompiledPrompt,
   type LoreEntry,
   type Persona,
@@ -306,7 +307,7 @@ function activeModules(project: ProjectRuntime["project"]) {
     ]),
   ];
 }
-function narrativeCatalog(project: ProjectRuntime["project"]) {
+function narrativeCatalog(project: ProjectRuntime["project"], assets: readonly Pick<AssetMacroAsset,"name"|"type"|"mime"|"moduleNamespace">[] = []) {
   const schema = project.schema,
     block = (Array.isArray(schema.entities) ? schema.entities : [])
       .map(object)
@@ -328,12 +329,12 @@ function narrativeCatalog(project: ProjectRuntime["project"]) {
         .normalize("NFKC")
         .toLowerCase()
         .replace(/[^a-z0-9가-힣]/g, ""),
-    commands = (
-      Array.isArray(object(project.content).assetCommands)
-        ? (object(project.content).assetCommands as unknown[])
-        : []
-    )
-      .map(String)
+    commands = [...new Set([
+      ...(Array.isArray(object(project.content).assetCommands)
+        ? (object(project.content).assetCommands as unknown[]).map(String)
+        : []),
+      ...assets.filter(asset=>asset.mime.startsWith("image/")).map(asset=>asset.name.replace(/[_-]\d+$/,"")),
+    ])]
       .filter((command) =>
         aliases.some((items) =>
           items.some((alias) => {
@@ -352,6 +353,7 @@ function narrativeCatalog(project: ProjectRuntime["project"]) {
     commands,
   };
 }
+function spriteCommandGuide(commands:readonly string[]){return commands.length?`[유효 스프라이트 명령]\n${commands.join(", ")}\n이미지 태그에는 위 이름만 정확히 사용한다. 목록에 없는 캐릭터·표정 이름은 만들지 않는다.`:"[유효 스프라이트 명령 없음]\n이미지 태그를 만들지 않는다.";}
 function compactPromptRuns(runs: PromptRun[]) {
   const kept = runs.slice(-500),
     detailedFrom = Math.max(0, kept.length - 8);
@@ -392,6 +394,7 @@ export interface PlaySessionOptions {
   ) => NonNullable<NarrativeResponse["speakers"]>;
   regexScripts?: RegexScript[];
   defaultVariables?: Record<string, string>;
+  assets?: readonly AssetMacroAsset[];
   stateOwnership?: CardStateOwnership;
 }
 // 대안은 세션의 파생 상태 전부(기억 원장·무대 화자 포함)를 함께 보관해야 한다 — 일부만 되돌리면 기각된 평행세계가 원장에 남는다(감사 계열: restore 메모리 미청소).
@@ -451,6 +454,7 @@ export class PlaySession {
   #listeners = new Set<() => void>();
   #regexScripts: RegexScript[];
   #cbsVariables: Record<string, string>;
+  #assets: Array<Pick<AssetMacroAsset,"name"|"type"|"mime"|"moduleNamespace">> = [];
   #journal: SessionJournal;
   #cardRuntimeJournal: CardRuntimeJournal;
   #continuityPatches = new ContinuityPatchLedger();
@@ -491,6 +495,7 @@ export class PlaySession {
     this.#speakerExtractor = options.speakerExtractor;
     this.#regexScripts = clone(options.regexScripts ?? []);
     this.#cbsVariables = clone(options.defaultVariables ?? {});
+    this.setAssets(options.assets ?? []);
     const seed =
       parseInt(fnv1a(`${this.id}:${this.runtime.project.projectId}`), 16) >>> 0;
     this.#cardRuntimeJournal = new CardRuntimeJournal({
@@ -747,6 +752,9 @@ export class PlaySession {
     this.#regexScripts = clone([...scripts]);
     setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
     this.#notify();
+  }
+  setAssets(assets: readonly AssetMacroAsset[]) {
+    this.#assets=assets.map(asset=>({name:asset.name,type:asset.type,mime:asset.mime,...(asset.moduleNamespace?{moduleNamespace:asset.moduleNamespace}:{})}));
   }
   setPersona(persona: Persona | null) {
     this.#persona = persona ? clone(persona) : null;
@@ -1796,14 +1804,12 @@ export class PlaySession {
       persona = this.#persona?.prompt?.trim()
         ? `\n플레이어 페르소나: ${this.#persona.name}\n${this.#persona.prompt}`
         : "",
-      catalog = narrativeCatalog(this.runtime.project),
+      catalog = narrativeCatalog(this.runtime.project,this.#assets),
       npcGuide = [
         catalog.npcs.length
           ? `[등장 가능한 NPC]\n${catalog.npcs.join("\n")}`
           : "",
-        catalog.commands.length
-          ? `[유효 스프라이트 명령]\n${catalog.commands.join(", ")}`
-          : "",
+        spriteCommandGuide(catalog.commands),
       ]
         .filter(Boolean)
         .join("\n"),
@@ -1904,17 +1910,19 @@ export class PlaySession {
       seed: this.runtime.snapshot().rng,
       turn: this.#turn,
     }).entries.map(({ content, name }) => ({ content, name }));
+    const catalog=narrativeCatalog(this.runtime.project,this.#assets),nativeGfl=object(this.runtime.project.content).nativePresentation==='gfl',card=nativeGfl?{...this.#card,systemPrompt:`${this.#card.systemPrompt??'{{original}}'}\n${spriteCommandGuide(catalog.commands)}`} : this.#card;
     return compilePrompt({
       preset: this.#preset,
       activeModules: activeModules(this.runtime.project),
+      assets:this.#assets.map(asset=>({...asset,bytes:null})),
       persona: this.#persona,
-      card: this.#card,
+      card,
       lore: { entries: lore },
       chat,
       memory,
       engineContext: {
         facts: `다음 JSON은 엔진이 소유한 현재 사실이다. 서사로 수치를 바꾸지 말고 이벤트 결과만 따른다.\n${JSON.stringify(this.#engineStateForPrompt())}`,
-        availableActions: `제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(", ") || "(없음)"}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.`,
+        availableActions: `제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(", ") || "(없음)"}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.\n${spriteCommandGuide(catalog.commands)}`,
         groundedMemory: retrieval.abstained
           ? "관련 근거가 부족하므로 과거 사실을 추측하지 않는다."
           : memory,
