@@ -8,7 +8,7 @@ import { extractTextPanels } from "./text-panels.ts";
 import type { CompileResult } from "./index.ts";
 
 type Row = Record<string, unknown>;
-export const GFL_TEMPLATE_VERSION = "1.5.0";
+export const GFL_TEMPLATE_VERSION = "1.6.0";
 const record = (value: unknown): Row =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Row)
@@ -176,6 +176,29 @@ function encounters(mined: ReturnType<typeof mineCard>, dolls: Array<{ id: strin
     missing,
   };
 }
+function namedPool(raw: unknown, rows: Array<{ id: string; name: string }>) {
+  const byName = new Map(rows.map((row) => [row.name, row.id])),
+    names = (Array.isArray(raw) ? raw : []).map(text),
+    missing = [...new Set(names.filter((name) => !byName.has(name)))];
+  return { ids: names.flatMap((name) => byName.has(name) ? [byName.get(name)!] : []), missing };
+}
+function bossRows(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
+  const names = (Array.isArray(mined.tables.BOSS_LIST) ? mined.tables.BOSS_LIST : []).map(text),
+    stats = dollStatLines(parsed), rawNoRecruit = mined.tables.NO_RECRUIT_BOSSES,
+    noRecruitNames = Array.isArray(rawNoRecruit) ? rawNoRecruit.map(text) : Object.keys(table(rawNoRecruit)),
+    missingStats: string[] = [];
+  const rows = names.map((name) => {
+    const row = stats.get(name);
+    if (!row) missingStats.push(name);
+    return {
+      id: id(name), name, class: "BOSS", grade: 6,
+      maxHp: number(row?.[0], DOLL_FALLBACK.maxHp), maxMp: number(row?.[1], DOLL_FALLBACK.maxMp),
+      power: number(row?.[2], DOLL_FALLBACK.power), mood: number(row?.[4], DOLL_FALLBACK.mood), asset: name,
+    };
+  });
+  const noRecruit = namedPool(noRecruitNames, rows);
+  return { rows, noRecruit: noRecruit.ids, missing: [...new Set([...missingStats, ...noRecruit.missing])] };
+}
 function classList(value: unknown) {
   return (Array.isArray(value) ? value : [])
     .flatMap((entry) => text(entry).split(","))
@@ -258,9 +281,13 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
     equipment = equipmentRows(mined),
     missions = missionRows(mined),
     defaults = mined.defaultVars.numbers,
-    encounterData = encounters(mined, dolls);
+    encounterData = encounters(mined, dolls), bossData = bossRows(parsed, mined),
+    normalEquipment = namedPool(mined.tables.MFG_EQ_POOL_NORMAL, equipment),
+    heavyEquipment = namedPool(mined.tables.MFG_EQ_POOL_HEAVY, equipment);
   return {
     recovered, normalizedMg3, unknownClasses, encounterMissing: encounterData.missing,
+    bossMissing: bossData.missing,
+    manufacturingMissing: [...new Set([...normalEquipment.missing, ...heavyEquipment.missing])],
     schema: {
       meta: {
         id: "girls-frontline-ember",
@@ -375,6 +402,8 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
         timePhases: ["오전", "오후", "저녁", "밤", "심야", "새벽"],
         progression: progression(mined),
         encounters: encounterData.value,
+        bosses: bossData.rows,
+        noRecruit: bossData.noRecruit,
         relation: {
           names: table(mined.tables).REL_NAMES ?? mined.tables.REL_NAMES,
           thresholds: mined.tables.REL_THRES,
@@ -391,6 +420,7 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
           doll: { gold: 500, res: 300 },
           equipment: { gold: 300, res: 200 },
           heavy: { gold: 1500, res: 1000, cores: 1 },
+          pools: { equipment: normalEquipment.ids, heavy: heavyEquipment.ids },
         },
         fairies: Object.entries(table(mined.tables.FAIRY_DATA)).map(
           ([name, value]) => ({ id: id(name), name, ...record(value) }),
@@ -455,6 +485,8 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
           manufacturing: [],
           repairs: [],
           completedMissions: [],
+          defeatedBosses: [],
+          bossRecruit: null,
           sortie: null,
           lastCheck: null,
           lastBattle: null,
@@ -481,7 +513,7 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
   const prompt = buildCompilerPrompt(parsed, mined),
     textPanels = extractTextPanels(extractRegexScripts(parsed)),
     diagnosis = { ...diagnoseCard(parsed, mined, prompt.coverage), textPanels },
-    { recovered, normalizedMg3, unknownClasses, encounterMissing, schema } = gflSchema(parsed, mined),
+    { recovered, normalizedMg3, unknownClasses, encounterMissing, bossMissing, manufacturingMissing, schema } = gflSchema(parsed, mined),
     moduleIds = ["genre.gfl"],
     presets = screenPresetsFor(moduleIds, schema);
   const dollCount = (schema.gfl as { dolls: unknown[] }).dolls.length,
@@ -508,6 +540,8 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
     ...(normalizedMg3 ? [{ level: "warn" as const, path: "gfl.dolls", message: `병과 오타 정규화(MG3→MG) ${normalizedMg3}건`, source: "template" as const }] : []),
     ...unknownClasses.map((className) => ({ level: "warn" as const, path: "gfl.dolls", message: `미지 병과 ${className} — 전투에서 AR 프로필로 폴백`, source: "template" as const })),
     ...encounterMissing.map((name) => ({ level: "warn" as const, path: "gfl.encounters", message: `조우 풀 이름을 인형 카탈로그에 매핑하지 못함: ${name}`, source: "template" as const })),
+    ...bossMissing.map((name) => ({ level: "warn" as const, path: "gfl.bosses", message: `보스 능력치 또는 영입 금지 목록을 연결하지 못함: ${name}`, source: "template" as const })),
+    ...manufacturingMissing.map((name) => ({ level: "warn" as const, path: "gfl.manufacturing.pools", message: `제조 장비 풀을 장비 카탈로그에 연결하지 못함: ${name}`, source: "template" as const })),
     {
       level: "warn",
       path: "combat",
@@ -546,6 +580,7 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
       "MOD 개조 전투력과 지휘관 시작 자금 10,000은 원본 Lua에서 회수했습니다.",
       "작전 단계 수 7개·임무 유형 3종·단계 지침 5종과 아이템 drop%를 원본 Lua에서 회수했습니다.",
       `무소속 인형 조우 풀 ${(schema.gfl as { encounters: { pool: unknown[] } }).encounters.pool.length}명을 원본 Lua에서 회수했습니다.`,
+      `보스 ${(schema.gfl as { bosses: unknown[] }).bosses.length}명과 영입 금지 ${(schema.gfl as { noRecruit: unknown[] }).noRecruit.length}명, 장비 제조 일반 ${((schema.gfl as { manufacturing: { pools: { equipment: unknown[] } } }).manufacturing.pools.equipment).length}종·중형 ${((schema.gfl as { manufacturing: { pools: { heavy: unknown[] } } }).manufacturing.pools.heavy).length}종을 원본 Lua에서 회수했습니다.`,
     ],
     attempts: [],
     diagnosis,

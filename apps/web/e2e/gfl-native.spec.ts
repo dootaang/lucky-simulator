@@ -13,10 +13,14 @@ local MISSION_TYPES={{key="recon",name="🔍 정찰 임무",step_mod=-1,hint="�
 local EV_GUIDE={battle="교전 상황. 실제 전투를 서술하라.",boss="보스 교전을 서술하라.",recon="정찰 상황. 교전을 넣지 마라.",other="돌발 상황. 교전을 넣지 마라.",mystery="정체불명 상황을 서술하라."}
 local ENCOUNTER_POOL={"D2","D3","D4","D5","D6","D7","D8","D9","D10"}
 local ENCOUNTER_BAN={}
-local MISSION_DATA={["ALPHA"]={name="ALPHA",diff="★★★★",power=100,reward="자금 +500 / 부품 +100",enemy="철혈"},["BETA"]={name="BETA",power=900},["GAMMA"]={name="GAMMA",power=1000}}
+local BOSS_LIST={"Scarecrow","Gebbennu"}
+local NO_RECRUIT_BOSSES={Gebbennu=true}
+local MFG_EQ_POOL_NORMAL={"옵티컬"}
+local MFG_EQ_POOL_HEAVY={"옵티컬"}
+local MISSION_DATA={["ALPHA"]={name="ALPHA",diff="★★★★",power=100,reward="자금 +500 / 부품 +100",enemy="철혈",boss="Scarecrow"},["BETA"]={name="BETA",power=900},["GAMMA"]={name="GAMMA",power=1000}}
 local FAIRY_DATA={["지휘요정"]={power=300}}
 ${'-- certified runtime\n'.repeat(700)}`;
-const card={spec:'chara_card_v3',spec_version:'3.0',data:{name:'소녀전선:잔불',description:'전술인형과 제대를 운영하는 대형 시뮬레이션',first_mes:'그리폰 기지에 접속했다.',mes_example:'',personality:'',scenario:'',creator_notes:'',system_prompt:'',post_history_instructions:'',alternate_greetings:[],tags:['소녀전선'],creator:'test',character_version:'1',extensions:{risuai:{defaultVariables:'A_day=1\nA_gold=5000\nA_res=3000',triggerscript:[{effect:[{type:'triggerlua',code:lua}]}]}},group_only_greetings:[],character_book:{entries:[]},assets:[{name:'전투식량',type:'image',ext:'png',uri:'embedded:0'}]}};
+const card={spec:'chara_card_v3',spec_version:'3.0',data:{name:'소녀전선:잔불',description:'전술인형과 제대를 운영하는 대형 시뮬레이션',first_mes:'그리폰 기지에 접속했다.',mes_example:'',personality:'',scenario:'',creator_notes:'',system_prompt:'',post_history_instructions:'',alternate_greetings:[],tags:['소녀전선'],creator:'test',character_version:'1',extensions:{risuai:{defaultVariables:'A_day=1\nA_gold=5000\nA_res=3000\nScarecrowa=["300","200","100","-4","90"]\nGebbennua=["400","300","150","0","97"]',triggerscript:[{effect:[{type:'triggerlua',code:lua}]}]}},group_only_greetings:[],character_book:{entries:[]},assets:[{name:'전투식량',type:'image',ext:'png',uri:'embedded:0'}]}};
 const png=joinBytes(PNG_SIGNATURE,makePngChunk('tEXt',strToU8(`chara-ext-asset_:0\0${Buffer.from('item-image').toString('base64')}`)),makePngChunk('tEXt',strToU8(`ccv3\0${Buffer.from(JSON.stringify(card)).toString('base64')}`)),makePngChunk('IEND',new Uint8Array()));
 const pixel=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'));
 const dollIds=Array.from({length:20},(_,index)=>index===0?'M4A1':`D${index+1}`);
@@ -101,7 +105,7 @@ test('임무 유형 선택부터 다단계 진행·전투·루팅 영수증까�
   await console.getByRole('button',{name:'전술 교전',exact:true}).click();
   await expect(console.locator('.stage-tracker span')).toHaveCount(9);
   await expect(console.locator('.brief .combat-roster')).toContainText('HP');
-  let nonCombatStages=0,recruited=false;
+  let nonCombatStages=0,recruited=false,bossRecruited=false;
   for(let step=0;step<9;step++){
     const stageButton=console.getByRole('button',{name:/단계 진행/});
     if(await stageButton.isVisible()){nonCombatStages++;await stageButton.click();}
@@ -109,18 +113,22 @@ test('임무 유형 선택부터 다단계 진행·전투·루팅 영수증까�
     await expect(simulation).toBeHidden();
     const recruit=page.getByRole('region',{name:'엔진 결정 카드'}).getByRole('button',{name:'영입을 시도한다'});
     if(await recruit.isVisible()){await recruit.click();recruited=true;}
+    const bossRecruit=page.getByRole('region',{name:'엔진 결정 카드'}).getByRole('button',{name:'영입한다'});
+    if(await bossRecruit.isVisible()){await bossRecruit.click();bossRecruited=true;}
     await page.getByRole('button',{name:'관리 화면 열기'}).click();
     await console.getByRole('button',{name:'작전',exact:true}).click();
   }
   expect(nonCombatStages).toBeGreaterThan(0);
   expect(recruited).toBe(true);
+  expect(bossRecruited).toBe(true);
   await expect(console.locator('.battle-report')).toContainText('최근 전투 보고');
   await expect(console.locator('.battle-report .combat-roster')).toContainText('HP');
   await expect(console.locator('.battle-report')).toContainText('상성: 기계 장갑 부대');
   await expect(console.locator('.battle-report')).toContainText('전리품: 전투식량 ×1');
   await expect(console.locator('.commander-exp')).toContainText('지휘 EXP');
   await console.getByRole('button',{name:'인형',exact:true}).click();
-  await expect(console.locator('.doll-grid button')).toHaveCount(2);
+  await expect(console.locator('.doll-grid button')).toHaveCount(3);
+  await expect(console.locator('.doll-grid')).toContainText('Scarecrow');
 });
 
 test('관계 선택지 캡슐과 1:1 대화 세션이 엔진 상태로 작동한다',async({page})=>{

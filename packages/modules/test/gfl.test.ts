@@ -131,6 +131,7 @@ const schema = {
       doll: { gold: 100, res: 100 },
       equipment: { gold: 100, res: 100 },
       heavy: { gold: 500, res: 500 },
+      pools: { equipment: ["scope"], heavy: ["scope"] },
     },
     progression: {
       byStar: { 0: 3, 1: 5, 2: 7, 3: 8, 4: 9, 5: 10, 6: 11 },
@@ -142,6 +143,11 @@ const schema = {
       eventGuides: { battle: "교전 지시", boss: "보스 지시", recon: "정찰 지시", other: "돌발 지시", mystery: "미확인 지시" },
     },
     encounters: { pool: ["m4a1", "ump45"], ban: [] },
+    bosses: [
+      { id: "scarecrow", name: "Scarecrow", class: "BOSS", grade: 6, maxHp: 1800, maxMp: 1600, power: 1000, mood: 90 },
+      { id: "gebbennu", name: "Gebbennu", class: "BOSS", grade: 6, maxHp: 2800, maxMp: 2400, power: 1600, mood: 97 },
+    ],
+    noRecruit: ["gebbennu"],
   },
 };
 function runtime(source: any = schema, seed: unknown = 7) {
@@ -149,6 +155,7 @@ function runtime(source: any = schema, seed: unknown = 7) {
     rng = createRng(seed);
   let state = createState(source, seed);
   return {
+    schema: source,
     get state() {
       return state;
     },
@@ -226,7 +233,7 @@ describe("Girls Frontline native module", () => {
     expect(allies.some((row:any)=>row.actorId==="mg"&&row.rowFactor===1.38)).toBe(true);
     expect(allies.some((row:any)=>row.actorId==="mg"&&row.counter===true)).toBe(true);
     expect(first.factionLabel).toContain("RF·MG 유리");
-    expect(first.enemies[0]).toMatchObject({id:"boss",name:"Scarecrow",maxHp:990,boss:true});
+    expect(first.enemies[0]).toMatchObject({id:"scarecrow",name:"Scarecrow",maxHp:1800,power:1000,boss:true});
     expect(first.allies.every((unit:any)=>typeof unit.hpBefore==="number")).toBe(true);
     expect(gflFormationRow(0)).toBe("전열"); expect(gflFormationRow(2)).toBe("중열"); expect(gflFormationRow(4)).toBe("후열");
   });
@@ -274,6 +281,19 @@ describe("Girls Frontline native module", () => {
     expect(
       (game.select("gfl/dolls") as unknown[]).length,
     ).toBeGreaterThanOrEqual(1);
+  });
+  it('일반·중형 장비 제조가 회수한 서로 다른 풀에서 결과를 한 번만 추첨한다', () => {
+    for (const heavy of [false, true]) {
+      const game = runtime(structuredClone(schema), heavy ? 92 : 91); game.dispatch('gfl/start', { mode: 'commander' });
+      game.dispatch('gfl/location/move', { locationId: 'base-maintenance' });
+      const before = game.snapshot().rng, result = game.dispatch('gfl/manufacture/start', { kind: 'equipment', heavy }).log[0] as any,
+        expected = createRng(0); expected.restore(before); expected.int(0, 0);
+      expect(result).toMatchObject({ ok: true, pool: heavy ? 'heavy' : 'equipment', poolFallback: false, job: { kind: 'equipment', heavy, resultId: 'scope' } });
+      expect(game.snapshot().rng).toBe(expected.snapshot());
+    }
+    const fallbackSource: any = structuredClone(schema); fallbackSource.gfl.manufacturing.pools = { equipment: [], heavy: [] };
+    const fallback = runtime(fallbackSource); fallback.dispatch('gfl/start', { mode: 'commander' }); fallback.dispatch('gfl/location/move', { locationId: 'base-maintenance' });
+    expect(fallback.dispatch('gfl/manufacture/start', { kind: 'equipment' }).log[0]).toMatchObject({ ok: true, poolFallback: true, job: { resultId: 'scope' } });
   });
   it("resolves multiple dolls against multiple enemies with doll HP and no generic player HP", () => {
     const source: any = structuredClone(schema);
@@ -598,6 +618,38 @@ describe("Girls Frontline native module", () => {
     expect(((recon.state.gfl as any).sortie.stages as any[])).toHaveLength(2);
     const invalid = sortieGame();
     expect(invalid.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "escort" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_mission_type_invalid" });
+  });
+  it('첫 보스 격파만 구속 영입으로 이어지고 원본 능력치·금지·중복·정원·MOD 규칙을 지킨다', () => {
+    const game = sortieGame({ boss: 'Scarecrow', seed: 31 });
+    const mission = (game.schema.gfl as any).missions[0]; delete mission.enemies;
+    game.dispatch('gfl/sortie/start', { missionId: 'alpha', echelonId: 'e1' });
+    (game.state.gfl as any).sortie.stages = [{ type: 'boss' }];
+    const victory = game.dispatch('gfl/sortie/resolve').log[0] as any;
+    expect(victory).toMatchObject({ ok: true, operationComplete: true, enemies: [expect.objectContaining({ id: 'scarecrow', name: 'Scarecrow', maxHp: 1800, power: 1000, boss: true })] });
+    expect(game.select('gfl/status')).toMatchObject({ defeatedBosses: ['scarecrow'], bossRecruit: { bossId: 'scarecrow', name: 'Scarecrow' } });
+    const recruited = game.dispatch('gfl/boss/recruit').log[0] as any;
+    expect(recruited).toMatchObject({ ok: true, bossId: 'scarecrow', class: 'BOSS', grade: 6, maxHp: 1800, power: 1000 });
+    expect((game.state.gfl as any).dolls.scarecrow).toMatchObject({ class: 'BOSS', grade: 6, baseMaxHp: 1800, basePower: 1000, mood: 90, affinity: 0, mod: 0 });
+    (game.state.gfl as any).bossRecruit = { bossId: 'scarecrow', name: 'Scarecrow' };
+    expect(game.dispatch('gfl/boss/recruit').log[0]).toMatchObject({ ok: false, reason: 'gfl_doll_owned' });
+    game.state.location = 'base-maintenance'; (game.state.gfl as any).baseLocation = 'base-maintenance';
+    expect(game.dispatch('gfl/mod/upgrade', { dollId: 'scarecrow' }).log[0]).toMatchObject({ ok: false, reason: 'gfl_boss_mod_forbidden' });
+
+    const forbidden = sortieGame(); (forbidden.state.gfl as any).bossRecruit = { bossId: 'gebbennu', name: 'Gebbennu' };
+    (forbidden.state.gfl as any).defeatedBosses = ['gebbennu'];
+    expect(forbidden.dispatch('gfl/boss/recruit').log[0]).toMatchObject({ ok: false, reason: 'gfl_boss_no_recruit' });
+    const unearned = sortieGame(); (unearned.state.gfl as any).bossRecruit = { bossId: 'scarecrow', name: 'Scarecrow' };
+    expect(unearned.dispatch('gfl/boss/recruit').log[0]).toMatchObject({ ok: false, reason: 'gfl_boss_not_defeated' });
+    const full = sortieGame(); (full.state.gfl as any).bossRecruit = { bossId: 'scarecrow', name: 'Scarecrow' }; (full.state.gfl as any).defeatedBosses = ['scarecrow'];
+    (full.state.gfl as any).dolls.extra1 = { id: 'extra1' }; (full.state.gfl as any).dolls.extra2 = { id: 'extra2' };
+    expect(full.dispatch('gfl/boss/recruit').log[0]).toMatchObject({ ok: false, reason: 'gfl_hire_capacity_full' });
+  });
+  it('영입 보스가 BOSS 전투 프로필로 제대 교전에 참여한다', () => {
+    const game = sortieGame(); (game.state.gfl as any).defeatedBosses = ['scarecrow']; (game.state.gfl as any).bossRecruit = { bossId: 'scarecrow', name: 'Scarecrow' };
+    game.dispatch('gfl/boss/recruit'); game.dispatch('gfl/echelon/assign', { echelonId: 'e1', slot: 0, dollId: 'scarecrow' });
+    game.dispatch('gfl/sortie/start', { missionId: 'alpha', echelonId: 'e1' });
+    const battle = reachCombat(game);
+    expect(battle.rounds.flatMap((round: any) => round.exchanges)).toEqual(expect.arrayContaining([expect.objectContaining({ side: 'ally', actorId: 'scarecrow' })]));
   });
   it("정찰 명중 보정은 다음 전투 한 번만 쓰고 단계별 HP·루팅은 작전 끝까지 이어진다", () => {
     const game = sortieGame({ seed: 44 });

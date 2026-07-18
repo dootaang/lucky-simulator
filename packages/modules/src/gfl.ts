@@ -27,6 +27,7 @@ const CLASS_COMBAT: Record<string,{aggro:number;damageTaken:number;vsMaxHp?:numb
   AR: { aggro: 1, damageTaken: 1 }, SMG: { aggro: 3, damageTaken: .68 }, SG: { aggro: 4, damageTaken: .6 },
   MG: { aggro: 1, damageTaken: 1, round1: 1.4, round3plus: .8 }, RF: { aggro: .5, damageTaken: 1, vsMaxHp: 1.3 },
   HG: { aggro: .5, damageTaken: 1, hitBuffAlly: 1 },
+  BOSS: { aggro: 1.5, damageTaken: .9 },
 };
 const ROW_AGGRO: Record<FormationRow, number> = { 전열: 2.4, 중열: 1, 후열: .4 };
 const REAR_DAMAGE_BONUS = 1.38;
@@ -94,6 +95,9 @@ const equipment = (schema: RuntimeRecord) =>
   list<RuntimeRecord>(config(schema).equipment);
 const fairies = (schema: RuntimeRecord) =>
   list<RuntimeRecord>(config(schema).fairies);
+const bosses = (schema: RuntimeRecord) => list<Doll>(config(schema).bosses);
+const boss = (schema: RuntimeRecord, value: unknown) =>
+  bosses(schema).find((entry) => entry.id === value || entry.name === value);
 const state = (value: RuntimeRecord) => record(value.gfl);
 const owned = (value: RuntimeRecord) => record(state(value).dolls);
 const doll = (schema: RuntimeRecord, id: unknown) =>
@@ -589,6 +593,7 @@ function resolveSortie(c: Context) {
     return fail(c, "gfl_echelon_incapacitated");
 
   const configured = list<RuntimeRecord>(operation.enemies), bossName = string(operation.boss).trim(),
+    bossDefinition = boss(c.schema, bossName),
     enemyCount = configured.length
       ? Math.min(5, configured.length)
       : clamp(
@@ -607,11 +612,11 @@ function resolveSortie(c: Context) {
       const isBoss = !configured.length && Boolean(bossName) && index === 0, source = configured[index] ?? {},
         unitPower = Math.max(
           20,
-          source.power === undefined ? Math.round(isBoss ? totalEnemyPower * .5 : bossName && !configured.length && enemyCount > 1 ? totalEnemyPower * .5 / (enemyCount - 1) : totalEnemyPower / enemyCount) : number(source.power) * stageEncounterScale,
+          isBoss && bossDefinition ? number(bossDefinition.power) : source.power === undefined ? Math.round(isBoss ? totalEnemyPower * .5 : bossName && !configured.length && enemyCount > 1 ? totalEnemyPower * .5 / (enemyCount - 1) : totalEnemyPower / enemyCount) : number(source.power) * stageEncounterScale,
         ),
-        maxHp = Math.max(80, source.hp === undefined ? Math.round(isBoss ? unitPower * 1.1 : unitPower * .75) : number(source.hp) * stageEncounterScale);
+        maxHp = Math.max(80, isBoss && bossDefinition ? number(bossDefinition.maxHp) : source.hp === undefined ? Math.round(isBoss ? unitPower * 1.1 : unitPower * .75) : number(source.hp) * stageEncounterScale);
       return {
-        id: string(source.id || (isBoss ? "boss" : `enemy-${index + 1}`)),
+        id: string(source.id || (isBoss ? bossDefinition?.id || "boss" : `enemy-${index + 1}`)),
         name: string(
           source.name || (isBoss ? bossName :
             (enemyCount === 1
@@ -738,6 +743,11 @@ function resolveSortie(c: Context) {
         string(operation.id),
       ]),
     ];
+    if (firstClear && bossDefinition) {
+      next.defeatedBosses = [...new Set([...list<string>(next.defeatedBosses), bossDefinition.id])];
+      if (!list<string>(config(c.schema).noRecruit).includes(bossDefinition.id) && !owned(c.state)[bossDefinition.id])
+        next.bossRecruit = { bossId: bossDefinition.id, name: bossDefinition.name };
+    }
   }
   const allyResults = allies.map(({ id, name, hp, maxHp, hpBefore }) => ({
       id,
@@ -746,11 +756,12 @@ function resolveSortie(c: Context) {
       maxHp,
       hpBefore,
     })),
-    enemyResults = enemies.map(({ id, name, hp, maxHp, boss }) => ({
+    enemyResults = enemies.map(({ id, name, hp, maxHp, power, boss }) => ({
       id,
       name,
       hp,
       maxHp,
+      power,
       boss,
     })),
     next = state(c.state);
@@ -1348,10 +1359,11 @@ export function gflModule(): ModuleDefinition {
           return fail(c, "gfl_maintenance_required");
         const kind = string(c.params.kind || "doll"),
           heavy = c.params.heavy === true,
-          definitions =
-            kind === "equipment"
-              ? list<RuntimeRecord>(config(c.schema).equipment)
-              : dolls(c.schema);
+          allEquipment = equipment(c.schema),
+          poolIds = kind === "equipment" ? list<string>(record(record(config(c.schema).manufacturing).pools)[heavy ? "heavy" : "equipment"]) : [],
+          pooledEquipment = poolIds.flatMap((id) => allEquipment.filter((entry) => entry.id === id)),
+          poolFallback = kind === "equipment" && pooledEquipment.length === 0,
+          definitions = kind === "equipment" ? (poolFallback ? allEquipment : pooledEquipment) : dolls(c.schema);
         if (!definitions.length)
           return fail(c, "gfl_manufacture_pool_empty", kind);
         const costs = record(
@@ -1373,7 +1385,7 @@ export function gflModule(): ModuleDefinition {
         gfl.manufacturing = jobs;
         c.state.gfl = gfl;
         const dailyAwards = markDaily(c, "management");
-        return ok(c, { job: jobs.at(-1), dailyAwards });
+        return ok(c, { job: jobs.at(-1), dailyAwards, poolFallback, pool: kind === "equipment" ? (heavy ? "heavy" : "equipment") : "doll" });
       }),
       "gfl/manufacture/tick": scoped((c) => {
         const gfl = state(c.state),
@@ -1520,6 +1532,25 @@ export function gflModule(): ModuleDefinition {
       "gfl/sortie/retreat": scoped(retreatOperation),
       "gfl/encounter/recruit": scoped(recruitEncounter),
       "gfl/encounter/skip": scoped(skipEncounter),
+      "gfl/boss/recruit": scoped((c) => {
+        const gfl = state(c.state), pending = record(gfl.bossRecruit), definition = boss(c.schema, pending.bossId),
+          id = string(pending.bossId);
+        if (!definition || !id) return fail(c, "gfl_boss_recruit_missing");
+        if (!list<string>(gfl.defeatedBosses).includes(id)) return fail(c, "gfl_boss_not_defeated", id);
+        if (list<string>(config(c.schema).noRecruit).includes(id)) return fail(c, "gfl_boss_no_recruit", id);
+        if (owned(c.state)[id]) return fail(c, "gfl_doll_owned", id);
+        const capacity = dollCapacity(c.schema, c.state), count = Object.keys(owned(c.state)).length;
+        if (count >= capacity) return fail(c, "gfl_hire_capacity_full", `${count}/${capacity}`);
+        acquire(c, definition);
+        state(c.state).bossRecruit = null;
+        return ok(c, { bossId: id, name: definition.name, class: "BOSS", grade: 6, power: definition.power, maxHp: definition.maxHp, capacity, count: count + 1 });
+      }),
+      "gfl/boss/dismiss": scoped((c) => {
+        const gfl = state(c.state), pending = record(gfl.bossRecruit);
+        if (!pending.bossId) return fail(c, "gfl_boss_recruit_missing");
+        gfl.bossRecruit = null; c.state.gfl = gfl;
+        return ok(c, { bossId: pending.bossId, dismissed: true });
+      }),
       "gfl/facility/upgrade": scoped((c) => {
         const id = string(c.params.facilityId),
           definition = list<RuntimeRecord>(config(c.schema).facilities).find(
@@ -1575,6 +1606,7 @@ export function gflModule(): ModuleDefinition {
           unit = record(owned(c.state)[id]),
           stage = number(unit.mod);
         if (!Object.keys(unit).length) return fail(c, "gfl_doll_not_owned", id);
+        if (string(unit.class) === "BOSS") return fail(c, "gfl_boss_mod_forbidden", id);
         if (stage >= 3) return fail(c, "gfl_mod_max", id);
         const missing = spend(c, {
           cores: (stage + 1) * number(unit.grade, 3),
@@ -1808,6 +1840,8 @@ export function gflModule(): ModuleDefinition {
                 }
               : { id: locationId, name: location?.name ?? locationId },
           sortie: sortie.active ? sortie : null,
+          bossRecruit: gfl.bossRecruit ?? null,
+          defeatedBosses: list<string>(gfl.defeatedBosses),
           missionTypes: list<RuntimeRecord>(progressionConfig(schema).missionTypes),
           lastCheck: gfl.lastCheck ?? null,
           lastBattle: gfl.lastBattle ?? null,

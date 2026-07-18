@@ -87,6 +87,22 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
       options: followOptions.map((option) => ({ label: `${String(option.label)} (DC ${num(option.dc)})`, id: 'gfl/relation/check', params: { dollId: String(followUp.dollId), choice: String(option.choice), followup: true }, mode: 'narrated' as const, kind: 'primary' as const })),
     });
   }
+  const bossRecruit = rec(gflStatus.bossRecruit);
+  if (bossRecruit.bossId) {
+    const name = String(bossRecruit.name ?? bossRecruit.bossId);
+    cards.push({
+      key: `gfl-boss-recruit:${String(bossRecruit.bossId)}`,
+      icon: 'star',
+      title: `⚠ ${name} · 구속 완료 — 영입하시겠습니까?`,
+      desc: '첫 격파한 보스를 전술인형으로 편입할 수 있습니다. 숙소 자리 하나를 사용합니다.',
+      more: '6성 · BOSS 병과',
+      dismissible: true,
+      options: [
+        { label: '영입한다', id: 'gfl/boss/recruit', params: {}, mode: 'narrated', kind: 'primary' },
+        { label: '보내준다', id: 'gfl/boss/dismiss', params: {}, mode: 'ledger', kind: 'ghost' },
+      ],
+    });
+  }
   const sortie = rec(gflStatus.sortie);
   if (sortie.active) {
     const encounter = rec(sortie.encounter);
