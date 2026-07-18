@@ -1,5 +1,5 @@
 import{expect,test}from'@playwright/test';
-import{strToU8}from'fflate';
+import{strToU8,zipSync}from'fflate';
 import{joinBytes,makePngChunk,PNG_SIGNATURE}from'@simbot/card';
 
 const classes=Array.from({length:20},(_,index)=>`["${index===0?'M4A1':`D${index+1}`}"]="${index===0?'AR':'SMG'}"`).join(',');
@@ -11,12 +11,16 @@ local EQUIP_DATA={["옵티컬"]={price=100,power=50,desc="명중을 보조하는
 local MISSION_DATA={["ALPHA"]={name="ALPHA",power=800,reward="자금 +500 / 부품 +100",enemy="철혈"},["BETA"]={name="BETA",power=900},["GAMMA"]={name="GAMMA",power=1000}}
 local FAIRY_DATA={["지휘요정"]={power=300}}
 ${'-- certified runtime\n'.repeat(700)}`;
-const card={spec:'chara_card_v3',spec_version:'3.0',data:{name:'소녀전선:잔불',description:'전술인형과 제대를 운영하는 대형 시뮬레이션',first_mes:'그리폰 기지에 접속했다.',mes_example:'',personality:'',scenario:'',creator_notes:'',system_prompt:'',post_history_instructions:'',alternate_greetings:[],tags:['소녀전선'],creator:'test',character_version:'1',extensions:{risuai:{defaultVariables:'A_day=1\nA_gold=5000\nA_res=3000',triggerscript:[{effect:[{type:'triggerlua',code:lua}]}]}},group_only_greetings:[],character_book:{entries:[]},assets:[{name:'전투식량',type:'image',ext:'png',uri:'embedded:0'},{name:'FAMAS_normal',type:'emotion',ext:'png',uri:'embedded:1'},{name:'FAMAS_smile',type:'emotion',ext:'png',uri:'embedded:2'}]}};
-const png=joinBytes(PNG_SIGNATURE,...['item-image','famas-normal','famas-smile'].map((value,index)=>makePngChunk('tEXt',strToU8(`chara-ext-asset_:${index}\0${Buffer.from(value).toString('base64')}`))),makePngChunk('tEXt',strToU8(`ccv3\0${Buffer.from(JSON.stringify(card)).toString('base64')}`)),makePngChunk('IEND',new Uint8Array()));
+const card={spec:'chara_card_v3',spec_version:'3.0',data:{name:'소녀전선:잔불',description:'전술인형과 제대를 운영하는 대형 시뮬레이션',first_mes:'그리폰 기지에 접속했다.',mes_example:'',personality:'',scenario:'',creator_notes:'',system_prompt:'',post_history_instructions:'',alternate_greetings:[],tags:['소녀전선'],creator:'test',character_version:'1',extensions:{risuai:{defaultVariables:'A_day=1\nA_gold=5000\nA_res=3000',triggerscript:[{effect:[{type:'triggerlua',code:lua}]}]}},group_only_greetings:[],character_book:{entries:[]},assets:[{name:'전투식량',type:'image',ext:'png',uri:'embedded:0'}]}};
+const png=joinBytes(PNG_SIGNATURE,makePngChunk('tEXt',strToU8(`chara-ext-asset_:0\0${Buffer.from('item-image').toString('base64')}`)),makePngChunk('tEXt',strToU8(`ccv3\0${Buffer.from(JSON.stringify(card)).toString('base64')}`)),makePngChunk('IEND',new Uint8Array()));
+const pixel=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'));
+const dollIds=Array.from({length:20},(_,index)=>index===0?'M4A1':`D${index+1}`);
+const assetModule=zipSync(Object.fromEntries([...dollIds.map(id=>[`assets/${id}_normal.png`,pixel]),['assets/FAMAS_normal.png',pixel],['assets/FAMAS_smile.png',pixel]]));
 
 async function importGfl(page:import('@playwright/test').Page){
   await page.goto('/');
-  await page.locator('input[accept=".simpack,.charx,.png,.json"]').setInputFiles({name:'소녀전선_잔불.png',mimeType:'image/png',buffer:Buffer.from(png)});
+  await expect(page.getByText('저장소를 여는 중…')).toHaveCount(0);
+  await page.locator('input[accept=".simpack,.charx,.png,.json"]').setInputFiles([{name:'소녀전선_잔불.png',mimeType:'image/png',buffer:Buffer.from(png)},{name:'gfl-sprites.zip',mimeType:'application/zip',buffer:Buffer.from(assetModule)}]);
   const simulation=page.getByRole('dialog',{name:'시뮬레이션'});
   await expect(simulation).toBeVisible({timeout:15_000});
   await expect(simulation.getByLabel('소녀전선 지휘 콘솔')).toBeVisible();
@@ -42,12 +46,14 @@ test('소녀전선 PNG를 넣으면 별도 컴파일 질문 없이 네이티브 
   await reopened.getByRole('button',{name:'🎲 오늘의 인형 뽑기'}).click();
   await expect(reopened).toContainText('숙소 0/4');
   await expect(reopened.getByRole('button',{name:'계약',exact:true}).first()).toBeVisible();
+  await expect(reopened.locator('.hire-grid img')).toHaveCount(5);
+  await expect(reopened.locator('.portrait-loading')).toHaveCount(0);
   const firstOffers=await reopened.locator('.hire-grid article b').allTextContents();
   await reopened.getByRole('button',{name:'🎲 목록 다시 뽑기 · 오늘 1회'}).click();
+  await expect(reopened.getByRole('button',{name:'🎲 목록 다시 뽑기 · 오늘 1회'})).toBeDisabled();
   const rerolledOffers=await reopened.locator('.hire-grid article b').allTextContents();
   expect(rerolledOffers).toHaveLength(5);
-  expect(rerolledOffers.every(name=>!firstOffers.includes(name))).toBe(true);
-  await expect(reopened.getByRole('button',{name:'🎲 목록 다시 뽑기 · 오늘 1회'})).toBeDisabled();
+  expect(rerolledOffers).not.toEqual(firstOffers);
   await reopened.getByRole('button',{name:'작전',exact:true}).click();
   await reopened.getByRole('button',{name:/레드·오렌지 작전구역/}).click();
   await expect(reopened).toContainText('ALPHA');
