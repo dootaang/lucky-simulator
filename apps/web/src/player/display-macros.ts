@@ -6,7 +6,7 @@ import {sanitizeHtml} from '@simbot/ui/sanitize-html';
 // 매크로가 그것을 문법으로 오인한다(통합 감사). 치환 전에 중괄호를 무력화한다.
 const literal=(value:string)=>String(value??'').replace(/[{}]/g,'');
 export function displayMacros(content:string,user:string,char:string){const u=literal(user),c=literal(char);return content.replace(/{{\s*user\s*}}/gi,u).replace(/{{\s*char\s*}}/gi,c);}
-export interface DisplayAssetOptions extends AssetResolveOptions{activeModules?:readonly string[];screenWidth?:number}
+export interface DisplayAssetOptions extends AssetResolveOptions{activeModules?:readonly string[];screenWidth?:number;budget?:CbsBudget}
 export function prepareDisplayContent(content:string,user:string,char:string,scripts:readonly RegexScript[]=[],variables:Record<string,string>={},chatIndex=0,lastMessageId=0,activeModules:readonly string[]=[],budget=new CbsBudget(),screenWidth=0){
   // Risu Chat.displaya와 같은 순서 — 본문 CBS를 먼저 평가하고 editdisplay를 실행한다.
   // 정규식 out에 든 CBS는 processScriptFull의 parser처럼 그 자리에서 평가한다.
@@ -29,7 +29,7 @@ const styleTree=/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
 function safeCss(css:string){return css.replace(/\{\{[\s\S]*?}}/g,'').replace(/@import\b[^;]*;?/gi,'').replace(/url\(\s*(['"]?)(?!data:|blob:)[^)]+\1\s*\)/gi,'none').replace(/\bposition\s*:\s*(fixed|sticky)\b/gi,'position:relative');}
 // 순서는 업스트림 Risu와 같다: CBS, 에셋, editdisplay, 새로 생긴 에셋 순이다.
 export function renderDisplayContent(content:string,user:string,char:string,assets:readonly AssetMacroAsset[],scripts:readonly RegexScript[]=[],variables:Record<string,string>={},chatIndex=0,lastMessageId=0,assetOptions:DisplayAssetOptions={}):{html:string;warnings:DisplayWarning[]}{
-  const budget=new CbsBudget(),cbs=(text:string)=>parseCbs(text,{userName:user,charName:char,chatIndex,lastMessageId,variables,activeModules:assetOptions.activeModules??[],screenWidth:assetOptions.screenWidth??0,assets,budget});
+  const budget=assetOptions.budget??new CbsBudget(),cbs=(text:string)=>parseCbs(text,{userName:user,charName:char,chatIndex,lastMessageId,variables,activeModules:assetOptions.activeModules??[],screenWidth:assetOptions.screenWidth??0,assets,budget});
   // Risu ParseMarkdown: CBS -> assets -> editdisplay -> assets created by editdisplay.
   const displayAssets={...assetOptions,preserveMissing:false},first=resolveAssetMacros(cbs(content),assets,{...displayAssets,bare:false}),displayed=applyRegexScripts(first.content,scripts,'display',{parser:cbs}),resolved=resolveAssetMacros(displayed,assets,displayAssets);
   const styles:string[]=[];const body=resolved.content.replace(styleTree,(_whole,css:string)=>{const clean=safeCss(css).trim();if(clean&&!styles.includes(clean))styles.push(clean);return'';});

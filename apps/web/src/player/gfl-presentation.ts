@@ -9,12 +9,23 @@ function dialogue(asset:string,quote:string){
   return `\n{{img::${asset.trim()}}}\n> ${quote.trim().replace(/^["“]|["”]$/g,'')}\n`;
 }
 
-/** 원본 Risu UI 명령을 실행하지 않고 Lucky의 안전한 이미지·인용문으로 투영한다. */
-export function prepareGflNarrative(source:string){
-  return String(source??'')
-    .replace(/\[전투\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([^|\]]+?)["“”]?\|HP=\d+>\d+\|MP=\d+>\d+\|\]/gi,(_all,asset,quote)=>dialogue(asset,quote))
-    .replace(/\[(?:엑스|적대)\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([^|\]]+?)["“”]?\|\]/gi,(_all,asset,quote)=>dialogue(asset,quote))
-    .replace(/\[\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([^|\]]+?)["“”]?\|\]/gi,(_all,asset,quote)=>dialogue(asset,quote))
+export type GflNarrativeSegment=
+  |{kind:'prose';text:string}
+  |{kind:'dialogue';asset:string;quote:string};
+
+const privateStart='\uE000',privateEnd='\uE001';
+const unquote=(value:string)=>value.trim().replace(/^["“]|["”]$/g,'');
+const escapeHtml=(value:string)=>value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+function projectDialogueFrames(source:string,replace:(asset:string,quote:string)=>string){
+  return source
+    .replace(/\[전투\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([\s\S]*?)["“”]?\|HP=\d+>\d+\|MP=\d+>\d+\|\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)))
+    .replace(/\[(?:엑스|적대)\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([\s\S]*?)["“”]?\|\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)))
+    .replace(/\[\|(?:<|&lt;)?img=["“”]?([^"“”>]+)["“”]?(?:>|&gt;)?\|["“”]?([\s\S]*?)["“”]?\|\]/gi,(_all,asset,quote)=>replace(String(asset),String(quote)));
+}
+
+function cleanGflNarrative(source:string){
+  return source
     .replace(/\[USER\|([^|\]]+?)\|\]/gi,(_all,quote)=>`\n> ${String(quote).trim()}\n`)
     .replace(/\[UI_IMG\][\s\S]*?\[UI_IMG\]/gi,'')
     .replace(/\[제조완료:[^\]]*\]/gi,'')
@@ -30,6 +41,40 @@ export function prepareGflNarrative(source:string){
     .replace(/[ \t]+$/gm,'')
     .replace(/\n{3,}/g,'\n\n')
     .trim();
+}
+
+/** GFL 카드 표식을 내레이션과 네이티브 대화 장면으로 나누되 원래 순서는 보존한다. */
+export function parseGflNarrative(source:string):GflNarrativeSegment[]{
+  const dialogues:Array<{asset:string;quote:string}>=[],safe=String(source??'').replace(/[\uE000\uE001]/g,'�'),projected=projectDialogueFrames(safe,(asset,quote)=>{const index=dialogues.push({asset:asset.trim(),quote:unquote(quote)})-1;return `\n${privateStart}${index}${privateEnd}\n`;});
+  const cleaned=cleanGflNarrative(projected),segments:GflNarrativeSegment[]=[];
+  let cursor=0;
+  for(const match of cleaned.matchAll(/\uE000(\d+)\uE001/g)){
+    const index=match.index??0,prose=cleaned.slice(cursor,index).trim(),item=dialogues[Number(match[1])];
+    if(prose)segments.push({kind:'prose',text:prose});
+    if(item)segments.push({kind:'dialogue',...item});
+    cursor=index+match[0].length;
+  }
+  const prose=cleaned.slice(cursor).trim();if(prose)segments.push({kind:'prose',text:prose});
+  return segments;
+}
+
+interface GflRenderedPart<W>{html:string;warnings:W[]}
+/** 일반 산문은 기존 렌더러에 맡기고 대사는 엔진 소유 HTML에 안전한 텍스트로 넣는다. */
+export function renderGflNarrative<W extends{code:string;macro:string;name:string}>(source:string,render:(content:string)=>GflRenderedPart<W>,speakerFor:(asset:string)=>string){
+  const html:string[]=[],warnings:W[]=[];
+  for(const segment of parseGflNarrative(source)){
+    if(segment.kind==='prose'){const result=render(segment.text);html.push(result.html);warnings.push(...result.warnings);continue;}
+    const safeAsset=/[{}<>\r\n]/.test(segment.asset)?'':segment.asset,result=safeAsset?render(`{{img::${safeAsset}}}`):{html:'',warnings:[] as W[]},speaker=speakerFor(segment.asset)||segment.asset;
+    warnings.push(...result.warnings);
+    html.push(`<div class="gfl-say"><div class="gfl-say-portrait">${result.html}</div><div class="gfl-say-body"><span class="gfl-say-name">${escapeHtml(speaker)}</span><blockquote><p>${escapeHtml(segment.quote).replace(/\r?\n/g,'<br>')}</p></blockquote></div></div>`);
+  }
+  const seen=new Set<string>();
+  return{html:html.join('\n'),warnings:warnings.filter(warning=>{const key=`${warning.code}\u0001${warning.macro}\u0001${warning.name}`;if(seen.has(key))return false;seen.add(key);return true;})};
+}
+
+/** 원본 Risu UI 명령을 실행하지 않고 Lucky의 안전한 이미지·인용문으로 투영한다. */
+export function prepareGflNarrative(source:string){
+  return cleanGflNarrative(projectDialogueFrames(String(source??''),(asset,quote)=>dialogue(asset,quote)));
 }
 
 export function extractGflBackgroundCue(content:string):string|null{
