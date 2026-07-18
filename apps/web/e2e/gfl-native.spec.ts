@@ -39,9 +39,15 @@ test('소녀전선 PNG를 넣으면 별도 컴파일 질문 없이 네이티브 
   await expect(reopened).toContainText('현재 위치 · 정비실');
   await expect(reopened.getByRole('button',{name:'제조·수복'})).toBeEnabled();
   await reopened.getByRole('button',{name:'인형 고용',exact:true}).click();
-  await reopened.getByRole('button',{name:'오늘의 목록 확인'}).click();
+  await reopened.getByRole('button',{name:'🎲 오늘의 인형 뽑기'}).click();
   await expect(reopened).toContainText('숙소 0/4');
   await expect(reopened.getByRole('button',{name:'계약',exact:true}).first()).toBeVisible();
+  const firstOffers=await reopened.locator('.hire-grid article b').allTextContents();
+  await reopened.getByRole('button',{name:'🎲 목록 다시 뽑기 · 오늘 1회'}).click();
+  const rerolledOffers=await reopened.locator('.hire-grid article b').allTextContents();
+  expect(rerolledOffers).toHaveLength(5);
+  expect(rerolledOffers.every(name=>!firstOffers.includes(name))).toBe(true);
+  await expect(reopened.getByRole('button',{name:'🎲 목록 다시 뽑기 · 오늘 1회'})).toBeDisabled();
   await reopened.getByRole('button',{name:'작전',exact:true}).click();
   await reopened.getByRole('button',{name:/레드·오렌지 작전구역/}).click();
   await expect(reopened).toContainText('ALPHA');
@@ -53,7 +59,7 @@ test('저전투력 출격 위험도와 전술 교전 과정을 관리 화면 안
   await expect(simulation).toContainText('럭키 시뮬레이션');
   await console.getByRole('button',{name:'지휘관으로 시작'}).click();
   await console.getByRole('button',{name:'인형 고용',exact:true}).click();
-  await console.getByRole('button',{name:'오늘의 목록 확인'}).click();
+  await console.getByRole('button',{name:'🎲 오늘의 인형 뽑기'}).click();
   await console.getByRole('button',{name:'계약',exact:true}).first().click();
   await console.getByRole('button',{name:/수송 도착/}).click();
   await console.getByRole('button',{name:'제대',exact:true}).click();

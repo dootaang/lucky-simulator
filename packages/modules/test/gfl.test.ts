@@ -22,6 +22,7 @@ const schema = {
       ],
       facilities: { base1: 1, base5: 1 },
       hireOffers: [],
+      hirePreviousOffers: [],
       hireOfferDay: null,
       hireRefreshDay: null,
       hiredDay: null,
@@ -130,10 +131,10 @@ const schema = {
     },
   },
 };
-function runtime(source: any = schema) {
+function runtime(source: any = schema, seed: unknown = 7) {
   const registry = createCoreRegistry().register(gflModule()),
-    rng = createRng(7);
-  let state = createState(source, 7);
+    rng = createRng(seed);
+  let state = createState(source, seed);
   return {
     get state() {
       return state;
@@ -293,6 +294,37 @@ describe("Girls Frontline native module", () => {
         expect.objectContaining({ id: "ump45", status: "대기" }),
       ]),
     );
+  });
+  it("rerolls a fresh doll slate and avoids yesterday's slate when the pool is large enough", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.dolls = Array.from({ length: 15 }, (_, index) => ({
+      id: `doll-${index}`,
+      name: `DOLL-${index}`,
+      class: index % 2 ? "AR" : "SMG",
+      grade: 3,
+      maxHp: 800,
+      power: 800,
+      price: 500,
+    }));
+    const game = runtime(source);
+    game.dispatch("gfl/start", { mode: "commander" });
+    const first = game.dispatch("gfl/hire/refresh").log[0]!.offers as Array<{ id: string }>;
+    const second = game.dispatch("gfl/hire/refresh").log[0]!.offers as Array<{ id: string }>;
+    expect(first).toHaveLength(5);
+    expect(second).toHaveLength(5);
+    expect(second.every((offer) => !first.some((previous) => previous.id === offer.id))).toBe(true);
+    const mutable = game.state as any;
+    mutable.day = 2;
+    mutable.clock.day = 2;
+    mutable.gfl.hireOffers = [];
+    mutable.gfl.hireOfferDay = null;
+    mutable.gfl.hireRefreshDay = null;
+    const nextDay = game.dispatch("gfl/hire/refresh").log[0]!.offers as Array<{ id: string }>;
+    expect(nextDay.every((offer) => !second.some((previous) => previous.id === offer.id))).toBe(true);
+    const anotherChat = runtime(source, "another-chat");
+    anotherChat.dispatch("gfl/start", { mode: "commander" });
+    const anotherFirst = anotherChat.dispatch("gfl/hire/refresh").log[0]!.offers as Array<{ id: string }>;
+    expect(anotherFirst.map((offer) => offer.id)).not.toEqual(first.map((offer) => offer.id));
   });
   it("uses the card original 1.5x facility cost progression", () => {
     const game = runtime();

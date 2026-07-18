@@ -394,6 +394,7 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
           ],
           facilities: { base1: 1, base2: 1, base3: 1, base4: 1, base5: 1 },
           hireOffers: [],
+          hirePreviousOffers: [],
           hireOfferDay: null,
           hireRefreshDay: null,
           hiredDay: null,

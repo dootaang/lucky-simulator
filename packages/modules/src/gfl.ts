@@ -210,9 +210,18 @@ function hireOffers(c: Parameters<Parameters<typeof scoped>[0]>[0]) {
       Math.max(1, number(hireConfig(c.schema).dailySlots, 5)),
       pool.length,
     ),
-    offers: RuntimeRecord[] = [];
+    offers: RuntimeRecord[] = [],
+    current = list<RuntimeRecord>(gfl.hireOffers),
+    previousIds = new Set(
+      (current.length ? current.map((value) => value.id) : list<string>(gfl.hirePreviousOffers))
+        .map(string)
+        .filter(Boolean),
+    ),
+    fresh = pool.filter((value) => !previousIds.has(value.id)),
+    repeated = pool.filter((value) => previousIds.has(value.id));
   for (let index = 0; index < count; index++) {
-    const picked = pool.splice(c.rng.int(0, pool.length - 1), 1)[0]!;
+    const candidates = fresh.length ? fresh : repeated;
+    const picked = candidates.splice(c.rng.int(0, candidates.length - 1), 1)[0]!;
     offers.push({
       id: picked.id,
       name: picked.name,
@@ -224,6 +233,7 @@ function hireOffers(c: Parameters<Parameters<typeof scoped>[0]>[0]) {
     });
   }
   gfl.hireOffers = offers;
+  gfl.hirePreviousOffers = offers.map((value) => value.id);
   gfl.hireOfferDay = day(c.state);
   c.state.gfl = gfl;
   return offers;
@@ -769,6 +779,8 @@ export function gflModule(): ModuleDefinition {
               resources.res = Math.max(0, number(resources.res) - 300);
             daily = { income, healRate, raid: true, defended, raidRoll };
           } else daily = { income, healRate, raid: false, raidRoll };
+          const previousOffers = list<RuntimeRecord>(gfl.hireOffers).map((value) => string(value.id)).filter(Boolean);
+          if (previousOffers.length) gfl.hirePreviousOffers = previousOffers;
           gfl.hireOffers = [];
           gfl.hireOfferDay = null;
           gfl.hireRefreshDay = null;
