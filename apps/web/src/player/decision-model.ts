@@ -39,6 +39,21 @@ function tierCards(logs: ReadonlyArray<Record<string, unknown>>, turn: number, n
     cards.push({ key: `gfl-tier:${turn}:${String(log.dollId)}:${label}`, icon: 'heart', title: '관계가 깊어졌다', desc: `${name}: ${String(from.label ?? '')} → ${label}${to.description ? ` — ${String(to.description)}` : ''}`, more: '', dismissible: true,
       options: [{ label: '특별한 장면 열기', id: 'tier_scene', params: {}, mode: 'scene', kind: 'primary', intent: `${name}와의 관계가 방금 '${label}' 단계에 접어들었다. 그 변화가 서로에게 느껴지는 특별한 장면을 짧게 열어라.` }] });
   }
+  // 지휘관 진급도 엔진 로그가 시점을 확정하고, 선택 시 LLM은 짧은 축하 장면만 연출한다.
+  for (const log of logs) {
+    if (log.ok !== true || (log.event !== 'gfl/sortie/engage' && log.event !== 'gfl/sortie/resolve' && log.event !== 'gfl/sortie/finish')) continue;
+    const levelUp = rec(log.levelUp), to = num(levelUp.to);
+    if (to < 2) continue;
+    cards.push({
+      key: `gfl-commander-level:${turn}:${to}`,
+      icon: 'star',
+      title: `진급 — Lv ${to}`,
+      desc: `작전 경험이 쌓여 지휘관 레벨 ${to}에 도달했다.`,
+      more: '',
+      dismissible: true,
+      options: [{ label: '진급 보고 장면 열기', id: 'commander_level_scene', params: {}, mode: 'scene', kind: 'primary', intent: `지휘관이 방금 Lv ${to}로 진급했다. 기지에 그 소식이 퍼지는 짧은 장면을 열어라.` }],
+    });
+  }
   return cards;
 }
 

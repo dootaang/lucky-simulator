@@ -10,7 +10,7 @@ function gfl(): ParsedCard {
       (_, i) => `["D${i + 1}"]="${i === 0 ? "MG3" : i === 1 ? "??" : "AR"}"`,
     ).join(","),
     grades = Array.from({ length: 20 }, (_, i) => `["D${i + 1}"]=3`).join(","),
-    lua = `local DOLL_CLASS={${classes}}\nlocal DOLL_GRADE={${grades}}\nlocal MOD_POWER={[1]=111,[2]=222,[3]=333}\nlocal base_defaults={base1={gold="4000",res="2000"},base2={gold="4000",res="2000"},base3={gold="4000",res="2000"},base4={gold="5000",res="3000"},base5={gold="3000",res="1000"}}\nlocal ITEM_DATA={["RAM"]={price=100,type="use",desc="회복"}}\nlocal EQUIP_DATA={["SCOPE"]={price=200,power=10}}\nlocal MISSION_DATA={["ALPHA"]={name="ALPHA",power="800",reward="자금 +500 / 부품 +100",enemy="철혈 / 감염체 / 패러데우스",boss=" Scarecrow "},["BETA"]={name="BETA",power="900",boss=" "},["GAMMA"]={name="GAMMA",power="1000"}}\n${"-- filler\n".repeat(1200)}`;
+    lua = `local DOLL_CLASS={${classes}}\nlocal DOLL_GRADE={${grades}}\nlocal MOD_POWER={[1]=111,[2]=222,[3]=333}\nlocal base_defaults={base1={gold="4000",res="2000"},base2={gold="4000",res="2000"},base3={gold="4000",res="2000"},base4={gold="5000",res="3000"},base5={gold="3000",res="1000"}}\nlocal ITEM_DATA={["RAM"]={price=100,type="use",desc="회복"}}\nlocal EQUIP_DATA={["SCOPE"]={price=200,power=10}}\nlocal MISSION_DATA={["ALPHA"]={name="ALPHA",diff="★★★★☆",power="800",reward="자금 +500 / 부품 +100",enemy="철혈 / 감염체 / 패러데우스",boss=" Scarecrow "},["BETA"]={name="BETA",diff="☆☆☆☆☆",power="900",boss=" "},["GAMMA"]={name="GAMMA",power="1000"}}\n${"-- filler\n".repeat(1200)}`;
   return {
     format: "png",
     source: "gfl.png",
@@ -64,6 +64,7 @@ describe("known card compiler", () => {
     expect((result?.schema.initialState as any).gfl.echelons.every((entry:any)=>entry.slots.length===6)).toBe(true);
     expect((result?.schema.gfl as any).dolls.slice(0,2).map((unit:any)=>unit.class)).toEqual(["MG","??"]);
     expect((result?.schema.gfl as any).missions[0]).toMatchObject({factions:["철혈","E.L.I.D","패러데우스"],boss:"Scarecrow"});
+    expect((result?.schema.gfl as any).missions.map((mission:any)=>mission.stars)).toEqual([4,0,0]);
     expect((result?.schema.gfl as any).missions[1]).not.toHaveProperty("boss");
     expect(result?.issues.map(issue=>issue.message).join(" ")).toContain("병과 오타 정규화(MG3→MG)");
     expect(result?.issues.map(issue=>issue.message).join(" ")).toContain("미지 병과 ??");

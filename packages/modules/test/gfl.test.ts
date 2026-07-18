@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRng, createState } from "@simbot/kernel";
 import { createCoreRegistry, gflModule } from "../src/index.ts";
-import { gflFormationRow } from "../src/gfl.ts";
+import { COMMANDER_EXP_BY_STAR, commanderLevel, gflFormationRow } from "../src/gfl.ts";
 
 const schema = {
   initialState: {
@@ -10,6 +10,8 @@ const schema = {
     resources: { res: 3000, parts: 3, cores: 9 },
     items: {},
     player: {
+      level: 1,
+      exp: 0,
       pools: { hp: { cur: 1000, max: 1000 }, mp: { cur: 1000, max: 1000 } },
     },
     clock: { day: 1, hour: 8, turn: 0 },
@@ -152,6 +154,26 @@ function runtime(source: any = schema, seed: unknown = 7) {
       return { state: structuredClone(state), rng: rng.snapshot() };
     },
   };
+}
+
+function sortieGame(options: { stars?: number; boss?: string; exp?: number; seed?: unknown; enemyPower?: number } = {}) {
+  const source: any = structuredClone(schema);
+  source.initialState.player.exp = options.exp ?? 0;
+  source.initialState.player.level = commanderLevel(options.exp ?? 0);
+  source.gfl.dolls[0].power = options.enemyPower ? 1 : 10_000;
+  source.gfl.dolls[0].maxHp = options.enemyPower ? 1 : 10_000;
+  source.gfl.missions[0] = {
+    ...source.gfl.missions[0],
+    stars: options.stars ?? 0,
+    power: options.enemyPower ?? 100,
+    enemies: [{ id: "target", name: "표적", power: options.enemyPower ?? 20, hp: options.enemyPower ?? 80 }],
+    ...(options.boss ? { boss: options.boss } : {}),
+  };
+  const game = runtime(source, options.seed ?? 7);
+  game.dispatch("gfl/start", { mode: "commander" });
+  game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+  game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
+  return game;
 }
 describe("Girls Frontline native module", () => {
   it("applies deterministic class, row, faction, and boss combat composition rules", () => {
@@ -612,5 +634,58 @@ describe("Girls Frontline native module", () => {
     expect(game.dispatch("gfl/relation/session/start", { dollId: "ump45" }).log[0]).toMatchObject({ ok: true });
     expect(game.dispatch("gfl/relation/session/end").log[0]).toMatchObject({ ok: true });
     expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: true });
+  });
+  it("별점별 지휘 EXP 표와 보스·재클리어 배율을 결정론적으로 적용한다", () => {
+    expect(COMMANDER_EXP_BY_STAR).toEqual([10, 15, 20, 30, 40, 55, 70]);
+    for (const [stars, expected] of COMMANDER_EXP_BY_STAR.entries()) {
+      const game = sortieGame({ stars });
+      game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+      expect((game.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(expected);
+    }
+    const boss = sortieGame({ stars: 3, boss: "Scarecrow" });
+    boss.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    expect((boss.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(45);
+    boss.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    expect((boss.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(16);
+    const minimum = sortieGame({ stars: 0 });
+    (minimum.state.gfl as any).completedMissions = ["alpha"];
+    minimum.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    expect((minimum.dispatch("gfl/sortie/resolve").log[0] as any).commanderExp.gained).toBe(4);
+  });
+  it("29 EXP 경계와 한 번에 여러 레벨 상승을 전투 로그에 남긴다", () => {
+    const boundary = sortieGame({ exp: 29, stars: 0 });
+    boundary.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    expect(boundary.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({ commanderExp: { gained: 10, total: 39, level: 2 }, levelUp: { from: 1, to: 2 } });
+    const multi = sortieGame({ exp: 29, stars: 6, boss: "Scarecrow" });
+    multi.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    expect(multi.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({ commanderExp: { gained: 105, total: 134, level: 3 }, levelUp: { from: 1, to: 3 } });
+  });
+  it("Lv4·12에서 일일 작전 상한을 4·5회로 해금하고 다음 출격을 막는다", () => {
+    for (const [exp, limit] of [[150, 4], [1430, 5]] as const) {
+      const game = sortieGame({ exp });
+      expect(game.select("gfl/daily")).toMatchObject({ sortieLimit: limit, sortiesRemaining: limit });
+      for (let index = 0; index < limit; index++) {
+        expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: true, sortiesRemaining: limit - index - 1 });
+        (game.state.gfl as any).sortie = null;
+      }
+      expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_daily_limit", detail: String(limit) });
+    }
+  });
+  it("Lv8·16 지휘 보정을 브리핑과 실제 판정에 똑같이 반영한다", () => {
+    for (const [exp, bonus] of [[630, 1], [2550, 2]] as const) {
+      const game = sortieGame({ exp });
+      const start = game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0] as any;
+      expect(start.risk.commanderBonus).toBe(bonus);
+      const battle = game.dispatch("gfl/sortie/resolve").log[0] as any;
+      expect(battle.missionCheck.commanderBonus).toBe(bonus);
+      expect(battle.missionCheck.total).toBe(battle.missionCheck.roll + battle.missionCheck.modifier);
+    }
+  });
+  it("패배는 EXP를 주지 않고 Lv20은 초과 EXP를 보존하며 칭호만 표시한다", () => {
+    const defeat = sortieGame({ exp: 29, stars: 6, enemyPower: 100_000, seed: 11 });
+    defeat.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    expect(defeat.dispatch("gfl/sortie/resolve").log[0]).toMatchObject({ outcome: "defeat", commanderExp: { gained: 0, total: 29, level: 1 } });
+    const capped = sortieGame({ exp: 5000 });
+    expect(capped.select("gfl/status")).toMatchObject({ commander: { level: 20, exp: 5000, expIntoLevel: 1010, expForNext: null, sortieLimit: 5, checkBonus: 2, title: "백전의 지휘관" } });
   });
 });

@@ -30,6 +30,35 @@ const CLASS_COMBAT: Record<string,{aggro:number;damageTaken:number;vsMaxHp?:numb
 };
 const ROW_AGGRO: Record<FormationRow, number> = { 전열: 2.4, 중열: 1, 후열: .4 };
 const REAR_DAMAGE_BONUS = 1.38;
+export const COMMANDER_EXP_BY_STAR = [10, 15, 20, 30, 40, 55, 70] as const;
+export const commanderThreshold = (level: number) => 30 + 20 * (level - 1);
+export const COMMANDER_LEVELS = Array.from({ length: 20 }, (_, index) => {
+  const level = index + 1;
+  let exp = 0;
+  for (let current = 1; current < level; current++) exp += commanderThreshold(current);
+  return { level, exp, expForNext: level < 20 ? commanderThreshold(level) : null };
+});
+export function commanderLevel(exp: number) {
+  const total = Math.max(0, number(exp));
+  let level = 1;
+  for (const entry of COMMANDER_LEVELS) if (total >= entry.exp) level = entry.level;
+  return level;
+}
+export const commanderSortieLimit = (level: number) => level >= 12 ? 5 : level >= 4 ? 4 : 3;
+export const commanderCheckBonus = (level: number) => level >= 16 ? 2 : level >= 8 ? 1 : 0;
+function commanderStatus(value: RuntimeRecord) {
+  const player = record(value.player), exp = Math.max(0, number(player.exp)), level = commanderLevel(exp),
+    current = COMMANDER_LEVELS[level - 1]!;
+  return {
+    level,
+    exp,
+    expIntoLevel: exp - current.exp,
+    expForNext: current.expForNext,
+    sortieLimit: commanderSortieLimit(level),
+    checkBonus: commanderCheckBonus(level),
+    title: level >= 20 ? "백전의 지휘관" : null,
+  };
+}
 const FACTION_COUNTER: Record<string,{advantaged:string[];label:string}> = {
   "철혈": { advantaged: ["RF","MG"], label: "기계 장갑 부대 — RF·MG 유리" },
   "E.L.I.D": { advantaged: ["MG","SG","AR"], label: "감염 군집 — MG·SG·AR 유리" },
@@ -156,7 +185,6 @@ function effectivePower(value: RuntimeRecord, echelon: RuntimeRecord) {
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
-const DAILY_SORTIE_LIMIT = 3;
 function dailyState(value: RuntimeRecord) {
   const gfl = state(value), today = day(value);
   let daily = record(gfl.daily);
@@ -199,12 +227,13 @@ function missionUnlocked(schema: RuntimeRecord, value: RuntimeRecord, operation:
   const rows = missions(schema), index = rows.findIndex(row => row.id === operation.id), theater = string(operation.theater), previous = rows.slice(0, index).filter(row => string(row.theater) === theater).at(-1);
   return !previous || completed.has(string(previous.id));
 }
-function missionRisk(formationPower: number, requiredPower: number) {
-  const ratio = formationPower / Math.max(1, requiredPower), modifier = clamp(Math.round(10 * Math.log2(Math.max(.1, ratio))), -10, 8);
+function missionRisk(formationPower: number, requiredPower: number, commanderBonus = 0) {
+  const ratio = formationPower / Math.max(1, requiredPower), baseModifier = clamp(Math.round(10 * Math.log2(Math.max(.1, ratio))), -10, 8),
+    modifier = baseModifier + commanderBonus;
   let wins = 0;
   for (let roll = 1; roll <= 20; roll++) if (roll === 20 || (roll !== 1 && roll + modifier >= 8)) wins++;
   const chance = wins * 5, label = chance < 30 ? "극위험" : chance < 60 ? "위험" : chance < 85 ? "보통" : "안정";
-  return { ratio: Math.round(ratio * 100), modifier, chance, chanceLow: Math.max(5, chance - 5), chanceHigh: Math.min(95, chance + 5), label };
+  return { ratio: Math.round(ratio * 100), modifier, baseModifier, commanderBonus, chance, chanceLow: Math.max(5, chance - 5), chanceHigh: Math.min(95, chance + 5), label };
 }
 type RelationChoice = {
   label: string;
@@ -387,8 +416,9 @@ function resolveSortie(c: Context) {
   if (!sortie.active || !operation || !entry)
     return fail(c, "gfl_sortie_missing");
 
-  const tactic = string(c.params.tactic || sortie.tactic || "balanced"),
-    risk = missionRisk(number(sortie.power), number(operation.power)),
+  const commanderBefore = commanderStatus(c.state),
+    tactic = string(c.params.tactic || sortie.tactic || "balanced"),
+    risk = missionRisk(number(sortie.power), number(operation.power), commanderBefore.checkBonus),
     missionRoll = c.rng.int(1, 20),
     missionTotal = missionRoll + risk.modifier,
     condition = missionRoll === 20 || (missionRoll !== 1 && missionTotal >= 8) ? missionTotal >= 15 ? "favorable" : "steady" : missionTotal <= 2 ? "disastrous" : "unfavorable",
@@ -537,13 +567,23 @@ function resolveSortie(c: Context) {
     unit.hp = hp;
     unit.status = ally.hp <= 0 ? "대파" : ally.hp < ally.maxHp ? "손상" : "대기";
   }
-  let reward = null, rewardRate = 0;
+  let reward = null, rewardRate = 0, commanderExp = { gained: 0, total: commanderBefore.exp, level: commanderBefore.level }, levelUp: RuntimeRecord | null = null;
   if (outcome === "victory") {
     const firstClear = !list<string>(state(c.state).completedMissions).includes(string(operation.id));
     rewardRate = firstClear ? 1 : .35;
     const rawReward = record(operation.rewards), scaledReward = Object.fromEntries(Object.entries(rawReward).map(([key, value]) => [key, Math.floor(number(value) * rewardRate)]));
     rewards(c.state, scaledReward, c);
     reward = scaledReward;
+    const stars = clamp(Math.floor(number(operation.stars)), 0, 6),
+      bossExp = Math.round(COMMANDER_EXP_BY_STAR[stars]! * (string(operation.boss).trim() ? 1.5 : 1)),
+      gained = Math.max(1, Math.round(bossExp * rewardRate)),
+      player = record(c.state.player), total = Math.max(0, number(player.exp)) + gained,
+      level = commanderLevel(total);
+    player.exp = total;
+    player.level = level;
+    c.state.player = player;
+    commanderExp = { gained, total, level };
+    if (level > commanderBefore.level) levelUp = { from: commanderBefore.level, to: level };
     const next = state(c.state);
     next.completedMissions = [
       ...new Set([
@@ -577,7 +617,9 @@ function resolveSortie(c: Context) {
     rewards: reward,
     rewardRate,
     tactic,
-    missionCheck: { roll: missionRoll, modifier: risk.modifier, total: missionTotal, condition, risk },
+    missionCheck: { roll: missionRoll, modifier: risk.modifier, commanderBonus: commanderBefore.checkBonus, total: missionTotal, condition, risk },
+    commanderExp,
+    ...(levelUp ? { levelUp } : {}),
     factionLabel: missionFaction.counterLabel,
   };
   next.sortie = null;
@@ -595,7 +637,9 @@ function resolveSortie(c: Context) {
     rewards: reward,
     rewardRate,
     tactic,
-    missionCheck: { roll: missionRoll, modifier: risk.modifier, total: missionTotal, condition, risk },
+    missionCheck: { roll: missionRoll, modifier: risk.modifier, commanderBonus: commanderBefore.checkBonus, total: missionTotal, condition, risk },
+    commanderExp,
+    ...(levelUp ? { levelUp } : {}),
     factionLabel: missionFaction.counterLabel,
     dailyAwards,
     llmCallsRequired: 0,
@@ -1256,7 +1300,8 @@ export function gflModule(): ModuleDefinition {
         const members = list<unknown>(entry.slots).filter(Boolean),
       formationPower = effectivePower(c.state, entry), daily = dailyState(c.state);
         if (!members.length) return fail(c, "gfl_echelon_empty");
-        if (number(daily.sortiesUsed) >= DAILY_SORTIE_LIMIT) return fail(c, "gfl_sortie_daily_limit", DAILY_SORTIE_LIMIT);
+        const commander = commanderStatus(c.state);
+        if (number(daily.sortiesUsed) >= commander.sortieLimit) return fail(c, "gfl_sortie_daily_limit", commander.sortieLimit);
         if (members.every(id => { const hp = record(record(owned(c.state)[string(id)]).hp); return number(hp.cur) <= 0; })) return fail(c, "gfl_echelon_incapacitated");
         const travelCost = Math.max(0, number(operation.travelCost));
         if (travelCost) {
@@ -1284,8 +1329,8 @@ export function gflModule(): ModuleDefinition {
           power: formationPower,
           command,
           travelCost,
-          risk: missionRisk(formationPower, number(operation.power)),
-          sortiesRemaining: Math.max(0, DAILY_SORTIE_LIMIT - number(daily.sortiesUsed)),
+          risk: missionRisk(formationPower, number(operation.power), commander.checkBonus),
+          sortiesRemaining: Math.max(0, commander.sortieLimit - number(daily.sortiesUsed)),
         });
       }),
       // 소녀전선 전투는 범용 플레이어 HP를 빌리지 않는다. 편성된 각 인형과 여러 적을
@@ -1587,6 +1632,7 @@ export function gflModule(): ModuleDefinition {
           followUp: activeFollowUp(value),
           dialogue: activeDialogue(value),
           settings: { relationDifficulty: relationDifficulty(value).id },
+          commander: commanderStatus(value),
         };
       },
       "gfl/relation/options": (...args) => {
@@ -1688,12 +1734,12 @@ export function gflModule(): ModuleDefinition {
       "gfl/daily": (...args) => {
         const value = record(args[1]), daily = dailyState(value), tasks = dailyTasks(daily),
           completed = tasks.filter(task => task.progress >= task.target).length,
-          claimed = list<number>(daily.claimed);
+          claimed = list<number>(daily.claimed), sortieLimit = commanderStatus(value).sortieLimit;
         return {
           day: number(daily.day),
           sortiesUsed: number(daily.sortiesUsed),
-          sortieLimit: DAILY_SORTIE_LIMIT,
-          sortiesRemaining: Math.max(0, DAILY_SORTIE_LIMIT - number(daily.sortiesUsed)),
+          sortieLimit,
+          sortiesRemaining: Math.max(0, sortieLimit - number(daily.sortiesUsed)),
           tasks,
           completed,
           claimed,

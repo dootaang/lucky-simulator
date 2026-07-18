@@ -175,12 +175,14 @@ function missionRows(mined: ReturnType<typeof mineCard>) {
         if (!factions.includes(faction)) factions.push(faction);
       }
       const boss = text(row.boss).trim();
+      const difficulty = text(row.diff);
       return {
         id: id(key),
         code: key,
         name: text(row.name || key),
         theater: missionTheater(key),
-        difficulty: text(row.diff),
+        difficulty,
+        stars: (difficulty.match(/★/g) ?? []).length,
         enemy,
         factions,
         ...(boss ? { boss } : {}),

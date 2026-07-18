@@ -33,6 +33,8 @@ test('소녀전선 PNG를 넣으면 별도 컴파일 질문 없이 네이티브 
   const console=simulation.getByLabel('소녀전선 지휘 콘솔');
   await expect(console).toContainText('소녀전선: 잔불');
   await console.getByRole('button',{name:'지휘관으로 시작'}).click();
+  await expect(console.locator('header.status')).toContainText('지휘관 Lv');
+  await expect(console.locator('header.status')).toContainText('0 / 30 EXP');
   await expect(console).toContainText('현재 위치 · 지휘관실');
   await expect(console.getByRole('button',{name:'제조·수복'})).toBeDisabled();
   await console.getByRole('button',{name:'정비실'}).click();

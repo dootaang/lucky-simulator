@@ -65,4 +65,12 @@ describe('결정 카드 모델', () => {
     expect(cards[0]?.options[0]?.intent).toContain('신뢰');
     expect(cards[0]?.desc).toContain('서로를 믿는다');
   });
+  it('GFL 지휘관 레벨업 로그를 진급 장면 카드로 만든다', () => {
+    const log = { ok: true, event: 'gfl/sortie/resolve', levelUp: { from: 1, to: 3 } };
+    const cards = buildDecisionCards(() => null, { logs: [log], turn: 8 });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ key: 'gfl-commander-level:8:3', icon: 'star', title: '진급 — Lv 3', dismissible: true });
+    expect(cards[0]?.options[0]).toMatchObject({ label: '진급 보고 장면 열기', mode: 'scene' });
+    expect(cards[0]?.options[0]?.intent).toContain('Lv 3');
+  });
 });
