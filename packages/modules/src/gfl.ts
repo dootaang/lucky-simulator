@@ -185,14 +185,71 @@ function missionRisk(formationPower: number, requiredPower: number) {
   const chance = wins * 5, label = chance < 30 ? "극위험" : chance < 60 ? "위험" : chance < 85 ? "보통" : "안정";
   return { ratio: Math.round(ratio * 100), modifier, chance, chanceLow: Math.max(5, chance - 5), chanceHigh: Math.min(95, chance + 5), label };
 }
-const RELATION_CHOICES: Record<
-  string,
-  { label: string; dc: number; affinity: number; mood: number }
-> = {
-  talk: { label: "차분히 대화한다", dc: 8, affinity: 3, mood: 10 },
-  nickname: { label: "서로 부를 별명을 정한다", dc: 10, affinity: 5, mood: 25 },
-  encourage: { label: "진심으로 격려한다", dc: 12, affinity: 8, mood: 20 },
+type RelationChoice = {
+  label: string;
+  dc: number;
+  affinity: number;
+  mood: number;
+  minTier: number;
+  followups: string[];
 };
+// 관계 선택지 사다리. 티어 문턱은 카드에서 회수한 relation(REL_NAMES/REL_THRES)을 그대로 쓰고,
+// 선택지 구성·DC·증감은 Lucky 합성 규칙이다(원본 Choice 캡슐의 %는 LLM 임의값이라 회수 대상이 아님).
+// talk/nickname/encourage 3종의 id와 수치는 기존 저장 회차가 재생하는 값이므로 바꾸지 않는다.
+const RELATION_CHOICES: Record<string, RelationChoice> = {
+  talk: { label: "차분히 대화한다", dc: 8, affinity: 3, mood: 10, minTier: 0, followups: ["nickname", "encourage"] },
+  nickname: { label: "서로 부를 별명을 정한다", dc: 10, affinity: 5, mood: 25, minTier: 0, followups: ["encourage"] },
+  encourage: { label: "진심으로 격려한다", dc: 12, affinity: 8, mood: 20, minTier: 0, followups: ["ask-past"] },
+  "ask-past": { label: "지난 이야기를 묻는다", dc: 10, affinity: 5, mood: 15, minTier: 1, followups: ["confide"] },
+  coffee: { label: "함께 커피를 마신다", dc: 9, affinity: 4, mood: 25, minTier: 1, followups: ["walk"] },
+  train: { label: "함께 훈련한다", dc: 12, affinity: 7, mood: 15, minTier: 2, followups: ["encourage"] },
+  walk: { label: "기지 주변을 함께 걷는다", dc: 11, affinity: 6, mood: 30, minTier: 2, followups: ["confide"] },
+  confide: { label: "속마음을 나눈다", dc: 13, affinity: 10, mood: 25, minTier: 3, followups: ["promise"] },
+  promise: { label: "소중한 약속을 나눈다", dc: 14, affinity: 12, mood: 30, minTier: 4, followups: [] },
+};
+// 하루 상한 — 같은 인형에게 4회, 같은 선택지는 2회(2회째는 효과 절반). 격려 연타 파밍 차단.
+const RELATION_DAILY_LIMIT = 4,
+  RELATION_CHOICE_DAILY_LIMIT = 2;
+function relationTierCount(schema: RuntimeRecord) {
+  return list<string>(record(config(schema).relation).names).length;
+}
+// 카드의 티어 수보다 높은 요구치는 마지막 티어로 접는다. relation 설정이 없는 카드는 전부 개방.
+function choiceMinTier(schema: RuntimeRecord, choice: RelationChoice) {
+  const count = relationTierCount(schema);
+  return count ? Math.min(choice.minTier, count - 1) : 0;
+}
+function relationTierName(schema: RuntimeRecord, index: number) {
+  const name = list<string>(record(config(schema).relation).names)[index];
+  return typeof name === "string" && name ? name : `${index + 1}단계`;
+}
+function relationUsage(value: RuntimeRecord, dollId: string) {
+  const log = record(state(value).relationLog);
+  if (number(log.day) !== day(value)) return { total: 0, choices: {} as RuntimeRecord };
+  const entry = record(record(log.dolls)[dollId]);
+  return { total: number(entry.total), choices: record(entry.choices) };
+}
+function markRelationUse(c: Context, dollId: string, choiceId: string) {
+  const gfl = state(c.state), today = day(c.state);
+  let log = record(gfl.relationLog);
+  if (number(log.day) !== today) log = { day: today, dolls: {} };
+  const dolls = record(log.dolls), entry = record(dolls[dollId]), choices = record(entry.choices);
+  choices[choiceId] = number(choices[choiceId]) + 1;
+  entry.total = number(entry.total) + 1;
+  entry.choices = choices;
+  dolls[dollId] = entry;
+  log.dolls = dolls;
+  gfl.relationLog = log;
+  c.state.gfl = gfl;
+}
+// 후속 캡슐·대화 세션 상태는 당일에만 유효하다 — 셀렉터와 소비 지점이 같은 검증을 공유한다.
+function activeFollowUp(value: RuntimeRecord) {
+  const followUp = record(state(value).followUp);
+  return string(followUp.dollId) && number(followUp.day) === day(value) ? followUp : null;
+}
+function activeDialogue(value: RuntimeRecord) {
+  const dialogue = record(state(value).dialogue);
+  return string(dialogue.dollId) ? dialogue : null;
+}
 function relationFor(schema: RuntimeRecord, affinity: unknown) {
   const relation = record(config(schema).relation),
     names = list<string>(relation.names),
@@ -655,6 +712,10 @@ export function gflModule(): ModuleDefinition {
           sortie = fieldSortie(c.state);
         if (!destination) return fail(c, "gfl_location_unknown", target);
         if (sortie) return fail(c, "gfl_commander_in_field", sortie.missionId);
+        {
+          const dialogue = activeDialogue(c.state);
+          if (dialogue) return fail(c, "gfl_dialogue_active", string(dialogue.name));
+        }
         if (before === "base-outside" && target !== "base-hall")
           return fail(c, "gfl_location_return_hall", target);
         if (before === target) return fail(c, "gfl_location_same", target);
@@ -673,6 +734,10 @@ export function gflModule(): ModuleDefinition {
       }),
   "gfl/time/advance": scoped((c) => {
         if (fieldSortie(c.state)) return fail(c, "gfl_time_field_locked");
+        {
+          const dialogue = activeDialogue(c.state);
+          if (dialogue) return fail(c, "gfl_dialogue_active", string(dialogue.name));
+        }
         const phases = list<string>(config(c.schema).timePhases),
           order = phases.length
             ? phases
@@ -689,6 +754,8 @@ export function gflModule(): ModuleDefinition {
         clock.turn = number(clock.turn) + 1;
         const gfl = state(c.state),
           arrivals: RuntimeRecord[] = [];
+        // 시간이 흐르면 "직후"의 분위기는 지나간다 — 후속 캡슐은 시간대 경계를 넘기지 않는다.
+        if (gfl.followUp) gfl.followUp = null;
         for (const raw of Object.values(owned(c.state)).filter(
           (value) => record(value).status === "이동 중",
         )) {
@@ -801,6 +868,10 @@ export function gflModule(): ModuleDefinition {
   }),
   "gfl/time/end-day": scoped((c) => {
     if (fieldSortie(c.state)) return fail(c, "gfl_time_field_locked");
+    {
+      const dialogue = activeDialogue(c.state);
+      if (dialogue) return fail(c, "gfl_dialogue_active", string(dialogue.name));
+    }
     const phase = string(record(c.state.clock).phase || "오전");
     if (!["저녁", "밤"].includes(phase)) return fail(c, "gfl_end_day_time_locked", phase);
     const dailyAwards = markDaily(c, "endDay");
@@ -825,17 +896,41 @@ export function gflModule(): ModuleDefinition {
           return fail(c, "gfl_check_number_not_allowed");
         const dollId = string(c.params.dollId),
           unit = record(owned(c.state)[dollId]),
-          choice = RELATION_CHOICES[string(c.params.choice)];
+          choiceId = string(c.params.choice),
+          choice = RELATION_CHOICES[choiceId];
         if (!Object.keys(unit).length)
           return fail(c, "gfl_doll_not_owned", dollId);
         if (!choice)
           return fail(c, "gfl_relation_choice_unknown", c.params.choice);
-        const roll = c.rng.int(1, 20),
+        const dialogue = activeDialogue(c.state);
+        if (dialogue && string(dialogue.dollId) !== dollId)
+          return fail(c, "gfl_dialogue_other_doll", string(dialogue.name));
+        const beforeTier = relationFor(c.schema, unit.affinity),
+          requiredTier = choiceMinTier(c.schema, choice);
+        if (beforeTier.index < requiredTier)
+          return fail(c, "gfl_relation_tier_locked", relationTierName(c.schema, requiredTier));
+        // 게이트는 전부 주사위 전에 — 거부된 시도는 RNG를 소비하지 않는다(M6c 규율).
+        const usage = relationUsage(c.state, dollId),
+          used = number(usage.choices[choiceId]);
+        if (usage.total >= RELATION_DAILY_LIMIT)
+          return fail(c, "gfl_relation_exhausted", string(unit.name));
+        if (used >= RELATION_CHOICE_DAILY_LIMIT)
+          return fail(c, "gfl_relation_choice_exhausted", choice.label);
+        // 후속 캡슐 보정은 상태에 기록된 제안만 인정한다 — followup 플래그로 숫자를 주입할 수 없다.
+        const pendingFollowUp = activeFollowUp(c.state),
+          followOption =
+            c.params.followup === true && pendingFollowUp && string(pendingFollowUp.dollId) === dollId
+              ? list<RuntimeRecord>(pendingFollowUp.options).find(
+                  (option) => string(option.choice) === choiceId,
+                )
+              : undefined,
+          dc = Math.max(2, choice.dc + number(followOption?.dcMod)),
+          roll = c.rng.int(1, 20),
           modifier =
             Math.floor(number(unit.affinity) / 50) +
             Math.floor(number(unit.mood) / 100),
           total = roll + modifier,
-          success = total >= choice.dc,
+          success = total >= dc,
           tier = success
             ? roll === 20
               ? "critical_success"
@@ -851,19 +946,45 @@ export function gflModule(): ModuleDefinition {
                 : tier === "failure"
                   ? 0
                   : 1,
+          repeatFactor = used > 0 ? 0.5 : 1,
           difficulty = relationDifficulty(c.state),
-          affinityDelta = Math.round(choice.affinity * multiplier * (multiplier < 0 ? difficulty.loss : difficulty.gain)),
-          moodDelta = choice.mood * multiplier;
+          affinityDelta = Math.round(choice.affinity * multiplier * (multiplier < 0 ? difficulty.loss : difficulty.gain) * repeatFactor),
+          moodDelta = Math.round(choice.mood * multiplier * repeatFactor);
         unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
         unit.mood = clamp(number(unit.mood) + moodDelta, 0, 1000);
+        markRelationUse(c, dollId, choiceId);
+        const afterTier = relationFor(c.schema, unit.affinity),
+          tierChanged =
+            afterTier.index > beforeTier.index
+              ? {
+                  from: { label: beforeTier.label, index: beforeTier.index },
+                  to: { label: afterTier.label, index: afterTier.index, description: afterTier.description },
+                }
+              : null,
+          remainingToday = Math.max(0, RELATION_DAILY_LIMIT - (number(usage.total) + 1)),
+          followUps =
+            remainingToday > 0 && (tier === "success" || tier === "critical_success")
+              ? choice.followups
+                  .filter((id) => {
+                    const next = RELATION_CHOICES[id];
+                    if (!next || afterTier.index < choiceMinTier(c.schema, next)) return false;
+                    return number(usage.choices[id]) + (id === choiceId ? 1 : 0) < RELATION_CHOICE_DAILY_LIMIT;
+                  })
+                  .slice(0, 2)
+                  .map((id) => {
+                    const next = RELATION_CHOICES[id]!,
+                      dcMod = tier === "critical_success" ? -2 : -1;
+                    return { choice: id, label: next.label, dcMod, dc: Math.max(2, next.dc + dcMod) };
+                  })
+              : [];
         const result = {
           dollId,
           name: unit.name,
-          choice: string(c.params.choice),
+          choice: choiceId,
           label: choice.label,
           mode: "dc",
           sides: 20,
-          dc: choice.dc,
+          dc,
           roll,
           modifier,
           total,
@@ -874,13 +995,98 @@ export function gflModule(): ModuleDefinition {
           affinity: unit.affinity,
           mood: unit.mood,
           difficulty: difficulty.id,
+          relation: afterTier.label,
+          repeated: used > 0,
+          remainingToday,
+          ...(followOption ? { followUpBonus: number(followOption.dcMod) } : {}),
+          ...(tierChanged ? { tierChanged } : {}),
         };
         const gfl = state(c.state);
         gfl.lastCheck = result;
+        // 캡슐은 한 번의 판정 창에만 산다 — 사용 여부와 무관하게 이전 제안은 지우고 새 제안으로 교체.
+        gfl.followUp = followUps.length
+          ? { dollId, name: unit.name, day: day(c.state), source: choiceId, options: followUps }
+          : null;
         c.state.gfl = gfl;
         const dailyAwards = markDaily(c, "relations");
         markDaily(c, "management");
-        return ok(c, { ...result, dailyAwards });
+        return ok(c, { ...result, followUps, dailyAwards });
+      }),
+      "gfl/relation/session/start": scoped((c) => {
+        const dollId = string(c.params.dollId),
+          unit = record(owned(c.state)[dollId]);
+        if (!Object.keys(unit).length)
+          return fail(c, "gfl_doll_not_owned", dollId);
+        if (fieldSortie(c.state)) return fail(c, "gfl_commander_in_field");
+        const dialogue = activeDialogue(c.state);
+        if (dialogue) return fail(c, "gfl_dialogue_active", string(dialogue.name));
+        const status = string(unit.status);
+        if (status === "이동 중") return fail(c, "gfl_doll_in_transit", string(unit.name));
+        if (status === "대파") return fail(c, "gfl_doll_incapacitated", string(unit.name));
+        const gfl = state(c.state),
+          today = day(c.state),
+          days = record(gfl.dialogueDays);
+        if (number(days[dollId]) === today)
+          return fail(c, "gfl_dialogue_daily_limit", string(unit.name));
+        gfl.dialogue = {
+          dollId,
+          name: unit.name,
+          day: today,
+          startedTurn: number(record(c.state.clock).turn),
+        };
+        c.state.gfl = gfl;
+        const tier = relationFor(c.schema, unit.affinity);
+        return ok(c, {
+          dollId,
+          name: unit.name,
+          relation: tier.label,
+          narrativeFact: `${string(unit.name)}와의 1:1 대화가 시작됐다. 대화가 끝날 때까지 기지의 시간은 흐르지 않는다.`,
+        });
+      }),
+      "gfl/relation/session/end": scoped((c) => {
+        const gfl = state(c.state),
+          dialogue = record(gfl.dialogue),
+          dollId = string(dialogue.dollId);
+        if (!dollId) return fail(c, "gfl_dialogue_missing");
+        const unit = record(owned(c.state)[dollId]);
+        if (!Object.keys(unit).length) {
+          gfl.dialogue = null;
+          c.state.gfl = gfl;
+          return fail(c, "gfl_doll_not_owned", dollId);
+        }
+        // 보너스는 엔진 고정값(난이도 배율만 적용) — 대화 길이·내용으로 수치를 흥정할 수 없다.
+        const difficulty = relationDifficulty(c.state),
+          beforeTier = relationFor(c.schema, unit.affinity),
+          affinityDelta = Math.round(2 * difficulty.gain),
+          moodDelta = 10;
+        unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
+        unit.mood = clamp(number(unit.mood) + moodDelta, 0, 1000);
+        const afterTier = relationFor(c.schema, unit.affinity),
+          days = record(gfl.dialogueDays);
+        days[dollId] = number(dialogue.day, day(c.state));
+        gfl.dialogueDays = days;
+        gfl.dialogue = null;
+        c.state.gfl = gfl;
+        const dailyAwards = markDaily(c, "relations");
+        return ok(c, {
+          dollId,
+          name: unit.name,
+          affinityDelta,
+          moodDelta,
+          affinity: unit.affinity,
+          mood: unit.mood,
+          relation: afterTier.label,
+          ...(afterTier.index > beforeTier.index
+            ? {
+                tierChanged: {
+                  from: { label: beforeTier.label, index: beforeTier.index },
+                  to: { label: afterTier.label, index: afterTier.index, description: afterTier.description },
+                },
+              }
+            : {}),
+          dailyAwards,
+          narrativeFact: `${string(unit.name)}와의 대화를 마무리했다. 기지의 시간이 다시 흐른다.`,
+        });
       }),
       "gfl/manufacture/start": scoped((c) => {
         if (baseLocation(c.state) !== "base-maintenance")
@@ -990,6 +1196,10 @@ export function gflModule(): ModuleDefinition {
       "gfl/sortie/start": scoped((c) => {
         const gfl = state(c.state);
         if (record(gfl.sortie).active) return fail(c, "gfl_sortie_active");
+        {
+          const dialogue = activeDialogue(c.state);
+          if (dialogue) return fail(c, "gfl_dialogue_active", string(dialogue.name));
+        }
         const operation = mission(c.schema, c.params.missionId),
           entry = formation(c.state, c.params.echelonId),
           command = string(c.params.command || "field");
@@ -1330,7 +1540,63 @@ export function gflModule(): ModuleDefinition {
           lastCheck: gfl.lastCheck ?? null,
           lastBattle: gfl.lastBattle ?? null,
           featuredDollId: gfl.featuredDollId ?? null,
+          followUp: activeFollowUp(value),
+          dialogue: activeDialogue(value),
           settings: { relationDifficulty: relationDifficulty(value).id },
+        };
+      },
+      "gfl/relation/options": (...args) => {
+        const schema = record(args[0]),
+          value = record(args[1]),
+          today = day(value),
+          days = record(state(value).dialogueDays),
+          entries = Object.values(owned(value)).map((raw) => {
+            const unit = record(raw),
+              dollId = string(unit.id),
+              tier = relationFor(schema, unit.affinity),
+              usage = relationUsage(value, dollId),
+              choices = Object.entries(RELATION_CHOICES)
+                .map(([id, choice]) => {
+                  const requiredTier = choiceMinTier(schema, choice),
+                    used = number(usage.choices[id]),
+                    reason =
+                      tier.index < requiredTier
+                        ? "tier_locked"
+                        : usage.total >= RELATION_DAILY_LIMIT
+                          ? "exhausted"
+                          : used >= RELATION_CHOICE_DAILY_LIMIT
+                            ? "choice_exhausted"
+                            : null;
+                  return {
+                    id,
+                    label: choice.label,
+                    dc: choice.dc,
+                    affinity: choice.affinity,
+                    mood: choice.mood,
+                    minTier: requiredTier,
+                    requiredTierLabel: relationTierName(schema, requiredTier),
+                    used,
+                    maxUses: RELATION_CHOICE_DAILY_LIMIT,
+                    available: !reason,
+                    reason,
+                  };
+                })
+                .sort((a, b) => a.minTier - b.minTier || a.dc - b.dc);
+            return [
+              dollId,
+              {
+                tier: { label: tier.label, index: tier.index },
+                remaining: Math.max(0, RELATION_DAILY_LIMIT - usage.total),
+                dialogueUsed: number(days[dollId]) === today,
+                choices,
+              },
+            ] as const;
+          });
+        return {
+          dolls: Object.fromEntries(entries),
+          followUp: activeFollowUp(value),
+          dialogue: activeDialogue(value),
+          limits: { daily: RELATION_DAILY_LIMIT, perChoice: RELATION_CHOICE_DAILY_LIMIT },
         };
       },
       "gfl/locations": (...args) => {
@@ -1509,6 +1775,21 @@ export function gflModule(): ModuleDefinition {
                 "아직 승패가 확정되지 않았다. 사용자가 채팅 아래 '빠른 교전 시작' 버튼을 누르기 전에는 전투 결과·피해·보상을 서사로 확정하지 않는다.",
             }
           : gfl.lastBattle ?? null,
+        ...(() => {
+          const dialogue = activeDialogue(value);
+          if (!dialogue) return {};
+          const unit = record(owned(value)[string(dialogue.dollId)]),
+            name = string(unit.name || dialogue.name),
+            tier = relationFor(schema, unit.affinity);
+          return {
+            dialogue: {
+              with: name,
+              relation: tier.label,
+              ...(tier.description ? { relationNote: tier.description } : {}),
+              rule: `시간이 멈춘 1:1 대화 장면이다. ${name}와의 대화에만 집중하고, 다른 인형의 등장·작전 진행·시간 경과·수치 변화를 서술하지 않는다. 보너스는 대화를 마무리할 때 엔진이 확정한다.`,
+            },
+          };
+        })(),
         rule: "위치·시간·자원·관계·전투 결과는 엔진 확정값이다. [[aff=...]]·[[mood=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
       };
     },

@@ -68,6 +68,8 @@ test('저전투력 출격 위험도와 전술 교전 과정을 관리 화면 안
   await console.getByRole('button',{name:'🎲 오늘의 인형 뽑기'}).click();
   await console.getByRole('button',{name:'계약',exact:true}).first().click();
   await console.getByRole('button',{name:/수송 도착/}).click();
+  // 수송 도착은 서사화 행동이라 관리창이 닫히고 채팅에 장면이 흐른다(a7fc56d) — 다시 연다.
+  await page.getByRole('button',{name:'관리 화면 열기'}).click();
   await console.getByRole('button',{name:'제대',exact:true}).click();
   await console.locator('.roster button').first().click();
   await console.getByRole('button',{name:'작전',exact:true}).click();
@@ -79,6 +81,35 @@ test('저전투력 출격 위험도와 전술 교전 과정을 관리 화면 안
   await expect(console.getByRole('button',{name:/집중 사격/})).toBeVisible();
   await console.getByRole('button',{name:/균형 전술/}).click();
   await expect(console.locator('.battle-report')).toContainText('최근 전투 보고');
+});
+
+test('관계 선택지 캡슐과 1:1 대화 세션이 엔진 상태로 작동한다',async({page})=>{
+  await page.setViewportSize({width:844,height:720});
+  const simulation=await importGfl(page),console=simulation.getByLabel('소녀전선 지휘 콘솔');
+  await console.getByRole('button',{name:'지휘관으로 시작'}).click();
+  await console.getByRole('button',{name:'인형 고용',exact:true}).click();
+  await console.getByRole('button',{name:'🎲 오늘의 인형 뽑기'}).click();
+  await console.getByRole('button',{name:'계약',exact:true}).first().click();
+  await console.getByRole('button',{name:/수송 도착/}).click();
+  await page.getByRole('button',{name:'관리 화면 열기'}).click();
+  await console.getByRole('button',{name:'인형',exact:true}).click();
+  await expect(console).toContainText('관계 선택지 · d20 판정');
+  await expect(console).toContainText('오늘 교류 4회 남음');
+  await expect(console.getByRole('button',{name:/차분히 대화한다/})).toBeEnabled();
+  await console.getByRole('button',{name:/1:1 대화 시작/}).click();
+  // 대화 세션 = 결정 카드가 채팅에 상주하고, 시간은 엔진이 잠근다.
+  const dock=page.getByRole('region',{name:'엔진 결정 카드'});
+  await expect(dock).toContainText('대화 중 · 시간 정지');
+  await page.getByRole('button',{name:'관리 화면 열기'}).click();
+  await expect(console.getByRole('button',{name:'다음 시간대',exact:true})).toBeDisabled();
+  await expect(console.getByRole('button',{name:'하루 마감',exact:true})).toBeDisabled();
+  await simulation.getByRole('button',{name:'닫기'}).click();
+  await dock.getByRole('button',{name:'대화를 마무리한다'}).click();
+  await page.getByRole('button',{name:'관리 화면 열기'}).click();
+  await expect(console.getByRole('button',{name:'다음 시간대',exact:true})).toBeEnabled();
+  await console.getByRole('button',{name:'인형',exact:true}).click();
+  await expect(console.getByRole('button',{name:/1:1 대화 시작/})).toBeDisabled();
+  await expect(console).toContainText('오늘 완료');
 });
 
 test('휴대폰 가로모드에서 대화 장면과 관리창이 한 화면에 맞고 가로 스크롤이 생기지 않는다',async({page})=>{

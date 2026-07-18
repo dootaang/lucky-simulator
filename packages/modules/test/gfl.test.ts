@@ -510,4 +510,77 @@ describe("Girls Frontline native module", () => {
     for (let count = 0; count < 3; count++) { game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); game.dispatch("gfl/sortie/resolve"); const unit=(game.state.gfl as any).dolls.m4a1; unit.hp.cur=unit.hp.max; }
     expect(game.select("gfl/daily")).toMatchObject({ sortiesUsed: 3, sortiesRemaining: 0, sortieLimit: 3 }); expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_daily_limit" });
   });
+  it("관계 선택지를 티어·일일 사용량 기반으로 제시하고 잠금 사유를 밝힌다", () => {
+    const source = structuredClone(schema) as any;
+    source.gfl.relation = { names: ["첫 만남", "신뢰", "친밀", "연인", "가족"], thresholds: [0, 50, 150, 300, 450], descriptions: ["", "서로를 알아간다", "", "", ""] };
+    const game = runtime(source); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const entry = (game.select("gfl/relation/options") as any).dolls.m4a1;
+    expect(entry.tier).toMatchObject({ index: 0, label: "첫 만남" });
+    const byId = Object.fromEntries(entry.choices.map((choice: any) => [choice.id, choice]));
+    expect(byId.talk).toMatchObject({ available: true, dc: 8 });
+    expect(byId.nickname).toMatchObject({ available: true });
+    expect(byId["ask-past"]).toMatchObject({ available: false, reason: "tier_locked", requiredTierLabel: "신뢰" });
+    (game.state.gfl as any).dolls.m4a1.affinity = 60;
+    const after = (game.select("gfl/relation/options") as any).dolls.m4a1;
+    const afterById = Object.fromEntries(after.choices.map((choice: any) => [choice.id, choice]));
+    expect(after.tier.index).toBe(1);
+    expect(afterById["ask-past"].available).toBe(true);
+    expect(afterById.train).toMatchObject({ available: false, reason: "tier_locked" });
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "train" }).log[0]).toMatchObject({ ok: false, reason: "gfl_relation_tier_locked", detail: "친밀" });
+  });
+  it("같은 선택지 반복은 효과가 절반이 되고 하루 상한을 넘으면 거부한다", () => {
+    const game = runtime(); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.mood = 1000; // 보정 +19 → 어떤 굴림도 성공
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0]).toMatchObject({ ok: true, repeated: false });
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0]).toMatchObject({ ok: true, repeated: true });
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0]).toMatchObject({ ok: false, reason: "gfl_relation_choice_exhausted" });
+    game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "nickname" });
+    game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "encourage" });
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "nickname" }).log[0]).toMatchObject({ ok: false, reason: "gfl_relation_exhausted" });
+    expect((game.select("gfl/relation/options") as any).dolls.m4a1.remaining).toBe(0);
+  });
+  it("성공한 판정은 후속 캡슐을 남기고 소비하면 DC 보정이 적용된다", () => {
+    const game = runtime(); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.mood = 1000;
+    const first = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0] as any;
+    expect(first.followUps.length).toBeGreaterThan(0);
+    const followUp = (game.select("gfl/status") as any).followUp;
+    expect(followUp).toMatchObject({ dollId: "m4a1", source: "talk" });
+    const offered = followUp.options[0];
+    expect(offered.dc).toBeLessThan(10); // nickname 기본 DC 10에서 보정
+    const second = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: offered.choice, followup: true }).log[0] as any;
+    expect(second).toMatchObject({ ok: true, dc: offered.dc, followUpBonus: offered.dcMod });
+    game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "coffee" });
+    expect((game.select("gfl/status") as any).followUp).not.toBeNull();
+    expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: true });
+    expect((game.select("gfl/status") as any).followUp).toBeNull(); // 시간대가 넘어가면 캡슐 소멸
+  });
+  it("판정으로 관계 단계가 오르면 tierChanged를 남긴다", () => {
+    const source = structuredClone(schema) as any;
+    source.gfl.relation = { names: ["첫 만남", "신뢰"], thresholds: [0, 50], descriptions: ["", "서로를 믿는다"] };
+    const game = runtime(source); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 49; unit.mood = 1000; // 항상 성공, +3 이상이면 승급
+    const result = game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0] as any;
+    expect(result.tierChanged).toMatchObject({ from: { index: 0 }, to: { index: 1, label: "신뢰", description: "서로를 믿는다" } });
+    expect((game.select("gfl/status") as any).lastCheck.tierChanged.to.label).toBe("신뢰");
+  });
+  it("1:1 대화 세션은 시간을 잠그고 마무리 보너스를 하루 1회 확정한다", () => {
+    const game = runtime(); game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/doll/acquire", { dollId: "ump45" });
+    expect(game.dispatch("gfl/relation/session/end").log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_missing" });
+    expect(game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: true, name: "M4A1" });
+    expect((game.select("gfl/status") as any).dialogue).toMatchObject({ dollId: "m4a1" });
+    expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_active" });
+    expect(game.dispatch("gfl/location/move", { locationId: "base-hall" }).log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_active" });
+    expect(game.dispatch("gfl/relation/session/start", { dollId: "ump45" }).log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_active" });
+    expect(game.dispatch("gfl/relation/check", { dollId: "ump45", choice: "talk" }).log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_other_doll" });
+    const before = Number((game.state.gfl as any).dolls.m4a1.affinity);
+    expect(game.dispatch("gfl/relation/session/end").log[0]).toMatchObject({ ok: true, affinityDelta: 2, moodDelta: 10 });
+    expect(Number((game.state.gfl as any).dolls.m4a1.affinity)).toBe(before + 2);
+    expect(game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_dialogue_daily_limit" });
+    expect((game.select("gfl/relation/options") as any).dolls.m4a1.dialogueUsed).toBe(true);
+    expect(game.dispatch("gfl/relation/session/start", { dollId: "ump45" }).log[0]).toMatchObject({ ok: true });
+    expect(game.dispatch("gfl/relation/session/end").log[0]).toMatchObject({ ok: true });
+    expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({ ok: true });
+  });
 });

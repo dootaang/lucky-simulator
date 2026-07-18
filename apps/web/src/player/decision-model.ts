@@ -30,6 +30,15 @@ function tierCards(logs: ReadonlyArray<Record<string, unknown>>, turn: number, n
     cards.push({ key: `tier:${turn}:${target}:${label}`, icon: 'heart', title: '관계가 깊어졌다', desc: `${name}: ${String(from.label ?? '')} → ${label}${to.brief ? ` — ${String(to.brief)}` : ''}`, more: '', dismissible: true,
       options: [{ label: '특별한 장면 열기', id: 'tier_scene', params: {}, mode: 'scene', kind: 'primary', intent: `${name}와의 관계가 방금 '${label}' 단계에 접어들었다. 그 변화가 서로에게 느껴지는 특별한 장면을 짧게 열어라.` }] });
   }
+  // GFL 관계 판정·대화 마무리의 티어 승급 — 같은 "엔진이 시점을, LLM이 장면을" 분업을 그대로 쓴다.
+  for (const log of logs) {
+    if (log.ok !== true || (log.event !== 'gfl/relation/check' && log.event !== 'gfl/relation/session/end')) continue;
+    const tier = rec(log.tierChanged), from = rec(tier.from), to = rec(tier.to);
+    if (!to.label) continue;
+    const name = String(log.name ?? log.dollId ?? ''), label = String(to.label);
+    cards.push({ key: `gfl-tier:${turn}:${String(log.dollId)}:${label}`, icon: 'heart', title: '관계가 깊어졌다', desc: `${name}: ${String(from.label ?? '')} → ${label}${to.description ? ` — ${String(to.description)}` : ''}`, more: '', dismissible: true,
+      options: [{ label: '특별한 장면 열기', id: 'tier_scene', params: {}, mode: 'scene', kind: 'primary', intent: `${name}와의 관계가 방금 '${label}' 단계에 접어들었다. 그 변화가 서로에게 느껴지는 특별한 장면을 짧게 열어라.` }] });
+  }
   return cards;
 }
 
@@ -38,6 +47,31 @@ export interface DecisionContext { logs?: ReadonlyArray<Record<string, unknown>>
 export function buildDecisionCards(select: (id: string) => unknown, context: DecisionContext = {}): DecisionCardModel[] {
   const cards: DecisionCardModel[] = tierCards(context.logs ?? [], context.turn ?? 0, context.nameFor ?? ((id) => id));
   const gflStatus = rec(safeSelect(select, 'gfl/status'));
+  // 대화 세션 상주 카드 — 시간이 멈춰 있음을 계속 보여주고, 마무리(=보너스 확정) 출구를 하나만 남긴다.
+  const dialogue = rec(gflStatus.dialogue);
+  if (dialogue.dollId) {
+    cards.push({
+      key: `gfl-dialogue:${String(dialogue.dollId)}:${String(dialogue.day)}`,
+      icon: 'heart',
+      title: `${String(dialogue.name ?? dialogue.dollId)}와 대화 중 · 시간 정지`,
+      desc: '자유롭게 대화를 나누세요. 마무리하면 엔진이 교감 보너스를 확정하고 기지의 시간이 다시 흐릅니다.',
+      more: '인형별 하루 1회',
+      options: [{ label: '대화를 마무리한다', id: 'gfl/relation/session/end', params: {}, mode: 'narrated', kind: 'primary' }],
+    });
+  }
+  // 판정 직후의 후속 캡슐 — 엔진이 상태에 기록한 제안만 카드가 되고, DC 보정도 상태에서 온다.
+  const followUp = rec(gflStatus.followUp), followOptions = arr(followUp.options);
+  if (followUp.dollId && followOptions.length) {
+    cards.push({
+      key: `gfl-followup:${String(followUp.dollId)}:${String(followUp.source)}:${String(followUp.day)}`,
+      icon: 'heart',
+      title: `${String(followUp.name ?? followUp.dollId)} — 이어지는 분위기`,
+      desc: '방금의 교감이 좋았다. 지금이라면 한 걸음 더 나아갈 수 있다. 시간대가 넘어가면 사라진다.',
+      more: 'DC 보정 적용',
+      dismissible: true,
+      options: followOptions.map((option) => ({ label: `${String(option.label)} (DC ${num(option.dc)})`, id: 'gfl/relation/check', params: { dollId: String(followUp.dollId), choice: String(option.choice), followup: true }, mode: 'narrated' as const, kind: 'primary' as const })),
+    });
+  }
   const sortie = rec(gflStatus.sortie);
   if (sortie.active) {
     cards.push({

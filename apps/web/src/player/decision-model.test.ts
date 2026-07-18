@@ -43,4 +43,26 @@ describe('결정 카드 모델', () => {
     expect(buildDecisionCards(() => null)).toEqual([]);
     expect(buildDecisionCards(() => { throw new Error('unknown_selector'); })).toEqual([]);
   });
+  it('GFL 대화 세션과 후속 캡슐을 결정 카드로 만든다', () => {
+    const cards = buildDecisionCards((id) => id === 'gfl/status' ? {
+      dialogue: { dollId: 'm4a1', name: 'M4A1', day: 3 },
+      followUp: { dollId: 'm4a1', name: 'M4A1', day: 3, source: 'talk', options: [{ choice: 'nickname', label: '서로 부를 별명을 정한다', dc: 9, dcMod: -1 }] },
+    } : null);
+    const dialogue = cards.find((card) => card.key === 'gfl-dialogue:m4a1:3');
+    expect(dialogue?.title).toContain('시간 정지');
+    expect(dialogue?.options[0]).toMatchObject({ id: 'gfl/relation/session/end', mode: 'narrated' });
+    const follow = cards.find((card) => card.key.startsWith('gfl-followup:m4a1:talk'));
+    expect(follow?.dismissible).toBe(true);
+    expect(follow?.options[0]).toMatchObject({ id: 'gfl/relation/check', params: { dollId: 'm4a1', choice: 'nickname', followup: true }, mode: 'narrated' });
+    expect(follow?.options[0]?.label).toContain('DC 9');
+  });
+  it('GFL 관계 판정의 티어 승급을 특별한 장면 카드로 만든다', () => {
+    const log = { ok: true, event: 'gfl/relation/check', dollId: 'm4a1', name: 'M4A1', tierChanged: { from: { label: '첫 만남', index: 0 }, to: { label: '신뢰', index: 1, description: '서로를 믿는다' } } };
+    const cards = buildDecisionCards(() => null, { logs: [log], turn: 5 });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ key: 'gfl-tier:5:m4a1:신뢰', title: '관계가 깊어졌다', dismissible: true });
+    expect(cards[0]?.options[0]).toMatchObject({ mode: 'scene' });
+    expect(cards[0]?.options[0]?.intent).toContain('신뢰');
+    expect(cards[0]?.desc).toContain('서로를 믿는다');
+  });
 });
