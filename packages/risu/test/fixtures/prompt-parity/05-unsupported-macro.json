@@ -3,12 +3,12 @@
   "presetKind": "default",
   "presetOverrides": { "assistantPrefill": "네," },
   "input": {
-    "card": { "name": "아린", "description": "안녕 {{user}}, {{getvar::x}}!" },
+    "card": { "name": "아린", "description": "안녕 {{user}}, {{setvar::x::1}}!" },
     "persona": { "contract": "persona/0.1", "id": "p1", "name": "페르", "prompt": "", "icon": "", "note": "", "embeddedModule": null, "source": null, "version": 1 }
   },
   "expected": {
-    "messages": [ { "role": "system", "content": "안녕 페르, {{getvar::x}}!" } ],
+    "messages": [ { "role": "system", "content": "안녕 페르, {{setvar::x::1}}!" } ],
     "assistantPrefill": "네,",
-    "warnings": [ { "code": "unsupported_macro", "path": "card.description", "detail": "getvar::x" } ]
+    "warnings": [ { "code": "unsupported_macro", "path": "card.description", "detail": "setvar::x::1" } ]
   }
 }

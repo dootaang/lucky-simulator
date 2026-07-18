@@ -8,6 +8,7 @@ export * from './presets.ts';
 export * from './preset-import.ts';
 export * from './preset-file.ts';
 export * from './asset-macros.ts';
+export * from './prompt-macros.ts';
 export * from './card-regex.ts';
 export * from './cbs.ts';
 export * from './security/budget.ts';

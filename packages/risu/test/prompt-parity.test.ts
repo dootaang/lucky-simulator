@@ -63,7 +63,7 @@ describe('프롬프트 파리티 골든',()=>{
 
   it('미지원 매크로는 원문과 경고 양쪽에 남는다',()=>{
     const fixture=fixtures.find(({name})=>name.startsWith('05-'))!.value,result=compilePrompt({preset:presetFor(fixture),...fixture.input});
-    expect(result.messages[0]?.content).toContain('{{getvar::x}}');
-    expect(result.warnings).toContainEqual({code:'unsupported_macro',path:'card.description',detail:'getvar::x'});
+    expect(result.messages[0]?.content).toContain('{{setvar::x::1}}');
+    expect(result.warnings).toContainEqual({code:'unsupported_macro',path:'card.description',detail:'setvar::x::1'});
   });
 });
