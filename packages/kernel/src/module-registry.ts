@@ -22,6 +22,8 @@ export interface HandlerContext<TState extends RuntimeRecord = RuntimeRecord> {
 export type EventHandler = (context: HandlerContext) => DispatchResult;
 export type SelectorHandler = (...args: unknown[]) => unknown;
 export type ProcessHandler = (...args: unknown[]) => unknown;
+export type SealMigration = (state: RuntimeRecord) => RuntimeRecord;
+export interface ModuleMigrations { seal?: SealMigration }
 export interface RuntimeEvent extends RuntimeRecord {
   id: string;
   params?: RuntimeRecord;
@@ -36,7 +38,7 @@ export interface ModuleDefinition {
   processes?: Record<string, ProcessHandler>;
   initialState?: (schema: RuntimeRecord) => RuntimeRecord;
   promptFacts?: (schema: RuntimeRecord, state: RuntimeRecord) => unknown;
-  migrations?: RuntimeRecord;
+  migrations?: ModuleMigrations;
 }
 export interface StateAccess {
   owns: readonly string[];
@@ -49,7 +51,7 @@ export interface NormalizedModule extends ModuleDefinition {
   events: Readonly<Record<string, EventHandler>>;
   selectors: Readonly<Record<string, SelectorHandler>>;
   processes: Readonly<Record<string, ProcessHandler>>;
-  migrations: RuntimeRecord;
+  migrations: ModuleMigrations;
 }
 interface Route<T> {
   module: NormalizedModule;
@@ -172,6 +174,20 @@ export class ModuleRegistry {
       }
     return out;
   }
+  sealMigrations(_schema: RuntimeRecord, state: RuntimeRecord) {
+    let current = cloneState(state);
+    const applied: Array<{ moduleId: string; changed: boolean }> = [];
+    for (const module of this.#modules.values()) {
+      const migration = module.migrations.seal;
+      if (!migration) continue;
+      const before = cloneState(current), next = migration(cloneState(current));
+      if (!next || typeof next !== "object" || Array.isArray(next))
+        throw new Error(`seal_migration_invalid:${module.id}`);
+      current = cloneState(next);
+      applied.push({ moduleId: module.id, changed: !sameValue(before, current) });
+    }
+    return { state: current, applied };
+  }
   listModules() {
     return [...this.#modules.values()].map((module) => ({
       id: module.id,
@@ -278,6 +294,15 @@ function validResult(result: unknown): result is DispatchResult {
         entry && typeof entry === "object" && typeof entry.ok === "boolean",
     )
   );
+}
+function sameValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right))
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => sameValue(value, right[index]));
+  const leftRecord = left as RuntimeRecord, rightRecord = right as RuntimeRecord,
+    leftKeys = Object.keys(leftRecord), rightKeys = Object.keys(rightRecord);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => Object.prototype.hasOwnProperty.call(rightRecord, key) && sameValue(leftRecord[key], rightRecord[key]));
 }
 function unknownEvent<TState extends RuntimeRecord>(
   state: TState,

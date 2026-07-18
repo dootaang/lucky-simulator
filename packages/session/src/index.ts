@@ -1442,24 +1442,36 @@ export class PlaySession {
     if (value.integrity !== sessionIntegrity(value))
       throw new Error("session_corrupt:integrity");
     const currentFingerprint = runtimeSchemaFingerprint(this.runtime),
-      compiled = !!this.runtime.project.schema._compiler;
-    if (
+      compiled = !!this.runtime.project.schema._compiler,
+      schemaChanged =
       (value.schemaFingerprint &&
         value.schemaFingerprint !== currentFingerprint) ||
-      (compiled && !value.schemaFingerprint)
-    )
-      throw new Error("session_schema_incompatible");
+      (compiled && !value.schemaFingerprint) ||
+      (!!value.journal && value.journal.schemaHash !== currentFingerprint);
     const data = clone(value); // 프록시일 수 있는 입력을 여기서 한 번 평평하게 만든다(엔진·원장 내부 clone 보호).
+    let epochResult: { applied: Array<{ moduleId: string; changed: boolean }>; baseIndex: number } | null = null;
     if (data.journal) {
-      this.#journal.restore(data.journal);
-      if (
-        stableStringify(this.runtime.snapshot()) !==
-        stableStringify(data.engine)
-      )
-        throw new Error("session_corrupt:journal_engine");
+      if (schemaChanged) {
+        const migrated = this.runtime.sealMigrations(data.engine.state),
+          migratedSnapshot = { state: migrated.state, rng: data.engine.rng };
+        this.#journal.adoptForSeal(data.journal, data.engine);
+        this.#journal.seal(migratedSnapshot, currentFingerprint);
+        epochResult = { applied: migrated.applied, baseIndex: this.#journal.baseIndex };
+      } else {
+        this.#journal.restore(data.journal);
+        if (stableStringify(this.runtime.snapshot()) !== stableStringify(data.engine))
+          throw new Error("session_corrupt:journal_engine");
+      }
     } else {
-      this.runtime.restore(data.engine);
-      this.#journal.reset(data.engine);
+      const snapshot = schemaChanged
+        ? (() => {
+            const migrated = this.runtime.sealMigrations(data.engine.state);
+            epochResult = { applied: migrated.applied, baseIndex: 0 };
+            return { state: migrated.state, rng: data.engine.rng };
+          })()
+        : data.engine;
+      this.runtime.restore(snapshot);
+      this.#journal.reset(snapshot);
     }
     this.#turn = data.turn;
     this.#messages = data.messages.map((message) => ({
@@ -1494,6 +1506,15 @@ export class PlaySession {
     this.#ledgerDeltas = clone(data.ledgerDeltas ?? []);
     this.#checkpoints = clone(data.history?.undo ?? []).slice(-30);
     this.#redoStack = clone(data.history?.redo ?? []).slice(-30);
+    if (epochResult) {
+      const boundary = epochResult.baseIndex;
+      this.#checkpoints = this.#checkpoints.filter((entry) => entry.journalCursor >= boundary);
+      this.#redoStack = this.#redoStack.filter((entry) => entry.journalCursor >= boundary);
+      this.#alternates = this.#alternates.filter((entry) => (entry.journalCursor ?? 0) >= boundary);
+      this.#responseBranches = this.#responseBranches
+        .map((branch) => ({ ...branch, variants: branch.variants.filter((entry) => (entry.journalCursor ?? 0) >= boundary) }))
+        .filter((branch) => branch.variants.length > 0);
+    }
     if (data.bindings) {
       this.#persona = clone(data.bindings.persona);
       this.#preset = clone(data.bindings.preset);
@@ -1502,6 +1523,21 @@ export class PlaySession {
     this.memory.reset(data.memory);
     this.#continuityPatches.reset(data.continuityPatches ?? []);
     this.#syncMessageSeq();
+    if (epochResult) {
+      const diagnostic = {
+        kind: "card",
+        code: "session_epoch_sealed",
+        baseIndex: epochResult.baseIndex,
+        migrations: epochResult.applied,
+      };
+      this.#lastLogs = [...this.#lastLogs, diagnostic];
+      this.#append(
+        "assistant",
+        "엔진이 업데이트되어 이전 기록을 봉인하고 이어갑니다. 되돌리기는 이 지점 이후부터 가능합니다.",
+        "engine",
+        { facts: [diagnostic], chips: [{ ok: true, kind: "card", text: "이전 기록 봉인·상태 이주 완료" }] },
+      );
+    }
     const last = this.#lastModelResponseId();
     if (!this.#responseBranches.length && this.#alternates.length && last)
       this.#responseBranches = [

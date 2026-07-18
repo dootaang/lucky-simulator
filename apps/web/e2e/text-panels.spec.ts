@@ -6,7 +6,7 @@ const compiled={schema,moduleIds:['sim.text-panels'],screens:[{id:'text-panels',
 
 async function seed(page:Page){
   let response=0;
-  await page.route(/sqlite3\.wasm/,route=>route.abort());
+  await page.route(/(?:sqlite3\.wasm|sqlite\.worker\.ts)/,route=>route.abort());
   await page.addInitScript(()=>localStorage.setItem('simbot.llm',JSON.stringify({provider:'custom',endpoint:'http://127.0.0.1:4173/test-llm',model:'test',apiKey:'key'})));
   await page.route('http://127.0.0.1:4173/test-llm',async route=>{response+=1;const content=response===1?'관측 완료.\n이름: 리안 | 상태: 경계 |\n| 뉴스: 외곽 항로 정상 |':'교대 완료.\n이름: 리안 | 상태: 휴식 |\n| 뉴스: 귀환 절차 시작 |';await route.fulfill({contentType:'application/json',body:JSON.stringify({choices:[{message:{content}}]})});});
   await page.goto('/');
@@ -15,7 +15,7 @@ async function seed(page:Page){
   await expect(page.getByText('관측 임무를 시작한다.')).toBeVisible();
   let projectId='';
   await expect.poll(async()=>projectId=await page.evaluate(async()=>{const db=await new Promise<IDBDatabase>((resolve,reject)=>{const request=indexedDB.open('simbot-sessions',1);request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result);}),row=await new Promise<any>((resolve,reject)=>{const request=db.transaction('sessions').objectStore('sessions').get('cardlib:index');request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result);});db.close();return String(row?.payload?.cards?.[0]?.projectId??'');}),{timeout:15_000}).not.toBe('');
-  await page.evaluate(async({artifact,id})=>{const db=await new Promise<IDBDatabase>((resolve,reject)=>{const request=indexedDB.open('simbot-sessions',1);request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result);});await new Promise<void>((resolve,reject)=>{const request=db.transaction('sessions','readwrite').objectStore('sessions').put({id:`cardlib:${id}:compiler`,schemaHash:'cardlib-compiler',title:'Engine compilation',updatedAt:Date.now(),payload:artifact});request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve();});db.close();},{artifact:compiled,id:projectId});
+  await page.evaluate(async({artifact,id})=>{const db=await new Promise<IDBDatabase>((resolve,reject)=>{const request=indexedDB.open('simbot-sessions',1);request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result);});await new Promise<void>((resolve,reject)=>{const request=db.transaction('sessions','readwrite').objectStore('sessions').put({id:`cardlib:${id}:compiler`,schemaHash:'cardlib-compiler',title:'Engine compilation',updatedAt:Date.now(),payload:artifact});request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve();});await new Promise<void>((resolve,reject)=>{const store=db.transaction('sessions','readwrite').objectStore('sessions'),request=store.openCursor();request.onerror=()=>reject(request.error);request.onsuccess=()=>{const cursor=request.result;if(!cursor){resolve();return;}if(String(cursor.key).startsWith(`${id}:chat:`))cursor.delete();cursor.continue();};});db.close();},{artifact:compiled,id:projectId});
   await page.reload();
   if(await page.getByTitle('합성 상태창 카드').count())await page.getByTitle('합성 상태창 카드').click();
 }

@@ -214,6 +214,9 @@ importers:
 
   packages/session:
     dependencies:
+      '@noble/hashes':
+        specifier: ^2.0.1
+        version: 2.2.0
       '@simbot/contracts':
         specifier: workspace:*
         version: link:../contracts

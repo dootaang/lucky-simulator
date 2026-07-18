@@ -77,7 +77,7 @@ registerModule({
 - 모듈 버전별 migration과 contract test를 필수로 둔다.
 - Kernel은 모듈에 상태 복제본을 전달하고 실패·예외·계약 위반 시 상태와 RNG 위치를 함께 되돌린다.
 
-2026-07-14 현재 내장 모듈은 `id`, `version`, `dependencies`, `stateAccess`, `events`, `selectors` 계약을 사용한다. 등록된 17개 모듈에는 이벤트 60개와 selector 21개가 있지만 `processes`는 0개이고, migration은 비어 있으며, `promptFacts` 제공자도 없다. 위 초안의 세 항목은 완료된 현황이 아니라 계속 지켜야 할 목표 계약이다.
+2026-07-18 현재 내장 모듈은 `id`, `version`, `dependencies`, `stateAccess`, `events`, `selectors`, `migrations.seal` 계약을 사용한다. `migrations.seal`은 업데이트 시 무결성으로 검증된 head 상태를 새 에폭으로 옮기는 멱등 순수 함수이며, 등록 순서대로 실행하고 RNG·시간·외부 입력을 쓰지 않는다. 첫 실사용은 `genre.gfl`의 5칸 제대를 6칸으로 패딩하는 이주다. `processes`와 `promptFacts`는 여전히 목표 계약이며 실제 제공 여부는 모듈 목록·테스트를 기준으로 판단한다.
 
 ## 화면 계약 초안
 

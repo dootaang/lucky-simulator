@@ -70,6 +70,7 @@ export function moduleDefinition(
   events: ModuleDefinition["events"],
   selectors: ModuleDefinition["selectors"] = {},
   promptFacts?: ModuleDefinition["promptFacts"],
+  migrations: ModuleDefinition["migrations"] = {},
 ): ModuleDefinition {
   return {
     id,
@@ -80,7 +81,7 @@ export function moduleDefinition(
     selectors,
     processes: {},
     ...(promptFacts ? { promptFacts } : {}),
-    migrations: {},
+    migrations,
   };
 }
 export function scoped(handler: (context: Context) => DispatchResult) {

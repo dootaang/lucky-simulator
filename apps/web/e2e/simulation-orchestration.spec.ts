@@ -8,7 +8,7 @@ const schema = normalizeCompiledSchema(raw, ['genre.inn']).schema;
 const compiled = { schema, moduleIds: ['genre.inn'], screens: [{ id: 'management', title: '여관 경영', layout: 'dashboard', regions: { main: [{ widget: 'inn-management' }] } }], navigation: [{ id: 'management', screenId: 'management', label: '여관 경영' }] };
 
 async function seed(page: Page) {
-  await page.route(/sqlite3\.wasm/, route => route.abort());
+  await page.route(/(?:sqlite3\.wasm|sqlite\.worker\.ts)/, route => route.abort());
   await page.addInitScript(() => localStorage.setItem('simbot.llm', JSON.stringify({ provider: 'custom', endpoint: 'http://127.0.0.1:4173/test-llm', model: 'test', apiKey: 'key' })));
   await page.route('http://127.0.0.1:4173/test-llm', async route => { await new Promise(resolve => setTimeout(resolve, 500)); await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: '점심 영업이 활기차게 이어졌다.' } }] }) }); });
   await page.goto('/');
@@ -16,7 +16,7 @@ async function seed(page: Page) {
   await expect(page.getByText('영업 준비가 끝났다.')).toBeVisible();
   let projectId = '';
   await expect.poll(async () => projectId = await page.evaluate(async () => { const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('simbot-sessions', 1); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result); }); const row = await new Promise<any>((resolve, reject) => { const request = db.transaction('sessions').objectStore('sessions').get('cardlib:index'); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result); }); db.close(); return String(row?.payload?.cards?.[0]?.projectId ?? ''); }), { timeout: 15_000 }).not.toBe('');
-  await page.evaluate(async ({ artifact, id }) => { const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('simbot-sessions', 1); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result); }); await new Promise<void>((resolve, reject) => { const request = db.transaction('sessions', 'readwrite').objectStore('sessions').put({ id: `cardlib:${id}:compiler`, schemaHash: 'cardlib-compiler', title: 'Engine compilation', updatedAt: Date.now(), payload: artifact }); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(); }); db.close(); }, { artifact: compiled, id: projectId });
+  await page.evaluate(async ({ artifact, id }) => { const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('simbot-sessions', 1); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result); }); await new Promise<void>((resolve, reject) => { const request = db.transaction('sessions', 'readwrite').objectStore('sessions').put({ id: `cardlib:${id}:compiler`, schemaHash: 'cardlib-compiler', title: 'Engine compilation', updatedAt: Date.now(), payload: artifact }); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(); }); await new Promise<void>((resolve, reject) => { const store = db.transaction('sessions', 'readwrite').objectStore('sessions'), request = store.openCursor(); request.onerror = () => reject(request.error); request.onsuccess = () => { const cursor = request.result; if (!cursor) { resolve(); return; } if (String(cursor.key).startsWith(`${id}:chat:`)) cursor.delete(); cursor.continue(); }; }); db.close(); }, { artifact: compiled, id: projectId });
   await page.reload();
 }
 

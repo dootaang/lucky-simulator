@@ -153,6 +153,9 @@ export class ProjectRuntime {
   promptFacts(): RuntimeRecord {
     return this.registry.promptFacts(this.project.schema, this.#state);
   }
+  sealMigrations(state: RuntimeRecord) {
+    return this.registry.sealMigrations(this.project.schema, state);
+  }
   allowedModelEventIds() {
     const ids = new Set(this.project.modelEventIds ?? []);
     for (const screen of this.project.screens)

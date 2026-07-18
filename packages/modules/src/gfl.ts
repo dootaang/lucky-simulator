@@ -68,6 +68,16 @@ const FACTION_COUNTER: Record<string,{advantaged:string[];label:string}> = {
 const combatProfile = (className: unknown) => CLASS_COMBAT[string(className)] ?? CLASS_COMBAT.AR!;
 // 진형 정원(3열×2). 배치 검증·패딩이 전부 이 상수를 봐야 한다 — 5칸 시절 숫자를 남기면 6번째 칸이 죽는다.
 export const FORMATION_SIZE = 6;
+export function gflSealMigration(value: RuntimeRecord) {
+  const gfl = record(value.gfl);
+  for (const raw of list<RuntimeRecord>(gfl.echelons)) {
+    if (!Array.isArray(raw.slots) || raw.slots.length >= FORMATION_SIZE) continue;
+    const slots = [...raw.slots];
+    while (slots.length < FORMATION_SIZE) slots.push(null);
+    raw.slots = slots;
+  }
+  return value;
+}
 export const gflFormationRow = (index: number): FormationRow => index < 2 ? "전열" : index < 4 ? "중열" : "후열";
 function factionSummary(value: RuntimeRecord) {
   const factions = list<string>(value.factions), counters = factions.map((name) => FACTION_COUNTER[name]).filter((counter): counter is NonNullable<typeof counter> => Boolean(counter)),
@@ -1887,5 +1897,6 @@ export function gflModule(): ModuleDefinition {
         rule: "위치·시간·자원·관계·전투 결과는 엔진 확정값이다. [[aff=...]]·[[mood=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
       };
     },
+    { seal: gflSealMigration },
   );
 }

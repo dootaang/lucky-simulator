@@ -114,11 +114,16 @@ describe('통합 감사 수정 — 무결성·카드 태그 채널',()=>{
     const target=new PlaySession({id:'ib',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
     expect(()=>target.restore(legacy)).not.toThrow();
   });
-  it('컴파일 스키마가 바뀌면 같은 채팅의 낡은 엔진 상태를 복원하지 않는다',async()=>{
+  it('컴파일 스키마가 바뀌면 낡은 원장을 봉인하고 현재 상태로 이어 간다',async()=>{
     const source=new PlaySession({id:'schema-bound',runtime:runtime(),preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
     await source.send('x');
     const project=runtime().project,changed=new ProjectRuntime({...project,schema:{...project.schema,_compiler:{version:'0.2'},initialState:{day:1,gold:999,player:{}}}}),target=new PlaySession({id:'schema-bound',runtime:changed,preset,card:{name:'C'},provider:{async complete(){return{text:'ok'};}}});
-    expect(()=>target.restore(source.snapshot())).toThrow('session_schema_incompatible');
+    expect(()=>target.restore(source.snapshot())).not.toThrow();
+    expect(changed.snapshot().state).toEqual(source.snapshot().engine.state);
+    const restoredJournal=target.snapshot().journal;
+    expect(restoredJournal?.contract).toBe('simbot-event-journal/0.2');
+    expect(restoredJournal?.contract === 'simbot-event-journal/0.2' ? restoredJournal.sealedEpochs : []).toHaveLength(1);
+    expect(target.messages.at(-1)?.content).toContain('이전 기록을 봉인하고 이어갑니다');
   });
   it('카드 태그 채널은 허용목록 밖 이벤트를 거부한다(방어 심층)',async()=>{
     const value=runtime();

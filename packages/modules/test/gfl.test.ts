@@ -697,4 +697,15 @@ describe("Girls Frontline native module", () => {
     expect(game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 6, dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_slot_invalid" });
     expect(game.dispatch("gfl/echelon/remove", { echelonId: "e1", slot: 5 }).log[0]).toMatchObject({ ok: true, removed: "m4a1" });
   });
+  it("seal 이주는 5칸 제대를 6칸으로 패딩하고 두 번 적용해도 같은 상태다", () => {
+    const old = structuredClone(schema.initialState) as any;
+    old.gfl.echelons[0].slots = ["m4a1", null, null, null, null];
+    const registry = createCoreRegistry().register(gflModule()), first = registry.sealMigrations(schema, old),
+      second = registry.sealMigrations(schema, first.state);
+    expect((first.state.gfl as any).echelons[0].slots).toEqual(["m4a1", null, null, null, null, null]);
+    expect(first.applied).toContainEqual({ moduleId: "genre.gfl", changed: true });
+    expect(second.state).toEqual(first.state);
+    expect(second.applied).toContainEqual({ moduleId: "genre.gfl", changed: false });
+    expect((old.gfl as any).echelons[0].slots).toHaveLength(5);
+  });
 });
