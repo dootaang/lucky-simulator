@@ -141,6 +141,7 @@ const schema = {
       ],
       eventGuides: { battle: "교전 지시", boss: "보스 지시", recon: "정찰 지시", other: "돌발 지시", mystery: "미확인 지시" },
     },
+    encounters: { pool: ["m4a1", "ump45"], ban: [] },
   },
 };
 function runtime(source: any = schema, seed: unknown = 7) {
@@ -623,14 +624,63 @@ describe("Girls Frontline native module", () => {
     const sortie = (game.state.gfl as any).sortie;
     sortie.stages = [{ type: "mystery" }, { type: "battle" }]; sortie.current = 0;
     const before = game.snapshot().rng, result = game.dispatch("gfl/sortie/stage").log[0] as any,
-      expected = createRng(0); expected.restore(before); expected.int(1, 100);
-    if (result.found) for (const _item of schema.gfl.items) expected.int(1, 100);
+      expected = createRng(0); expected.restore(before); expected.int(1, 100); expected.int(1, 1);
+    if (result.branch === "loot") for (const _item of schema.gfl.items) expected.int(1, 100);
     expect(game.snapshot().rng).toBe(expected.snapshot());
     expect(result).toMatchObject({ stageType: "mystery", guide: "미확인 지시", loot: expect.any(Array) });
     const inventoryBefore = structuredClone(game.state.items);
     expect(game.dispatch("gfl/sortie/retreat").log[0]).toMatchObject({ ok: true, lootKept: true, completed: false });
     expect(game.state.items).toEqual(inventoryBefore);
     expect((game.state.gfl as any).completedMissions).toEqual([]);
+  });
+  it("mystery 3분기는 사건·대상 RNG 2회를 항상 소비하고 보유·ban 인형을 조우 풀에서 제외한다", () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed < 200 && seen.size < 3; seed++) {
+      const game = sortieGame({ seed }); game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+      const sortie = (game.state.gfl as any).sortie; sortie.stages = [{ type: "mystery" }, { type: "battle" }]; sortie.current = 0;
+      const before = game.snapshot().rng, result = game.dispatch("gfl/sortie/stage").log[0] as any;
+      if (seen.has(result.branch)) continue;
+      seen.add(result.branch);
+      const expected = createRng(0); expected.restore(before); expected.int(1, 100); expected.int(1, 1);
+      if (result.branch === "loot") for (const _item of schema.gfl.items) expected.int(1, 100);
+      expect(game.snapshot().rng).toBe(expected.snapshot());
+      if (result.branch === "encounter") expect(result.encounter).toEqual({ dollId: "ump45", name: "UMP45" }); // 보유 M4A1 제외
+    }
+    expect(seen).toEqual(new Set(["loot", "encounter", "none"]));
+
+    const bannedSource: any = structuredClone(schema); bannedSource.gfl.encounters.ban = ["ump45"];
+    const banned = runtime(bannedSource, 3); banned.dispatch("gfl/start", { mode: "commander" }); banned.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); banned.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" }); banned.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    const bannedSortie = (banned.state.gfl as any).sortie; bannedSortie.stages = [{ type: "mystery" }, { type: "battle" }]; bannedSortie.current = 0;
+    for (let tries = 0; tries < 20; tries++) { const log = banned.dispatch("gfl/sortie/stage").log[0] as any; if (log.branch === "encounter") throw new Error("banned encounter"); bannedSortie.current = 0; bannedSortie.stages[0].completed = false; }
+  });
+  it("야전 조우는 상태 근거·숙소 정원·작전당 1명 상한을 지키고 영입 후 퇴각해도 인형을 보존한다", () => {
+    expect(sortieGame().dispatch("gfl/encounter/recruit").log[0]).toMatchObject({ ok: false, reason: "gfl_encounter_missing" });
+    let encounterGame: ReturnType<typeof sortieGame> | null = null;
+    for (let seed = 1; seed < 200 && !encounterGame; seed++) {
+      const game = sortieGame({ seed }); game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+      const sortie = (game.state.gfl as any).sortie; sortie.stages = [{ type: "mystery" }, { type: "battle" }]; sortie.current = 0;
+      if ((game.dispatch("gfl/sortie/stage").log[0] as any).branch === "encounter") encounterGame = game;
+    }
+    expect(encounterGame).not.toBeNull();
+    const joined = encounterGame!.dispatch("gfl/encounter/recruit").log[0] as any;
+    expect(joined).toMatchObject({ ok: true, dollId: "ump45", status: "대기", count: 2 });
+    expect((encounterGame!.state.gfl as any).dolls.ump45).toMatchObject({ name: "UMP45", status: "대기", power: 900 });
+    (encounterGame!.state.gfl as any).sortie.encounter = { dollId: "ump45", name: "UMP45" };
+    expect(encounterGame!.dispatch("gfl/encounter/recruit").log[0]).toMatchObject({ ok: false, reason: "gfl_encounter_limit" });
+    expect(encounterGame!.dispatch("gfl/sortie/retreat").log[0]).toMatchObject({ ok: true, lootKept: true });
+    expect((encounterGame!.state.gfl as any).dolls.ump45).toBeTruthy();
+
+    const full = sortieGame(); full.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    (full.state.gfl as any).dolls.extra1 = { id: "extra1" }; (full.state.gfl as any).dolls.extra2 = { id: "extra2" };
+    (full.state.gfl as any).sortie.encounter = { dollId: "ump45", name: "UMP45" };
+    expect(full.dispatch("gfl/encounter/recruit").log[0]).toMatchObject({ ok: false, reason: "gfl_hire_capacity_full" });
+  });
+  it("정찰 임무도 원본 규칙대로 최소 한 번의 battle 단계를 보장한다", () => {
+    for (let seed = 1; seed <= 50; seed++) {
+      const game = sortieGame({ seed });
+      const start = game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "recon" }).log[0] as any;
+      expect(start.stages.some((stage: any) => stage.type === "battle")).toBe(true);
+    }
   });
   it("같은 전선의 작전 지역을 이전 지역 클리어 순서로 개방한다", () => {
     const source = structuredClone(schema) as any; source.gfl.missions[0].theater = "front"; source.gfl.missions.push({ id: "beta", name: "BETA", theater: "front", power: 100, enemy: "철혈", rewards: {} });

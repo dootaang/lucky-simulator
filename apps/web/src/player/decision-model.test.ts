@@ -12,6 +12,15 @@ describe('결정 카드 모델', () => {
     const recon = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: { active: true, missionId: 'alpha', echelonId: 'e1', current: 0, stages: [{type:'recon'},{type:'battle'}] } } : null);
     expect(recon[0]).toMatchObject({ title: '다음 단계 진행 · 1/2 🔍', options: [{ label: '단계 진행', id: 'gfl/sortie/stage' }] });
   });
+  it('야전 조우 인형은 엔진 상태에 있을 때만 영입·두고 가기 카드로 제시한다', () => {
+    const cards = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: { active: true, missionId: 'alpha', encounter: { dollId: 'springfield', name: 'Springfield' } } } : null);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ key: 'gfl-encounter:alpha:springfield', title: '무소속 전술인형 『Springfield』 발견', more: '작전당 1명' });
+    expect(cards[0]!.options).toEqual([
+      expect.objectContaining({ label: '영입을 시도한다', id: 'gfl/encounter/recruit', kind: 'primary' }),
+      expect.objectContaining({ label: '두고 간다', id: 'gfl/encounter/skip', kind: 'ghost' }),
+    ]);
+  });
   it('대기 중인 첫 영업 파동을 영업 시작(서사)·건너뛰기(장부) 카드로 만든다', () => {
     const cards = buildDecisionCards(selectFrom({ waves: [{ id: 'lunch', label: '점심 영업', available: false, reason: '완료' }, { id: 'dinner', label: '저녁 영업', available: true }], incident: null, lodging: [] }));
     expect(cards).toHaveLength(1);

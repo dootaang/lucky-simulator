@@ -160,6 +160,22 @@ function progression(mined: ReturnType<typeof mineCard>) {
   );
   return { byStar, missionTypes, eventGuides };
 }
+function encounters(mined: ReturnType<typeof mineCard>, dolls: Array<{ id: string; name: string }>) {
+  const byName = new Map(dolls.map((doll) => [doll.name, doll.id])),
+    poolNames = (Array.isArray(mined.tables.ENCOUNTER_POOL) ? mined.tables.ENCOUNTER_POOL : []).map(text),
+    rawBan = mined.tables.ENCOUNTER_BAN,
+    banNames = Array.isArray(rawBan)
+      ? rawBan.map(text)
+      : Object.entries(table(rawBan)).filter(([, value]) => Boolean(value)).map(([name]) => name),
+    missing = [...new Set([...poolNames, ...banNames].filter((name) => !byName.has(name)))];
+  return {
+    value: {
+      pool: poolNames.flatMap((name) => byName.has(name) ? [byName.get(name)!] : []),
+      ban: banNames.flatMap((name) => byName.has(name) ? [byName.get(name)!] : []),
+    },
+    missing,
+  };
+}
 function classList(value: unknown) {
   return (Array.isArray(value) ? value : [])
     .flatMap((entry) => text(entry).split(","))
@@ -241,9 +257,10 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
     items = itemRows(mined),
     equipment = equipmentRows(mined),
     missions = missionRows(mined),
-    defaults = mined.defaultVars.numbers;
+    defaults = mined.defaultVars.numbers,
+    encounterData = encounters(mined, dolls);
   return {
-    recovered, normalizedMg3, unknownClasses,
+    recovered, normalizedMg3, unknownClasses, encounterMissing: encounterData.missing,
     schema: {
       meta: {
         id: "girls-frontline-ember",
@@ -357,6 +374,7 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
         },
         timePhases: ["오전", "오후", "저녁", "밤", "심야", "새벽"],
         progression: progression(mined),
+        encounters: encounterData.value,
         relation: {
           names: table(mined.tables).REL_NAMES ?? mined.tables.REL_NAMES,
           thresholds: mined.tables.REL_THRES,
@@ -463,7 +481,7 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
   const prompt = buildCompilerPrompt(parsed, mined),
     textPanels = extractTextPanels(extractRegexScripts(parsed)),
     diagnosis = { ...diagnoseCard(parsed, mined, prompt.coverage), textPanels },
-    { recovered, normalizedMg3, unknownClasses, schema } = gflSchema(parsed, mined),
+    { recovered, normalizedMg3, unknownClasses, encounterMissing, schema } = gflSchema(parsed, mined),
     moduleIds = ["genre.gfl"],
     presets = screenPresetsFor(moduleIds, schema);
   const dollCount = (schema.gfl as { dolls: unknown[] }).dolls.length,
@@ -489,6 +507,7 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
       : []),
     ...(normalizedMg3 ? [{ level: "warn" as const, path: "gfl.dolls", message: `병과 오타 정규화(MG3→MG) ${normalizedMg3}건`, source: "template" as const }] : []),
     ...unknownClasses.map((className) => ({ level: "warn" as const, path: "gfl.dolls", message: `미지 병과 ${className} — 전투에서 AR 프로필로 폴백`, source: "template" as const })),
+    ...encounterMissing.map((name) => ({ level: "warn" as const, path: "gfl.encounters", message: `조우 풀 이름을 인형 카탈로그에 매핑하지 못함: ${name}`, source: "template" as const })),
     {
       level: "warn",
       path: "combat",
@@ -526,6 +545,7 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
       `인형 ${recovered}/${dollCount}명의 능력치(HP·MP·전투력·기분)를 카드 defaultVariables에서 회수했습니다.`,
       "MOD 개조 전투력과 지휘관 시작 자금 10,000은 원본 Lua에서 회수했습니다.",
       "작전 단계 수 7개·임무 유형 3종·단계 지침 5종과 아이템 drop%를 원본 Lua에서 회수했습니다.",
+      `무소속 인형 조우 풀 ${(schema.gfl as { encounters: { pool: unknown[] } }).encounters.pool.length}명을 원본 Lua에서 회수했습니다.`,
     ],
     attempts: [],
     diagnosis,

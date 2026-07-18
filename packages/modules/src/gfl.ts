@@ -460,7 +460,7 @@ function operationStages(c: Context, operation: RuntimeRecord, missionType: stri
     stages.push({ type: selected });
   }
   stages[count - 1] = { type: string(operation.boss).trim() ? "boss" : "battle" };
-  if (missionType !== "recon" && !stages.slice(0, -1).some((value) => value.type === "battle"))
+  if (!stages.slice(0, -1).some((value) => value.type === "battle"))
     stages[count - 2] = { type: "battle" };
   return stages;
 }
@@ -476,10 +476,17 @@ function rollOperationLoot(c: Context) {
   c.state.items = inventory;
   return loot;
 }
+function availableEncounterDolls(c: Context) {
+  const encounters = record(config(c.schema).encounters), banned = new Set(list<string>(encounters.ban)), values = owned(c.state);
+  return list<string>(encounters.pool)
+    .filter((id) => !banned.has(id) && !values[id])
+    .flatMap((id) => { const definition = doll(c.schema, id); return definition ? [definition] : []; });
+}
 
 function resolveOperationStage(c: Context) {
   const gfl = state(c.state), sortie = record(gfl.sortie), stages = list<RuntimeRecord>(sortie.stages);
   if (!sortie.active || !stages.length) return fail(c, "gfl_sortie_missing");
+  if (record(sortie.encounter).dollId) sortie.encounter = null;
   const current = clamp(number(sortie.current), 0, stages.length - 1), stage = record(stages[current]),
     type = string(stage.type) as OperationStageType, guide = stageGuide(c.schema, type);
   if (type === "battle" || type === "boss") {
@@ -497,8 +504,14 @@ function resolveOperationStage(c: Context) {
       return { roll, found, resource: found ? { id: "res", qty: amount } : null };
     },
     mystery: () => {
-      const roll = c.rng.int(1, 100), found = roll <= 50;
-      return { roll, found, loot: found ? rollOperationLoot(c) : [] };
+      const roll = c.rng.int(1, 100), pool = availableEncounterDolls(c), targetRoll = c.rng.int(1, Math.max(1, pool.length));
+      if (roll <= 40) return { roll, targetRoll, branch: "loot", found: true, loot: rollOperationLoot(c) };
+      if (roll <= 65 && pool.length && !sortie.encounterRecruited) {
+        const target = pool[targetRoll - 1]!;
+        sortie.encounter = { dollId: target.id, name: target.name };
+        return { roll, targetRoll, branch: "encounter", found: true, encounter: sortie.encounter, loot: [] };
+      }
+      return { roll, targetRoll, branch: "none", found: false, loot: [] };
     },
   };
   const result = effects[type]?.() ?? {};
@@ -506,6 +519,25 @@ function resolveOperationStage(c: Context) {
   sortie.lastStage = { index: current, stageType: type, guide, ...result };
   gfl.sortie = sortie; c.state.gfl = gfl;
   return ok(c, { stageIndex: current, stageType: type, guide, current: sortie.current, total: stages.length, ...result });
+}
+
+function recruitEncounter(c: Context) {
+  const gfl = state(c.state), sortie = record(gfl.sortie), encounter = record(sortie.encounter), definition = doll(c.schema, encounter.dollId);
+  if (!sortie.active || !definition) return fail(c, "gfl_encounter_missing");
+  if (sortie.encounterRecruited) return fail(c, "gfl_encounter_limit");
+  const capacity = dollCapacity(c.schema, c.state), count = Object.keys(owned(c.state)).length;
+  if (count >= capacity) return fail(c, "gfl_hire_capacity_full", capacity);
+  if (!acquire(c, definition)) return fail(c, "gfl_doll_owned", definition.id);
+  const next = state(c.state), nextSortie = record(next.sortie);
+  nextSortie.encounter = null; nextSortie.encounterRecruited = true; next.sortie = nextSortie; c.state.gfl = next;
+  return ok(c, { dollId: definition.id, name: definition.name, status: "대기", capacity, count: count + 1 });
+}
+
+function skipEncounter(c: Context) {
+  const gfl = state(c.state), sortie = record(gfl.sortie), encounter = record(sortie.encounter);
+  if (!sortie.active || !encounter.dollId) return fail(c, "gfl_encounter_missing");
+  sortie.encounter = null; gfl.sortie = sortie; c.state.gfl = gfl;
+  return ok(c, { dollId: encounter.dollId, skipped: true });
 }
 
 function retreatOperation(c: Context) {
@@ -1486,6 +1518,8 @@ export function gflModule(): ModuleDefinition {
       "gfl/sortie/finish": scoped(resolveSortie),
       "gfl/sortie/stage": scoped(resolveOperationStage),
       "gfl/sortie/retreat": scoped(retreatOperation),
+      "gfl/encounter/recruit": scoped(recruitEncounter),
+      "gfl/encounter/skip": scoped(skipEncounter),
       "gfl/facility/upgrade": scoped((c) => {
         const id = string(c.params.facilityId),
           definition = list<RuntimeRecord>(config(c.schema).facilities).find(

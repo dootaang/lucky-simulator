@@ -89,6 +89,20 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
   }
   const sortie = rec(gflStatus.sortie);
   if (sortie.active) {
+    const encounter = rec(sortie.encounter);
+    if (encounter.dollId) {
+      cards.push({
+        key: `gfl-encounter:${String(sortie.missionId)}:${String(encounter.dollId)}`,
+        icon: 'star',
+        title: `무소속 전술인형 『${String(encounter.name ?? encounter.dollId)}』 발견`,
+        desc: '작전 현장에서 단독 행동 중인 인형과 마주쳤다. 숙소에 자리가 있으면 즉시 부대에 합류시킬 수 있다.',
+        more: '작전당 1명',
+        options: [
+          { label: '영입을 시도한다', id: 'gfl/encounter/recruit', params: {}, mode: 'narrated', kind: 'primary' },
+          { label: '두고 간다', id: 'gfl/encounter/skip', params: {}, mode: 'ledger', kind: 'ghost' },
+        ],
+      });
+    } else {
     const stages = arr(sortie.stages), current = num(sortie.current), stage = stages[current] ?? { type: 'battle' },
       type = String(stage.type ?? 'battle'), combat = type === 'battle' || type === 'boss', total = Math.max(1, stages.length),
       icons: Record<string, string> = { battle: '⚔', boss: '👑', recon: '🔍', other: '🚩', mystery: '❓' };
@@ -102,6 +116,7 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
       more: sortie.scouted ? '정찰 보정 +1 대기' : '단계 시퀀스 확정됨',
       options: [{ label: combat ? '교전 진행' : '단계 진행', id: combat ? 'gfl/sortie/resolve' : 'gfl/sortie/stage', params: {}, mode: 'narrated', kind: 'primary' }],
     });
+    }
   }
   const traffic = rec(safeSelect(select, 'inn/traffic'));
   if (!Object.keys(traffic).length) return cards;
