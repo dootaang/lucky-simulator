@@ -3,7 +3,7 @@ import type { ParsedCard } from "@simbot/card";
 import { compileKnownCard } from "../src/known-cards.ts";
 
 const DV =
-  'A_day=1\nA_gold=5000\nA_res=3000\nD1a=["1500","1600","1250","-5","90","성격 설명"]\nD1d=["7000","계약 설명"]\nScarecrowa=["1800","1600","1000","-4","90","boss"]\nGebbennua=["2800","2400","1600","0","97","boss"]';
+  'A_day=1\nA_gold=5000\nA_res=3000\nD1a=["1500","1600","1250","-5","90","성격 설명"]\nD1d=["7000","계약 설명"]\nD2d=["4000","404 소대장 출신의 저격수"]\nD3d=["3500","그리폰 팀 소속"]\nScarecrowa=["1800","1600","1000","-4","90","boss"]\nGebbennua=["2800","2400","1600","0","97","boss"]';
 function gfl(): ParsedCard {
   const classes = Array.from(
       { length: 20 },
@@ -133,6 +133,12 @@ describe("known card compiler", () => {
       cost: { gold: 4000, res: 2000 },
       costMultiplier: 1.5,
     });
+  });
+  it("계약 설명에서 소대 표기를 회수하고 없으면 기재하지 않는다", () => {
+    const dolls = (compileKnownCard(gfl())?.schema.gfl as any).dolls;
+    expect(dolls[0].squad).toBeUndefined(); // "계약 설명" — 소대 표기 없음
+    expect(dolls[1].squad).toBe("404"); // "404 소대장 출신의 저격수"
+    expect(dolls[2].squad).toBe("그리폰"); // "그리폰 팀 소속"
   });
   it("회수와 합성을 구분해 정직하게 표시한다(헌법 2)", () => {
     const result = compileKnownCard(gfl());

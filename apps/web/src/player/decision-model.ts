@@ -115,6 +115,20 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
       ],
     });
   }
+  // 암시장 브로커 — 엔진이 7일마다 제안을 확정하고, 구매는 의심도를 쌓는다(감사 리스크는 카드에 명시).
+  const market = rec(gflStatus.market), marketPurchased = Array.isArray(market.purchased) ? (market.purchased as unknown[]).map(String) : [],
+    marketOffers = arr(market.offers).filter((offer) => !marketPurchased.includes(String(offer.id)));
+  if (marketOffers.length) {
+    cards.push({
+      key: `gfl-market:${String(market.day)}`,
+      icon: 'star',
+      title: '암시장 브로커 접선',
+      desc: `정가의 60%. 단 거래마다 상부의 의심이 쌓입니다(현재 의심도 ${num(market.suspicion)}) — 20을 넘기면 감사 대상.`,
+      more: '7일마다 갱신',
+      dismissible: true,
+      options: marketOffers.slice(0, 3).map((offer) => ({ label: `${String(offer.name)} · ${num(offer.price).toLocaleString()}자금`, id: 'gfl/market/buy', params: { offerId: String(offer.id) }, mode: 'ledger' as const, kind: 'primary' as const })),
+    });
+  }
   const sortie = rec(gflStatus.sortie);
   if (sortie.active) {
     const encounter = rec(sortie.encounter);

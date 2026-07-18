@@ -107,6 +107,10 @@ function dollRows(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
     if (row) recovered += 1;
     const rawClass = text(value || "AR"), className = rawClass === "MG3" ? "MG" : rawClass;
     if (rawClass === "MG3") normalizedMg3 += 1;
+    // 소대 회수 — 설명 원문에서 "404"·"…소대/팀/스쿼드" 표기를 그대로 뽑는다(발명 없음, 실패 시 미기재).
+    const description = text(contract?.[1]),
+      squadMatch = /(?:^|\s)(404|스쿼드\s*[A-Z0-9]+|[가-힣A-Za-z0-9.]+?(?=\s*(?:소대|팀|스쿼드)))\s*(?:소대|팀|스쿼드)?(?:원|장)?(?:\s|$|[,.·])/.exec(description),
+      squad = squadMatch && /소대|팀|스쿼드|404/.test(squadMatch[0]) ? text(squadMatch[1]).trim() : "";
     return {
       id: id(name),
       name,
@@ -117,7 +121,8 @@ function dollRows(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
       power: number(row?.[2], DOLL_FALLBACK.power),
       mood: number(row?.[4], DOLL_FALLBACK.mood),
       price: number(contract?.[0], 5000),
-      description: text(contract?.[1]),
+      description,
+      ...(squad ? { squad } : {}),
       asset: name,
     };
   });

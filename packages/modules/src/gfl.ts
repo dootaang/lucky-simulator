@@ -137,6 +137,7 @@ function acquire(
     mod: 0,
     status,
     equipment: [],
+    ...(definition.squad ? { squad: definition.squad } : {}),
   };
   gfl.dolls = values;
   c.state.gfl = gfl;
@@ -195,6 +196,86 @@ const TRAINING_BONUS = [10, 15, 20, 30, 50],
   SUPPLY_DAILY = [300, 600, 1000, 1500, 2500],
   DORM_CAPACITY = [4, 8, 12, 16, 20],
   DORM_HEAL = [10, 20, 30, 40, 100];
+// ── 기지 근무(5차) ── 시설별 슬롯 2·병과 적성. 효과·소모 수치는 Lucky 합성(GIRLS-FRONTLINE.md 기재).
+const CREW_FACILITIES: Record<string, { aptitude: string[]; effectLabel: string }> = {
+  base1: { aptitude: ["AR", "RF"], effectLabel: "제대 훈련 보너스 +2%p/인" },
+  base2: { aptitude: ["SG", "MG"], effectLabel: "습격 확률 −2%p·방어 +5%/인" },
+  base3: { aptitude: ["SMG"], effectLabel: "수복 시작 단계 −1/인" },
+  base4: { aptitude: ["HG"], effectLabel: "일일 산출 +8%/인" },
+};
+const CREW_SLOTS = 2, CREW_LOW_MOOD = 20;
+// 불만도 — 게이지 존재·시작 0·단계 문턱과 문구는 카드 회수(A_diss/A_diss_t 체인 실측),
+// 증감 규칙은 합성(원본은 LLM 태그 [[diss=..]] 제안이었고 Lucky는 그 태그를 차단한다).
+const DISS_TIERS = [
+  { max: 0, label: "기본 상태", text: "매우 통상적인 상태며 만족하고 있습니다." },
+  { max: 25, label: "사소한 불만", text: "사소한 불만이 돌고 있지만, 통제 가능한 수준입니다." },
+  { max: 50, label: "경계 상태", text: "인형들의 불만이 누적되어 분위기가 험악해지고 있습니다." },
+  { max: 75, label: "위험 상태", text: "명령 불복종이 발생할 수 있을 정도로 불만이 팽배합니다." },
+  { max: 100, label: "통제 불능", text: "언제 폭동이나 집단 파업이 발생해도 이상하지 않은 최고조의 불만 상태입니다!!" },
+] as const;
+const REFINERY_RECIPES: Record<string, { label: string; cost: Record<string, number>; yield: Record<string, number>; duration: number }> = {
+  parts: { label: "부품 가공", cost: { res: 200 }, yield: { parts: 20 }, duration: 2 },
+  cores: { label: "코어 정련", cost: { parts: 30 }, yield: { cores: 1 }, duration: 4 },
+};
+const FACILITY_BRANCHES: Record<string, Array<{ id: string; label: string; desc: string }>> = {
+  base1: [
+    { id: "assault", label: "강습 교리", desc: "제대 훈련 보너스 +5%p" },
+    { id: "guard", label: "수비 교리", desc: "습격 방어 작전능력 +10%" },
+  ],
+  base2: [
+    { id: "intercept", label: "요격 체계", desc: "습격 확률 −5%p" },
+    { id: "bulwark", label: "철벽 체계", desc: "습격 피해 절반" },
+  ],
+  base3: [
+    { id: "rapid", label: "고속 정비", desc: "수복 시작 단계 −1" },
+    { id: "precision", label: "정밀 정비", desc: "수복 3회마다 부품 무료" },
+  ],
+  base4: [
+    { id: "finance", label: "재정 특화", desc: "일일 산출의 15%를 자금으로 추가" },
+    { id: "materiel", label: "물자 특화", desc: "일일 자원 산출 +15%" },
+  ],
+};
+function crewMap(value: RuntimeRecord) {
+  return record(state(value).crew);
+}
+function crewWorkers(value: RuntimeRecord, facilityId: string) {
+  return list<string>(crewMap(value)[facilityId]).filter((id) => Object.keys(record(owned(value)[id])).length > 0);
+}
+function crewFacilityOf(value: RuntimeRecord, dollId: string) {
+  for (const facilityId of Object.keys(CREW_FACILITIES)) if (crewWorkers(value, facilityId).includes(dollId)) return facilityId;
+  return null;
+}
+function specializationOf(value: RuntimeRecord, facilityId: string) {
+  return string(record(state(value).specializations)[facilityId]) || null;
+}
+// 근무 효과 배율: 기분<20이면 절반, 적성 일치 1.5배, 같은 소대 동료가 같은 시설이면 +20%.
+// 태만 사건이 찍힌 날은 그 시설 효과가 통째로 0이다.
+function crewEffect(value: RuntimeRecord, facilityId: string) {
+  const spec = CREW_FACILITIES[facilityId];
+  if (!spec) return 0;
+  if (number(record(state(value).facilitySlack)[facilityId]) === day(value)) return 0;
+  const workers = crewWorkers(value, facilityId);
+  let total = 0;
+  for (const id of workers) {
+    const unit = record(owned(value)[id]);
+    let factor = spec.aptitude.includes(string(unit.class)) ? 1.5 : 1;
+    if (number(unit.mood) < CREW_LOW_MOOD) factor *= 0.5;
+    const squad = string(unit.squad);
+    if (squad && workers.some((other) => other !== id && string(record(owned(value)[other]).squad) === squad)) factor *= 1.2;
+    total += factor;
+  }
+  return total;
+}
+function dissatisfaction(value: RuntimeRecord) {
+  return clamp(number(state(value).dissatisfaction), 0, 100);
+}
+function dissTier(value: RuntimeRecord) {
+  const score = dissatisfaction(value);
+  return DISS_TIERS.find((tier) => score <= tier.max) ?? DISS_TIERS[DISS_TIERS.length - 1]!;
+}
+function refineryJobs(value: RuntimeRecord) {
+  return list<RuntimeRecord>(state(value).refinery);
+}
 function dollCapacity(schema: RuntimeRecord, value: RuntimeRecord) {
   const level = facilityLevel(value, "base5"),
     values = list<number>(hireConfig(schema).capacity);
@@ -202,7 +283,9 @@ function dollCapacity(schema: RuntimeRecord, value: RuntimeRecord) {
 }
 function effectivePower(value: RuntimeRecord, echelon: RuntimeRecord) {
   const raw = power(value, echelon),
-    bonus = TRAINING_BONUS[facilityLevel(value, "base1") - 1]!;
+    bonus = TRAINING_BONUS[facilityLevel(value, "base1") - 1]!
+      + crewEffect(value, "base1") * 2
+      + (specializationOf(value, "base1") === "assault" ? 5 : 0);
   return Math.round(raw * (1 + bonus / 100));
 }
 function clamp(value: number, min: number, max: number) {
@@ -281,18 +364,22 @@ function loveTierIndex(schema: RuntimeRecord) {
   return named >= 0 ? named : clamp(relationFor(schema, 0).index + 5, 0, Math.max(0, names.length - 1));
 }
 function resolveDailyRaid(c: Context) {
-  const defenseLevel = facilityLevel(c.state, "base2"), chance = Math.max(2, 18 - defenseLevel * 3),
+  const defenseLevel = facilityLevel(c.state, "base2"),
+    chance = Math.max(2, Math.round(18 - defenseLevel * 3 - crewEffect(c.state, "base2") * 2 - (specializationOf(c.state, "base2") === "intercept" ? 5 : 0))),
     raidRoll = c.rng.int(1, 100), defenseRoll = c.rng.int(1, 20), occurred = raidRoll <= chance,
     completed = list<string>(state(c.state).completedMissions), recentId = completed.at(-1), recent = mission(c.schema, recentId),
     enemyPower = recent ? Math.max(1, Math.round(number(recent.power) * .6)) : 500,
     first = echelons(c.state)[0], rawDefense = first ? effectivePower(c.state, first) : 0,
-    defensePower = Math.round(rawDefense * (1 + DEFENSE_POWER[defenseLevel - 1]! / 100)),
+    defensePower = Math.round(rawDefense * (1 + DEFENSE_POWER[defenseLevel - 1]! / 100 + crewEffect(c.state, "base2") * .05)
+      * (specializationOf(c.state, "base1") === "guard" ? 1.1 : 1)),
     risk = missionRisk(defensePower, enemyPower), success = occurred && (defenseRoll === 20 || (defenseRoll !== 1 && defenseRoll + risk.modifier >= 8)),
     resources = record(c.state.resources);
   let delta = 0, loss = 0;
   if (occurred && success) { delta = 100; resources.res = number(resources.res) + delta; }
   else if (occurred) {
-    loss = Math.min(500, Math.floor(number(resources.res) * .1)); delta = -loss; resources.res = Math.max(0, number(resources.res) - loss);
+    loss = Math.min(500, Math.floor(number(resources.res) * .1));
+    if (specializationOf(c.state, "base2") === "bulwark") loss = Math.ceil(loss / 2);
+    delta = -loss; resources.res = Math.max(0, number(resources.res) - loss);
     if (first) for (const id of list<unknown>(first.slots).map(string).filter(Boolean)) {
       const unit = record(owned(c.state)[id]), hp = record(unit.hp);
       if (!Object.keys(unit).length) continue;
@@ -302,6 +389,87 @@ function resolveDailyRaid(c: Context) {
   }
   c.state.resources = resources;
   return { occurred, chance, raidRoll, defenseRoll, success, defensePower, enemyPower, missionId: recentId ?? null, modifier: risk.modifier, resourceDelta: delta, loss };
+}
+// 하루 마감의 기지 사회 정산 — 불만도 증감(합성 규칙·회수 문턱), 태만·항명·뜬소문·암시장 감사.
+// RNG 규율: 문턱 미달이어도 모든 굴림을 소비한다(사건 유무가 소비 횟수를 바꾸지 않는다).
+function resolveBaseSocial(c: Context, raid: RuntimeRecord, defeats: number) {
+  const gfl = state(c.state), dolls = Object.values(owned(c.state)).map(record);
+  const lowMood = dolls.filter((unit) => number(unit.mood) < CREW_LOW_MOOD).length,
+    avgMood = dolls.length ? dolls.reduce((sum, unit) => sum + number(unit.mood), 0) / dolls.length : 100,
+    oathed = dolls.filter((unit) => unit.oathed === true).length,
+    raidLoss = number(raid.loss) > 0 ? 5 : 0;
+  let diss = dissatisfaction(c.state) + lowMood * 2 + raidLoss + defeats * 3;
+  if (avgMood >= 60) diss -= 5;
+  diss = clamp(diss - oathed, 0, 100);
+  gfl.dissatisfaction = diss;
+  const slackRoll = c.rng.int(1, 100), slackPick = c.rng.int(1, 1000),
+    mutinyRoll = c.rng.int(1, 100), mutinyPick = c.rng.int(1, 1000),
+    gossipRoll = c.rng.int(1, 100), gossipPickA = c.rng.int(1, 1000), gossipPickB = c.rng.int(1, 1000),
+    auditRoll = c.rng.int(1, 20), offerRolls = [c.rng.int(1, 1000), c.rng.int(1, 1000), c.rng.int(1, 1000)];
+  const social: RuntimeRecord = { dissatisfaction: diss, dissTier: dissTier(c.state).label };
+  const workers = Object.keys(CREW_FACILITIES)
+    .flatMap((facilityId) => crewWorkers(c.state, facilityId).map((dollId) => ({ facilityId, dollId })))
+    .filter((entry) => entry.dollId !== string(gfl.lastSlacker));
+  if (diss >= 50 && slackRoll <= diss - 40 && workers.length) {
+    const pick = workers[(slackPick - 1) % workers.length]!,
+      facilitySlack = record(gfl.facilitySlack);
+    facilitySlack[pick.facilityId] = day(c.state);
+    gfl.facilitySlack = facilitySlack;
+    gfl.lastSlacker = pick.dollId;
+    social.slack = { ...pick, name: record(owned(c.state)[pick.dollId]).name };
+  }
+  const mutinyCandidates = dolls.filter((unit) => string(unit.status) !== "대파" && unit.refusal !== true && string(unit.id) !== string(gfl.lastMutineer));
+  if (diss >= 80 && mutinyRoll <= diss - 70 && mutinyCandidates.length) {
+    const unit = mutinyCandidates[(mutinyPick - 1) % mutinyCandidates.length]!;
+    unit.refusal = true;
+    gfl.lastMutineer = unit.id;
+    social.mutiny = { dollId: unit.id, name: unit.name };
+  }
+  const gossipMode = string(record(gfl.settings).gossip || "mild"),
+    gossipCandidates = dolls.filter((unit) => string(unit.id) !== string(gfl.lastGossipTarget));
+  if (gossipMode !== "off" && diss >= 50 && gossipRoll <= 25 && gossipCandidates.length >= 2) {
+    const first = gossipCandidates[(gossipPickA - 1) % gossipCandidates.length]!,
+      rest = gossipCandidates.filter((unit) => unit !== first),
+      second = rest[(gossipPickB - 1) % rest.length]!;
+    first.mood = moodClamp(first, number(first.mood) - 10);
+    second.mood = moodClamp(second, number(second.mood) - 10);
+    if (gossipMode === "full") first.affinity = clamp(number(first.affinity) - 5, -200, 500);
+    gfl.lastGossipTarget = first.id;
+    social.gossip = { mode: gossipMode, targets: [{ dollId: first.id, name: first.name }, { dollId: second.id, name: second.name }] };
+  }
+  const today = day(c.state), market = record(gfl.market);
+  let suspicion = number(market.suspicion);
+  if (today % 7 === 0) {
+    suspicion = Math.max(0, suspicion - 2);
+    const pool: RuntimeRecord[] = [
+      ...items(c.schema).map((entry): RuntimeRecord => ({ ...record(entry), kind: "item" })),
+      ...equipment(c.schema).map((entry): RuntimeRecord => ({ ...record(entry), kind: "equipment" })),
+    ].filter((entry) => number(entry.price) > 0);
+    if (pool.length) {
+      const offers = offerRolls.map((roll, index) => {
+        const entry = pool[(roll - 1 + index * 7) % pool.length]!;
+        return { id: `offer-${today}-${index}`, itemId: string(entry.id), kind: entry.kind, name: entry.name, price: Math.max(1, Math.floor(number(entry.price) * .6)) };
+      });
+      gfl.market = { day: today, offers, suspicion, purchased: [] };
+      social.market = { day: today, offers: offers.length };
+    }
+  } else if (Object.keys(market).length) {
+    market.suspicion = suspicion;
+    gfl.market = market;
+  }
+  if (suspicion >= 20) {
+    if (auditRoll < 12) {
+      const seized = Math.floor(number(c.state.gold) * .2);
+      c.state.gold = number(c.state.gold) - seized;
+      gfl.dissatisfaction = clamp(number(gfl.dissatisfaction) + 10, 0, 100);
+      const audited = record(gfl.market);
+      audited.suspicion = 0;
+      gfl.market = audited;
+      social.audit = { caught: true, seized };
+    } else social.audit = { caught: false };
+  }
+  c.state.gfl = gfl;
+  return social;
 }
 type RelationChoice = {
   label: string;
@@ -771,6 +939,10 @@ function resolveSortie(c: Context) {
   }
   const loot = outcome === "victory" ? rollOperationLoot(c) : [],
     operationComplete = outcome === "victory" && (!stages.length || currentStageIndex >= stages.length - 1);
+  if (outcome === "defeat") {
+    const daily = dailyState(c.state);
+    daily.defeats = number(daily.defeats) + 1; // 불만도 정산 입력(하루 마감에서 소비)
+  }
   let reward = null, rewardRate = 0, commanderExp = { gained: 0, total: commanderBefore.exp, level: commanderBefore.level }, levelUp: RuntimeRecord | null = null, docUnlocked: RuntimeRecord | null = null;
   if (operationComplete) {
     const firstClear = !list<string>(state(c.state).completedMissions).includes(string(operation.id));
@@ -937,9 +1109,11 @@ export function gflModule(): ModuleDefinition {
         return ok(c, { dollId: id });
       }),
       "gfl/settings/update": scoped((c) => {
-        const difficulty = string(c.params.relationDifficulty), gfl = state(c.state), settings = record(gfl.settings);
+        const difficulty = string(c.params.relationDifficulty), gossip = string(c.params.gossip), gfl = state(c.state), settings = record(gfl.settings);
         if (difficulty && !["relaxed", "standard", "strict"].includes(difficulty)) return fail(c, "gfl_relation_difficulty_invalid", difficulty);
+        if (gossip && !["off", "mild", "full"].includes(gossip)) return fail(c, "gfl_gossip_mode_invalid", gossip);
         if (difficulty) settings.relationDifficulty = difficulty;
+        if (gossip) settings.gossip = gossip;
         gfl.settings = settings; c.state.gfl = gfl;
         return ok(c, { settings });
       }),
@@ -1096,6 +1270,94 @@ export function gflModule(): ModuleDefinition {
     state(c.state).logistics = jobs.filter((entry) => entry.id !== job.id);
     return ok(c, { jobId: job.id, echelonId: job.echelonId, reward });
   }),
+  "gfl/crew/assign": scoped((c) => {
+    const facilityId = string(c.params.facilityId), dollId = string(c.params.dollId),
+      spec = CREW_FACILITIES[facilityId], unit = record(owned(c.state)[dollId]);
+    if (!spec) return fail(c, "gfl_crew_facility_invalid", facilityId);
+    if (!Object.keys(unit).length) return fail(c, "gfl_doll_not_owned", dollId);
+    const status = string(unit.status);
+    if (status === "이동 중") return fail(c, "gfl_doll_in_transit", string(unit.name));
+    if (status === "대파") return fail(c, "gfl_doll_incapacitated", string(unit.name));
+    if (status === "수복") return fail(c, "gfl_crew_doll_repairing", string(unit.name));
+    if (crewFacilityOf(c.state, dollId)) return fail(c, "gfl_crew_already_assigned", string(unit.name));
+    const home = echelons(c.state).find((entry) => list<unknown>(entry.slots).map(string).includes(dollId)),
+      activeSortie = record(state(c.state).sortie);
+    if (home && echelonLogistics(c.state, string(home.id))) return fail(c, "gfl_crew_doll_dispatched", string(unit.name));
+    if (home && activeSortie.active && activeSortie.echelonId === home.id) return fail(c, "gfl_crew_doll_sortie", string(unit.name));
+    const workers = crewWorkers(c.state, facilityId);
+    if (workers.length >= CREW_SLOTS) return fail(c, "gfl_crew_slots_full", facilityId);
+    const gfl = state(c.state), crew = record(gfl.crew);
+    crew[facilityId] = [...workers, dollId];
+    gfl.crew = crew;
+    c.state.gfl = gfl;
+    const dailyAwards = markDaily(c, "management");
+    return ok(c, { facilityId, dollId, name: unit.name, aptitude: spec.aptitude.includes(string(unit.class)), dailyAwards });
+  }),
+  "gfl/crew/remove": scoped((c) => {
+    const facilityId = string(c.params.facilityId), dollId = string(c.params.dollId),
+      workers = crewWorkers(c.state, facilityId);
+    if (!workers.includes(dollId)) return fail(c, "gfl_crew_not_assigned", dollId);
+    const gfl = state(c.state), crew = record(gfl.crew);
+    crew[facilityId] = workers.filter((id) => id !== dollId);
+    gfl.crew = crew;
+    c.state.gfl = gfl;
+    return ok(c, { facilityId, dollId, name: record(owned(c.state)[dollId]).name });
+  }),
+  "gfl/refinery/start": scoped((c) => {
+    const recipeId = string(c.params.recipe), recipe = REFINERY_RECIPES[recipeId];
+    if (!recipe) return fail(c, "gfl_refinery_recipe_invalid", recipeId);
+    const slots = facilityLevel(c.state, "base4") >= 3 ? 2 : 1,
+      active = refineryJobs(c.state).filter((job) => job.status === "active");
+    if (active.length >= slots) return fail(c, "gfl_refinery_slots_full", slots);
+    const missing = spend(c, recipe.cost);
+    if (missing) return fail(c, "gfl_refinery_cost_missing", missing);
+    const gfl = state(c.state), jobs = refineryJobs(c.state);
+    jobs.push({
+      id: `refine:${number(record(c.state.clock).turn)}:${jobs.length}`,
+      recipe: recipeId, label: recipe.label, remaining: recipe.duration, status: "active", yield: recipe.yield,
+    });
+    gfl.refinery = jobs;
+    c.state.gfl = gfl;
+    const dailyAwards = markDaily(c, "management");
+    return ok(c, { job: jobs.at(-1), dailyAwards });
+  }),
+  "gfl/refinery/collect": scoped((c) => {
+    const jobs = refineryJobs(c.state), job = jobs.find((entry) => entry.id === c.params.jobId);
+    if (!job || job.status !== "complete") return fail(c, "gfl_refinery_not_complete", c.params.jobId);
+    rewards(c.state, record(job.yield), c);
+    state(c.state).refinery = jobs.filter((entry) => entry.id !== job.id);
+    return ok(c, { jobId: job.id, recipe: job.recipe, yield: job.yield });
+  }),
+  "gfl/facility/specialize": scoped((c) => {
+    const facilityId = string(c.params.facilityId), branchId = string(c.params.branch),
+      branches = FACILITY_BRANCHES[facilityId], branch = branches?.find((entry) => entry.id === branchId);
+    if (!branches) return fail(c, "gfl_specialize_facility_invalid", facilityId);
+    if (!branch) return fail(c, "gfl_specialize_branch_invalid", branchId);
+    if (facilityLevel(c.state, facilityId) < 5) return fail(c, "gfl_specialize_level_required", facilityId);
+    if (specializationOf(c.state, facilityId)) return fail(c, "gfl_specialize_already", facilityId);
+    const gfl = state(c.state), specializations = record(gfl.specializations);
+    specializations[facilityId] = branchId;
+    gfl.specializations = specializations;
+    c.state.gfl = gfl;
+    return ok(c, { facilityId, branch: branchId, label: branch.label });
+  }),
+  "gfl/market/buy": scoped((c) => {
+    const gfl = state(c.state), market = record(gfl.market),
+      offers = list<RuntimeRecord>(market.offers), offer = offers.find((entry) => entry.id === c.params.offerId),
+      purchased = list<string>(market.purchased);
+    if (!offer) return fail(c, "gfl_market_offer_missing", c.params.offerId);
+    if (purchased.includes(string(offer.id))) return fail(c, "gfl_market_offer_sold", string(offer.name));
+    const missing = spend(c, { gold: number(offer.price) });
+    if (missing) return fail(c, "gfl_market_funds_missing", number(offer.price));
+    const inventory = record(c.state.items);
+    inventory[string(offer.itemId)] = number(inventory[string(offer.itemId)]) + 1;
+    c.state.items = inventory;
+    market.purchased = [...purchased, string(offer.id)];
+    market.suspicion = number(market.suspicion) + Math.ceil(number(offer.price) / 1000);
+    gfl.market = market;
+    c.state.gfl = gfl;
+    return ok(c, { offerId: offer.id, itemId: offer.itemId, name: offer.name, price: offer.price, suspicion: market.suspicion });
+  }),
   "gfl/time/advance": scoped((c) => {
         if (fieldSortie(c.state)) return fail(c, "gfl_time_field_locked");
         {
@@ -1120,6 +1382,12 @@ export function gflModule(): ModuleDefinition {
           arrivals: RuntimeRecord[] = [];
         // 시간이 흐르면 "직후"의 분위기는 지나간다 — 후속 캡슐은 시간대 경계를 넘기지 않는다.
         if (gfl.followUp) gfl.followUp = null;
+        // 근무자는 시간대마다 지친다(적성 −2, 그 외 −3) — 숙소 로테이션을 강제하는 기분 경제.
+        for (const [facilityId, spec] of Object.entries(CREW_FACILITIES))
+          for (const id of crewWorkers(c.state, facilityId)) {
+            const unit = record(owned(c.state)[id]);
+            unit.mood = moodClamp(unit, number(unit.mood) - (spec.aptitude.includes(string(unit.class)) ? 2 : 3));
+          }
         for (const raw of Object.values(owned(c.state)).filter(
           (value) => record(value).status === "이동 중",
         )) {
@@ -1173,15 +1441,25 @@ export function gflModule(): ModuleDefinition {
             completed.push(job);
           }
         }
+        for (const job of refineryJobs(c.state).filter((value) => value.status === "active")) {
+          job.remaining = Math.max(0, number(job.remaining) - 1);
+          if (job.remaining === 0) {
+            job.status = "complete";
+            completed.push(job);
+          }
+        }
         let daily: RuntimeRecord | null = null;
         if (newDay) {
           const tomorrow = day(c.state) + 1;
           c.state.day = tomorrow;
           clock.day = tomorrow;
-          const income = SUPPLY_DAILY[facilityLevel(c.state, "base4") - 1]!,
+          const baseIncome = SUPPLY_DAILY[facilityLevel(c.state, "base4") - 1]!,
+            income = Math.round(baseIncome * (1 + crewEffect(c.state, "base4") * .08 + (specializationOf(c.state, "base4") === "materiel" ? .15 : 0))),
             resources = record(c.state.resources);
           resources.res = number(resources.res) + income;
           c.state.resources = resources;
+          if (specializationOf(c.state, "base4") === "finance")
+            c.state.gold = number(c.state.gold) + Math.round(income * .15);
           const healRate = DORM_HEAL[facilityLevel(c.state, "base5") - 1]!;
           for (const raw of Object.values(owned(c.state))) {
             const unit = record(raw),
@@ -1191,7 +1469,8 @@ export function gflModule(): ModuleDefinition {
               number(hp.cur) + Math.ceil((number(hp.max) * healRate) / 100),
             );
             unit.hp = hp;
-            unit.mood = moodClamp(unit, number(unit.mood) + 10);
+            // 근무 중인 인형은 수면 회복이 절반 — 쉬는 것과 일하는 것은 달라야 한다.
+            unit.mood = moodClamp(unit, number(unit.mood) + (crewFacilityOf(c.state, string(unit.id)) ? 5 : 10));
           }
           daily = { income, healRate };
           const previousOffers = list<RuntimeRecord>(gfl.hireOffers).map((value) => string(value.id)).filter(Boolean);
@@ -1223,6 +1502,8 @@ export function gflModule(): ModuleDefinition {
     const phase = string(record(c.state.clock).phase || "오전");
     if (!["저녁", "밤", "심야", "새벽"].includes(phase)) return fail(c, "gfl_end_day_time_locked", phase);
     const dailyAwards = markDaily(c, "endDay");
+    // 하루 마감의 advance 스텝이 daily를 리셋하므로 당일 패배 수는 지금 캡처한다.
+    const defeatsToday = number(record(state(c.state).daily).defeats);
     const steps: RuntimeRecord[] = [];
     for (let count = 0; count < 6; count++) {
       const result = c.registry.dispatch(c.schema, c.state, { id: "gfl/time/advance", params: { settlement: true } }, c.rng),
@@ -1232,8 +1513,8 @@ export function gflModule(): ModuleDefinition {
       steps.push(row);
       if (row.newDay) break;
     }
-    const settlement = steps.at(-1) ?? {}, raid = resolveDailyRaid(c);
-    return ok(c, { steps: steps.length, day: settlement.day, phase: settlement.phase, daily: settlement.daily, raid, dailyAwards });
+    const settlement = steps.at(-1) ?? {}, raid = resolveDailyRaid(c), social = resolveBaseSocial(c, record(raid), defeatsToday);
+    return ok(c, { steps: steps.length, day: settlement.day, phase: settlement.phase, daily: settlement.daily, raid, social, dailyAwards });
   }),
       "gfl/relation/check": scoped((c) => {
         if (
@@ -1301,6 +1582,8 @@ export function gflModule(): ModuleDefinition {
         unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
         unit.mood = moodClamp(unit, number(unit.mood) + moodDelta);
         markRelationUse(c, dollId, choiceId);
+        // 항명 해소 — 마음이 풀리면 총을 든다.
+        if (success && unit.refusal === true) unit.refusal = false;
         const afterTier = relationFor(c.schema, unit.affinity),
           tierChanged =
             afterTier.index > beforeTier.index
@@ -1507,16 +1790,26 @@ export function gflModule(): ModuleDefinition {
           )
         )
           return fail(c, "gfl_repair_already_active", id);
-        const missing = spend(c, { parts: 1 });
-        if (missing) return fail(c, "gfl_repair_cost_missing", missing);
+        const gfl0 = state(c.state),
+          precision = specializationOf(c.state, "base3") === "precision",
+          repairCount = number(gfl0.repairCount),
+          freeRepair = precision && repairCount > 0 && repairCount % 3 === 2; // 3회마다(3·6·…번째) 무료
+        if (!freeRepair) {
+          const missing = spend(c, { parts: 1 });
+          if (missing) return fail(c, "gfl_repair_cost_missing", missing);
+        }
         const gfl = state(c.state),
-          repairs = queue(c.state, "repairs");
+          repairs = queue(c.state, "repairs"),
+          // 정비 근무·고속 정비가 수복 시작 단계를 줄인다(최소 1).
+          remaining = Math.max(1, 2 - Math.floor(crewEffect(c.state, "base3")) - (specializationOf(c.state, "base3") === "rapid" ? 1 : 0));
+        gfl.repairCount = repairCount + 1;
         unit.status = "수복";
         repairs.push({
           id: `repair:${id}:${number(record(c.state.clock).turn)}`,
           dollId: id,
-          remaining: 2,
+          remaining,
           status: "active",
+          ...(freeRepair ? { free: true } : {}),
         });
         gfl.repairs = repairs;
         c.state.gfl = gfl;
@@ -1579,6 +1872,9 @@ export function gflModule(): ModuleDefinition {
         const commander = commanderStatus(c.state);
         if (number(daily.sortiesUsed) >= commander.sortieLimit) return fail(c, "gfl_sortie_daily_limit", commander.sortieLimit);
         if (members.every(id => { const hp = record(record(owned(c.state)[string(id)]).hp); return number(hp.cur) <= 0; })) return fail(c, "gfl_echelon_incapacitated");
+        // 항명 중인 인형은 출격을 거부한다 — 관계 행동 성공으로만 풀린다(불만도 시스템).
+        const refusing = members.map((id) => record(owned(c.state)[string(id)])).find((unit) => unit.refusal === true);
+        if (refusing) return fail(c, "gfl_doll_refusal", string(refusing.name));
         const travelCost = Math.max(0, number(operation.travelCost));
         if (travelCost) {
           const missing = spend(c, { gold: travelCost });
@@ -1985,8 +2281,33 @@ export function gflModule(): ModuleDefinition {
           featuredDollId: gfl.featuredDollId ?? null,
           followUp: activeFollowUp(value),
           dialogue: activeDialogue(value),
-          settings: { relationDifficulty: relationDifficulty(value).id },
+          settings: { relationDifficulty: relationDifficulty(value).id, gossip: string(record(gfl.settings).gossip || "mild") },
           commander: commanderStatus(value),
+          dissatisfaction: { value: dissatisfaction(value), ...dissTier(value) },
+          market: gfl.market ?? null,
+        };
+      },
+      "gfl/crew": (...args) => {
+        const value = record(args[1]);
+        return Object.entries(CREW_FACILITIES).map(([facilityId, spec]) => ({
+          facilityId,
+          aptitude: spec.aptitude,
+          effectLabel: spec.effectLabel,
+          slots: CREW_SLOTS,
+          slacked: number(record(state(value).facilitySlack)[facilityId]) === day(value),
+          effect: Math.round(crewEffect(value, facilityId) * 100) / 100,
+          workers: crewWorkers(value, facilityId).map((dollId) => {
+            const unit = record(owned(value)[dollId]);
+            return { dollId, name: unit.name, class: unit.class, mood: unit.mood, aptitude: spec.aptitude.includes(string(unit.class)) };
+          }),
+        }));
+      },
+      "gfl/refinery": (...args) => {
+        const value = record(args[1]);
+        return {
+          slots: facilityLevel(value, "base4") >= 3 ? 2 : 1,
+          recipes: Object.entries(REFINERY_RECIPES).map(([id, recipe]) => ({ id, ...recipe })),
+          jobs: refineryJobs(value),
         };
       },
       "gfl/relation/options": (...args) => {
@@ -2170,6 +2491,7 @@ export function gflModule(): ModuleDefinition {
           (definition) => {
             const level = number(levels[string(definition.id)], 1),
               maxLevel = number(definition.maxLevel, 5);
+            const facilityId = string(definition.id);
             return {
               ...definition,
               level,
@@ -2181,6 +2503,8 @@ export function gflModule(): ModuleDefinition {
                 level < maxLevel
                   ? (list<unknown>(definition.effects)[level] ?? null)
                   : null,
+              specialization: specializationOf(value, facilityId),
+              branches: level >= maxLevel && !specializationOf(value, facilityId) ? FACILITY_BRANCHES[facilityId] ?? [] : [],
             };
           },
         );
@@ -2257,7 +2581,13 @@ export function gflModule(): ModuleDefinition {
             },
           };
         })(),
-        rule: "위치·시간·자원·관계·전투 결과는 엔진 확정값이다. [[aff=...]]·[[mood=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
+        base: {
+          dissatisfaction: { value: dissatisfaction(value), label: dissTier(value).label, note: dissTier(value).text },
+          crew: Object.keys(CREW_FACILITIES)
+            .map((facilityId) => ({ facilityId, workers: crewWorkers(value, facilityId).map((id) => string(record(owned(value)[id]).name)) }))
+            .filter((entry) => entry.workers.length),
+        },
+        rule: "위치·시간·자원·관계·전투 결과는 엔진 확정값이다. [[aff=...]]·[[mood=...]]·[[diss=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
       };
     },
     { seal: gflSealMigration },

@@ -97,4 +97,12 @@ describe('결정 카드 모델', () => {
     expect(cards[0]).toMatchObject({ key: 'gfl-logistics:logistics:1:0', title: '군수지원 복귀 · 제1제대', desc: '파견 때 확정된 보상: 자금 321 · 자원 192', more: '수령 전까지 제대 대기' });
     expect(cards[0]?.options[0]).toMatchObject({ label: '보급품을 수령한다', id: 'gfl/logistics/collect', params: { jobId: 'logistics:1:0' }, mode: 'ledger' });
   });
+  it('GFL 암시장 제안을 결정 카드로 만들고 구매한 제안은 뺀다', () => {
+    const cards = buildDecisionCards((id) => id === 'gfl/status' ? { market: { day: 7, suspicion: 3, purchased: ['offer-7-0'], offers: [{ id: 'offer-7-0', name: '서약반지', price: 6000 }, { id: 'offer-7-1', name: '옵티컬', price: 60 }] } } : null);
+    const card = cards.find((entry) => entry.key === 'gfl-market:7');
+    expect(card?.dismissible).toBe(true);
+    expect(card?.desc).toContain('의심도 3');
+    expect(card?.options).toHaveLength(1);
+    expect(card?.options[0]).toMatchObject({ id: 'gfl/market/buy', params: { offerId: 'offer-7-1' }, mode: 'ledger' });
+  });
 });

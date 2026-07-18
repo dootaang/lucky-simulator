@@ -670,7 +670,7 @@ describe("Girls Frontline native module", () => {
     expect(game.select('gfl/documents')).toMatchObject({ completed: 2, unlockedCount: 2, documents: [{ unlocked: true }, { unlocked: true }, { unlocked: false }] });
     expect(game.select('gfl/unlockedDocs')).toEqual({ count: 2, ids: ['doc0', 'doc1'] });
   });
-  it('하루 마감 습격은 방위 Lv1 15%·Lv5 3% 경계를 쓰고 발생 여부와 무관하게 RNG 두 번을 소비한다', () => {
+  it('하루 마감 습격·사회 정산은 발생 여부와 무관하게 RNG 13회(습격 2+사회 11)를 고정 소비한다', () => {
     const seedFor = (predicate: (raid: number, defense: number) => boolean) => {
       for (let seed = 1; seed < 10_000; seed++) { const rng = createRng(seed), raid = rng.int(1, 100), defense = rng.int(1, 20); if (predicate(raid, defense)) return seed; }
       throw new Error('seed not found');
@@ -682,13 +682,18 @@ describe("Girls Frontline native module", () => {
       if (occupied) { game.dispatch('gfl/doll/acquire', { dollId: 'm4a1' }); game.dispatch('gfl/echelon/assign', { echelonId: 'e1', slot: 0, dollId: 'm4a1' }); }
       return game;
     };
+    // 사회 정산(태만·항명·뜬소문·감사·암시장 제안)이 11회를 추가로 항상 소비한다 — 습격 2회와 함께 13회 고정.
+    const socialDraws = (rng: ReturnType<typeof createRng>) => {
+      for (let count = 0; count < 7; count++) rng.int(1, count === 0 || count === 2 || count === 4 ? 100 : 1000);
+      rng.int(1, 20); rng.int(1, 1000); rng.int(1, 1000); rng.int(1, 1000);
+    };
     const success = make(successSeed), beforeSuccess = success.snapshot().rng, successLog = success.dispatch('gfl/time/end-day').log[0] as any,
-      expectedSuccess = createRng(0); expectedSuccess.restore(beforeSuccess); expectedSuccess.int(1, 100); expectedSuccess.int(1, 20);
+      expectedSuccess = createRng(0); expectedSuccess.restore(beforeSuccess); expectedSuccess.int(1, 100); expectedSuccess.int(1, 20); socialDraws(expectedSuccess);
     expect(successLog.raid).toMatchObject({ occurred: true, chance: 15, success: true, resourceDelta: 100 }); expect(success.snapshot().rng).toBe(expectedSuccess.snapshot());
     const fail = make(failSeed, 1, false), failLog = fail.dispatch('gfl/time/end-day').log[0] as any;
     expect(failLog.raid).toMatchObject({ occurred: true, chance: 15, success: false, defensePower: 0, resourceDelta: expect.any(Number) }); expect(failLog.raid.resourceDelta).toBeLessThan(0);
     const none = make(noneSeed, 5), beforeNone = none.snapshot().rng, noneLog = none.dispatch('gfl/time/end-day').log[0] as any,
-      expectedNone = createRng(0); expectedNone.restore(beforeNone); expectedNone.int(1, 100); expectedNone.int(1, 20);
+      expectedNone = createRng(0); expectedNone.restore(beforeNone); expectedNone.int(1, 100); expectedNone.int(1, 20); socialDraws(expectedNone);
     expect(noneLog.raid).toMatchObject({ occurred: false, chance: 3, success: false, resourceDelta: 0 }); expect(none.snapshot().rng).toBe(expectedNone.snapshot());
   });
   it('원본 인형 분해 보상과 합성 장비 해체 환급을 확인 절차 뒤에만 지급한다', () => {
@@ -1065,5 +1070,156 @@ describe("Girls Frontline native module", () => {
   it("병과 전투 성향에서 권장 열과 세력 배지를 셀렉터로 노출한다", () => {
     const guide = runtime().select("gfl/formation/guide");
     expect(guide).toMatchObject({ SG: "전열", SMG: "전열", AR: "중열", HG: "중열", MG: "후열", RF: "후열", factions: { 철혈: "⚙", 바랴그단: "🎯", "E.L.I.D": "☣", 패러데우스: "⬡" } });
+  });
+  it("근무 배치가 적성 효과·훈련 보너스·기분 소모·수면 절반을 만든다", () => {
+    const source: any = structuredClone(schema);
+    source.initialState.clock.phase = "저녁";
+    const game = runtime(source, 5);
+    game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); // AR — base1(훈련) 적성
+    expect(game.dispatch("gfl/crew/assign", { facilityId: "base9", dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_crew_facility_invalid" });
+    expect(game.dispatch("gfl/crew/assign", { facilityId: "base1", dollId: "m4a1" }).log[0]).toMatchObject({ ok: true, aptitude: true });
+    expect(game.dispatch("gfl/crew/assign", { facilityId: "base4", dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_crew_already_assigned" });
+    expect((game.select("gfl/crew") as any[]).find((row) => row.facilityId === "base1")).toMatchObject({ effect: 1.5, slacked: false });
+    game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
+    expect((game.select("gfl/echelons") as any[])[0].power).toBe(Math.round(1000 * 1.13)); // 10%p + 1.5×2%p
+    const before = Number((game.state.gfl as any).dolls.m4a1.mood);
+    game.dispatch("gfl/time/advance"); // 저녁→밤: 근무 피로 −2(적성)
+    expect(Number((game.state.gfl as any).dolls.m4a1.mood)).toBe(before - 2);
+    const beforeEnd = Number((game.state.gfl as any).dolls.m4a1.mood);
+    game.dispatch("gfl/time/end-day"); // 밤→심야→새벽→오전(3회 −2) + 수면 회복 절반(+5)
+    expect(Number((game.state.gfl as any).dolls.m4a1.mood)).toBe(beforeEnd - 6 + 5);
+    expect(game.dispatch("gfl/crew/remove", { facilityId: "base1", dollId: "m4a1" }).log[0]).toMatchObject({ ok: true });
+    expect(game.dispatch("gfl/crew/remove", { facilityId: "base1", dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_crew_not_assigned" });
+  });
+  it("불만도가 태만·항명을 낳고 관계 성공이 항명을 푼다", () => {
+    const seedFor = () => {
+      for (let seed = 1; seed < 30000; seed++) {
+        const rng = createRng(seed);
+        rng.int(1, 100); rng.int(1, 20); // 습격 2회
+        const slack = rng.int(1, 100); rng.int(1, 1000);
+        const mutiny = rng.int(1, 100);
+        if (slack <= 50 && mutiny <= 20) return seed;
+      }
+      throw new Error("seed not found");
+    };
+    const source: any = structuredClone(schema);
+    source.initialState.clock.phase = "저녁";
+    const game = runtime(source, seedFor());
+    game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    game.dispatch("gfl/doll/acquire", { dollId: "ump45" });
+    game.dispatch("gfl/crew/assign", { facilityId: "base1", dollId: "m4a1" });
+    (game.state.gfl as any).dissatisfaction = 100;
+    const log = game.dispatch("gfl/time/end-day").log[0] as any;
+    expect(log.social.dissatisfaction).toBeGreaterThanOrEqual(90);
+    expect(log.social.slack).toMatchObject({ facilityId: "base1", dollId: "m4a1" });
+    expect((game.select("gfl/crew") as any[]).find((row) => row.facilityId === "base1")).toMatchObject({ slacked: true, effect: 0 });
+    expect(log.social.mutiny).toBeDefined();
+    const mutineer = String(log.social.mutiny.dollId);
+    game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: mutineer });
+    expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_doll_refusal" });
+    const unit = (game.state.gfl as any).dolls[mutineer];
+    unit.affinity = 490; unit.mood = 1000; // 보정 +19 — 항상 성공
+    expect(game.dispatch("gfl/relation/check", { dollId: mutineer, choice: "talk" }).log[0]).toMatchObject({ ok: true });
+    expect((game.state.gfl as any).dolls[mutineer].refusal).toBe(false);
+    expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: true });
+  });
+  it("가공 라인과 시설 특화가 산출·수복을 바꾼다", () => {
+    const source: any = structuredClone(schema);
+    source.initialState.clock.phase = "저녁";
+    source.initialState.gfl.facilities = { base1: 1, base2: 1, base3: 5, base4: 5, base5: 1 };
+    const game = runtime(source, 9);
+    game.dispatch("gfl/start", { mode: "commander" });
+    expect(game.dispatch("gfl/facility/specialize", { facilityId: "base1", branch: "assault" }).log[0]).toMatchObject({ ok: false, reason: "gfl_specialize_level_required" });
+    expect(game.dispatch("gfl/facility/specialize", { facilityId: "base4", branch: "materiel" }).log[0]).toMatchObject({ ok: true });
+    expect(game.dispatch("gfl/facility/specialize", { facilityId: "base4", branch: "finance" }).log[0]).toMatchObject({ ok: false, reason: "gfl_specialize_already" });
+    expect(game.dispatch("gfl/refinery/start", { recipe: "nope" }).log[0]).toMatchObject({ ok: false, reason: "gfl_refinery_recipe_invalid" });
+    expect(game.dispatch("gfl/refinery/start", { recipe: "parts" }).log[0]).toMatchObject({ ok: true });
+    expect(game.dispatch("gfl/refinery/start", { recipe: "parts" }).log[0]).toMatchObject({ ok: true });
+    expect(game.dispatch("gfl/refinery/start", { recipe: "parts" }).log[0]).toMatchObject({ ok: false, reason: "gfl_refinery_slots_full" });
+    const partsBefore = Number((game.state.resources as any).parts);
+    game.dispatch("gfl/time/advance"); game.dispatch("gfl/time/advance");
+    const refinery = game.select("gfl/refinery") as any;
+    expect(refinery.jobs[0].status).toBe("complete");
+    expect(game.dispatch("gfl/refinery/collect", { jobId: refinery.jobs[0].id }).log[0]).toMatchObject({ ok: true });
+    expect(Number((game.state.resources as any).parts)).toBe(partsBefore + 20);
+    const endLog = game.dispatch("gfl/time/end-day").log[0] as any;
+    expect(endLog.daily.income).toBe(Math.round(2500 * 1.15)); // 물자 특화 +15%
+    game.dispatch("gfl/facility/specialize", { facilityId: "base3", branch: "rapid" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const hurt = (game.state.gfl as any).dolls.m4a1; hurt.hp.cur = 100;
+    game.dispatch("gfl/location/move", { locationId: "base-maintenance" });
+    const job = (game.dispatch("gfl/repair/start", { dollId: "m4a1" }).log[0] as any).job;
+    expect(job.remaining).toBe(1); // 고속 정비 −1
+  });
+  it("뜬소문 수위 옵션과 암시장 감사가 결정론으로 작동한다", () => {
+    const gossipSeed = (() => {
+      for (let seed = 1; seed < 30000; seed++) {
+        const rng = createRng(seed);
+        rng.int(1, 100); rng.int(1, 20);
+        const slack = rng.int(1, 100); rng.int(1, 1000);
+        const mutiny = rng.int(1, 100); rng.int(1, 1000); rng.int(1, 1000);
+        void mutiny;
+        const rolled = createRng(seed); rolled.int(1, 100); rolled.int(1, 20);
+        const s2 = rolled.int(1, 100); rolled.int(1, 1000); const m2 = rolled.int(1, 100); rolled.int(1, 1000); rolled.int(1, 1000);
+        void s2; void m2;
+        const again = createRng(seed); again.int(1, 100); again.int(1, 20);
+        const slackRoll = again.int(1, 100); again.int(1, 1000); const mutinyRoll = again.int(1, 100);
+        const gossipRoll = again.int(1, 100);
+        if (slackRoll > 60 && mutinyRoll > 30 && gossipRoll <= 25) return seed;
+      }
+      throw new Error("seed not found");
+    })();
+    const make = (mode: "off" | "mild" | "full") => {
+      const source: any = structuredClone(schema);
+      source.initialState.clock.phase = "저녁";
+      const game = runtime(source, gossipSeed);
+      game.dispatch("gfl/start", { mode: "commander" });
+      game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+      game.dispatch("gfl/doll/acquire", { dollId: "ump45" });
+      game.dispatch("gfl/settings/update", { gossip: mode });
+      (game.state.gfl as any).dissatisfaction = 100;
+      return { game, log: game.dispatch("gfl/time/end-day").log[0] as any };
+    };
+    const off = make("off");
+    expect(off.log.social.gossip).toBeUndefined();
+    const mild = make("mild");
+    expect(mild.log.social.gossip.mode).toBe("mild");
+    const full = make("full");
+    const first = String(full.log.social.gossip.targets[0].dollId);
+    expect(Number((full.game.state.gfl as any).dolls[first].affinity)).toBe(-5);
+    // 암시장 — 6일차 마감 → 7일차 브로커 제안 3종, 구매로 의심도 상승
+    const marketSource: any = structuredClone(schema);
+    marketSource.initialState.day = 6; marketSource.initialState.clock.day = 6; marketSource.initialState.clock.phase = "저녁";
+    const market = runtime(marketSource, 11);
+    market.dispatch("gfl/start", { mode: "commander" });
+    market.dispatch("gfl/time/end-day");
+    const offers = ((market.state.gfl as any).market?.offers ?? []) as any[];
+    expect(offers).toHaveLength(3);
+    const goldBefore = Number(market.state.gold);
+    expect(market.dispatch("gfl/market/buy", { offerId: offers[0].id }).log[0]).toMatchObject({ ok: true });
+    expect(Number(market.state.gold)).toBe(goldBefore - Number(offers[0].price));
+    expect(market.dispatch("gfl/market/buy", { offerId: offers[0].id }).log[0]).toMatchObject({ ok: false, reason: "gfl_market_offer_sold" });
+    expect(Number((market.state.gfl as any).market.suspicion)).toBe(Math.ceil(Number(offers[0].price) / 1000));
+    // 감사 적발 — 의심도 30, auditRoll<12 시드 탐색(습격2+사회 7회 뒤 8번째가 d20)
+    const auditSeed = (() => {
+      for (let seed = 1; seed < 30000; seed++) {
+        const rng = createRng(seed);
+        rng.int(1, 100); rng.int(1, 20);
+        rng.int(1, 100); rng.int(1, 1000); rng.int(1, 100); rng.int(1, 1000); rng.int(1, 1000);
+        if (rng.int(1, 20) < 12) return seed;
+      }
+      throw new Error("seed not found");
+    })();
+    const auditSource: any = structuredClone(schema);
+    auditSource.initialState.clock.phase = "저녁";
+    const audit = runtime(auditSource, auditSeed);
+    audit.dispatch("gfl/start", { mode: "commander" });
+    (audit.state.gfl as any).market = { day: 1, offers: [], suspicion: 30, purchased: [] };
+    const auditGold = Number(audit.state.gold);
+    const auditLog = audit.dispatch("gfl/time/end-day").log[0] as any;
+    expect(auditLog.social.audit).toMatchObject({ caught: true, seized: Math.floor(auditGold * .2) });
+    expect(Number((audit.state.gfl as any).market.suspicion)).toBe(0);
   });
 });
