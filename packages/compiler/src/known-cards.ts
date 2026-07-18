@@ -8,7 +8,7 @@ import { extractTextPanels } from "./text-panels.ts";
 import type { CompileResult } from "./index.ts";
 
 type Row = Record<string, unknown>;
-export const GFL_TEMPLATE_VERSION = "1.4.0";
+export const GFL_TEMPLATE_VERSION = "1.5.0";
 const record = (value: unknown): Row =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Row)
@@ -99,16 +99,18 @@ function dollRows(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
     grades = table(mined.tables.DOLL_GRADE),
     stats = dollStatLines(parsed),
     contracts = dollContractLines(parsed);
-  let recovered = 0;
+  let recovered = 0, normalizedMg3 = 0;
   const rows = Object.entries(classes).map(([name, value]) => {
     const grade = Math.max(1, Math.min(6, number(grades[name], 3))),
       row = stats.get(name),
       contract = contracts.get(name);
     if (row) recovered += 1;
+    const rawClass = text(value || "AR"), className = rawClass === "MG3" ? "MG" : rawClass;
+    if (rawClass === "MG3") normalizedMg3 += 1;
     return {
       id: id(name),
       name,
-      class: text(value || "AR"),
+      class: className,
       grade,
       maxHp: number(row?.[0], DOLL_FALLBACK.maxHp),
       maxMp: number(row?.[1], DOLL_FALLBACK.maxMp),
@@ -119,7 +121,7 @@ function dollRows(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
       asset: name,
     };
   });
-  return { rows, recovered };
+  return { rows, recovered, normalizedMg3, unknownClasses: [...new Set(rows.map((row) => row.class).filter((value) => !["AR","SMG","RF","HG","MG","SG"].includes(value)))] };
 }
 function itemRows(mined: ReturnType<typeof mineCard>) {
   return Object.entries(table(mined.tables.ITEM_DATA)).map(([name, value]) => {
@@ -167,15 +169,21 @@ function missionRows(mined: ReturnType<typeof mineCard>) {
   const east = table(mined.tables.EAST_FRONT_MISSIONS);
   return Object.entries(table(mined.tables.MISSION_DATA)).map(
     ([key, value]) => {
-      const row = record(value),
-        isEast = Boolean(east[key]);
+      const row = record(value), isEast = Boolean(east[key]), enemy = text(row.enemy), factions: string[] = [];
+      for (const match of enemy.matchAll(/철혈|바랴그단|패러데우스|E\.?L\.?I\.?D|감염체/g)) {
+        const faction = /E\.?L\.?I\.?D|감염체/.test(match[0]) ? "E.L.I.D" : match[0];
+        if (!factions.includes(faction)) factions.push(faction);
+      }
+      const boss = text(row.boss).trim();
       return {
         id: id(key),
         code: key,
         name: text(row.name || key),
         theater: missionTheater(key),
         difficulty: text(row.diff),
-        enemy: text(row.enemy),
+        enemy,
+        factions,
+        ...(boss ? { boss } : {}),
         power: number(row.power, 800),
         description: text(row.desc),
         rewards: reward(row.reward),
@@ -204,13 +212,13 @@ function facilities(mined: ReturnType<typeof mineCard>) {
   });
 }
 function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
-  const { rows: dolls, recovered } = dollRows(parsed, mined),
+  const { rows: dolls, recovered, normalizedMg3, unknownClasses } = dollRows(parsed, mined),
     items = itemRows(mined),
     equipment = equipmentRows(mined),
     missions = missionRows(mined),
     defaults = mined.defaultVars.numbers;
   return {
-    recovered,
+    recovered, normalizedMg3, unknownClasses,
     schema: {
       meta: {
         id: "girls-frontline-ember",
@@ -377,19 +385,19 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
             {
               id: "echelon-1",
               name: "제1제대",
-              slots: [null, null, null, null, null],
+              slots: [null, null, null, null, null, null],
               fairyId: null,
             },
             {
               id: "echelon-2",
               name: "제2제대",
-              slots: [null, null, null, null, null],
+              slots: [null, null, null, null, null, null],
               fairyId: null,
             },
             {
               id: "echelon-3",
               name: "제3제대",
-              slots: [null, null, null, null, null],
+              slots: [null, null, null, null, null, null],
               fairyId: null,
             },
           ],
@@ -429,7 +437,7 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
   const prompt = buildCompilerPrompt(parsed, mined),
     textPanels = extractTextPanels(extractRegexScripts(parsed)),
     diagnosis = { ...diagnoseCard(parsed, mined, prompt.coverage), textPanels },
-    { recovered, schema } = gflSchema(parsed, mined),
+    { recovered, normalizedMg3, unknownClasses, schema } = gflSchema(parsed, mined),
     moduleIds = ["genre.gfl"],
     presets = screenPresetsFor(moduleIds, schema);
   const dollCount = (schema.gfl as { dolls: unknown[] }).dolls.length,
@@ -453,6 +461,8 @@ export function compileKnownCard(parsed: ParsedCard): CompileResult | null {
           },
         ]
       : []),
+    ...(normalizedMg3 ? [{ level: "warn" as const, path: "gfl.dolls", message: `병과 오타 정규화(MG3→MG) ${normalizedMg3}건`, source: "template" as const }] : []),
+    ...unknownClasses.map((className) => ({ level: "warn" as const, path: "gfl.dolls", message: `미지 병과 ${className} — 전투에서 AR 프로필로 폴백`, source: "template" as const })),
     {
       level: "warn",
       path: "combat",

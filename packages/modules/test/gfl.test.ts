@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRng, createState } from "@simbot/kernel";
 import { createCoreRegistry, gflModule } from "../src/index.ts";
+import { gflFormationRow } from "../src/gfl.ts";
 
 const schema = {
   initialState: {
@@ -153,6 +154,35 @@ function runtime(source: any = schema, seed: unknown = 7) {
   };
 }
 describe("Girls Frontline native module", () => {
+  it("applies deterministic class, row, faction, and boss combat composition rules", () => {
+    const source: any = structuredClone(schema);
+    source.initialState.gfl.echelons[0].slots = [null, null, null, null, null];
+    source.gfl.dolls = [
+      { id:"sg",name:"SG",class:"SG",grade:1,maxHp:1200,power:180 },
+      { id:"smg",name:"SMG",class:"SMG",grade:1,maxHp:1000,power:180 },
+      { id:"hg",name:"HG",class:"HG",grade:1,maxHp:800,power:180 },
+      { id:"ar",name:"AR",class:"AR",grade:1,maxHp:800,power:180 },
+      { id:"mg",name:"MG",class:"MG",grade:1,maxHp:800,power:180 },
+      { id:"rf",name:"RF",class:"RF",grade:1,maxHp:800,power:180 },
+    ];
+    source.gfl.missions[0] = { id:"alpha",name:"ALPHA",power:1800,enemy:"철혈",enemyCount:3,factions:["철혈"],boss:"Scarecrow",rewards:{} };
+    const fight = () => { const game=runtime(structuredClone(source),91); game.dispatch("gfl/start",{mode:"commander"}); for(const [slot,unit] of source.gfl.dolls.slice(0,5).entries()){game.dispatch("gfl/doll/acquire",{dollId:unit.id});game.dispatch("gfl/echelon/assign",{echelonId:"e1",slot,dollId:unit.id});} game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); return game.dispatch("gfl/sortie/resolve").log[0] as any; };
+    const first=fight(), second=fight(), allies=first.rounds.flatMap((round:any)=>round.exchanges.filter((row:any)=>row.side==="ally"));
+    expect(first).toEqual(second); // 가중 타겟팅도 같은 시드면 같은 결과
+    expect(allies.some((row:any)=>row.hitBuff===1)).toBe(true);
+    expect(allies.some((row:any)=>row.actorId==="mg"&&row.roundFactor===1.4)).toBe(true);
+    expect(allies.some((row:any)=>row.actorId==="mg"&&row.rowFactor===1.38)).toBe(true);
+    expect(allies.some((row:any)=>row.actorId==="mg"&&row.counter===true)).toBe(true);
+    expect(first.factionLabel).toContain("RF·MG 유리");
+    expect(first.enemies[0]).toMatchObject({id:"boss",name:"Scarecrow",maxHp:990,boss:true});
+    expect(first.allies.every((unit:any)=>typeof unit.hpBefore==="number")).toBe(true);
+    expect(gflFormationRow(0)).toBe("전열"); expect(gflFormationRow(2)).toBe("중열"); expect(gflFormationRow(4)).toBe("후열");
+  });
+  it("applies the RF maximum-HP target multiplier", () => {
+    const source:any=structuredClone(schema); source.gfl.dolls=[{id:"rf",name:"RF",class:"RF",grade:5,maxHp:900,power:200}]; source.gfl.missions[0].enemies=[{id:"large",power:100,hp:1000},{id:"small",power:100,hp:200}];
+    const game=runtime(source,4); game.dispatch("gfl/start",{mode:"commander"}); game.dispatch("gfl/doll/acquire",{dollId:"rf"}); game.dispatch("gfl/echelon/assign",{echelonId:"e1",slot:4,dollId:"rf"}); game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); const battle=game.dispatch("gfl/sortie/resolve").log[0] as any;
+    expect(battle.rounds[0].exchanges.find((row:any)=>row.side==="ally")).toMatchObject({actorId:"rf",maxHpFactor:1.3,rowFactor:1.38});
+  });
   it("runs start, echelon, sortie, combat settlement, repair and manufacturing deterministically", () => {
     const game = runtime();
     expect(

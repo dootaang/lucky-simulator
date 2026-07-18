@@ -71,16 +71,26 @@ test('저전투력 출격 위험도와 전술 교전 과정을 관리 화면 안
   // 수송 도착은 서사화 행동이라 관리창이 닫히고 채팅에 장면이 흐른다(a7fc56d) — 다시 연다.
   await page.getByRole('button',{name:'관리 화면 열기'}).click();
   await console.getByRole('button',{name:'제대',exact:true}).click();
+  await expect(console.locator('.slots .slot')).toHaveCount(6);
+  await expect(console.locator('.slots .slot').filter({hasText:'전열'})).toHaveCount(2);
+  await expect(console.locator('.slots .slot').filter({hasText:'중열'})).toHaveCount(2);
+  await expect(console.locator('.slots .slot').filter({hasText:'후열'})).toHaveCount(2);
+  await expect(console.locator('.formation-hint')).toContainText('RF·MG는 후열');
   await console.locator('.roster button').first().click();
-  await console.getByRole('button',{name:'작전',exact:true}).click();
+  await console.getByRole('button',{name:'작전',exact:true}).click({force:true});
   await console.getByRole('button',{name:/레드·오렌지 작전구역/}).click();
   await console.getByRole('button',{name:/ALPHA/}).click();
   await expect(console.locator('.risk')).toContainText('성공 가능성 약');
   await expect(console.locator('.risk')).toContainText('전투력이 낮아도 출격');
+  await expect(console.locator('.risk')).toContainText('상성: 기계 장갑 부대');
+  await expect(console.locator('.risk')).toContainText('제대 내 유리 병과 0명');
   await console.getByRole('button',{name:'전술 교전',exact:true}).click();
+  await expect(console.locator('.brief .combat-roster')).toContainText('HP');
   await expect(console.getByRole('button',{name:/집중 사격/})).toBeVisible();
   await console.getByRole('button',{name:/균형 전술/}).click();
   await expect(console.locator('.battle-report')).toContainText('최근 전투 보고');
+  await expect(console.locator('.battle-report .combat-roster')).toContainText('HP');
+  await expect(console.locator('.battle-report')).toContainText('상성: 기계 장갑 부대');
 });
 
 test('관계 선택지 캡슐과 1:1 대화 세션이 엔진 상태로 작동한다',async({page})=>{

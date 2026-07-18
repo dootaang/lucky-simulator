@@ -22,6 +22,27 @@ type Doll = RuntimeRecord & {
   maxMp?: number;
   mood?: number;
 };
+type FormationRow = "전열" | "중열" | "후열";
+const CLASS_COMBAT: Record<string,{aggro:number;damageTaken:number;vsMaxHp?:number;round1?:number;round3plus?:number;hitBuffAlly?:number}> = {
+  AR: { aggro: 1, damageTaken: 1 }, SMG: { aggro: 3, damageTaken: .68 }, SG: { aggro: 4, damageTaken: .6 },
+  MG: { aggro: 1, damageTaken: 1, round1: 1.4, round3plus: .8 }, RF: { aggro: .5, damageTaken: 1, vsMaxHp: 1.3 },
+  HG: { aggro: .5, damageTaken: 1, hitBuffAlly: 1 },
+};
+const ROW_AGGRO: Record<FormationRow, number> = { 전열: 2.4, 중열: 1, 후열: .4 };
+const REAR_DAMAGE_BONUS = 1.38;
+const FACTION_COUNTER: Record<string,{advantaged:string[];label:string}> = {
+  "철혈": { advantaged: ["RF","MG"], label: "기계 장갑 부대 — RF·MG 유리" },
+  "E.L.I.D": { advantaged: ["MG","SG","AR"], label: "감염 군집 — MG·SG·AR 유리" },
+  "바랴그단": { advantaged: [], label: "적성 인형 부대 — 상성 중립" },
+  "패러데우스": { advantaged: ["SG","SMG"], label: "정예 화력 — 방패 병과 가치 상승" },
+};
+const combatProfile = (className: unknown) => CLASS_COMBAT[string(className)] ?? CLASS_COMBAT.AR!;
+export const gflFormationRow = (index: number): FormationRow => index < 2 ? "전열" : index < 4 ? "중열" : "후열";
+function factionSummary(value: RuntimeRecord) {
+  const factions = list<string>(value.factions), counters = factions.map((name) => FACTION_COUNTER[name]).filter((counter): counter is NonNullable<typeof counter> => Boolean(counter)),
+    advantagedClasses = [...new Set(counters.flatMap((counter) => counter.advantaged))];
+  return { factions, counterLabel: counters.map((counter) => counter.label).join(" / "), advantagedClasses };
+}
 const config = (schema: RuntimeRecord) => record(schema.gfl);
 const dolls = (schema: RuntimeRecord) => list<Doll>(config(schema).dolls);
 const missions = (schema: RuntimeRecord) =>
@@ -352,6 +373,10 @@ type GflCombatant = RuntimeRecord & {
   hp: number;
   maxHp: number;
   power: number;
+  class?: string;
+  row?: FormationRow;
+  hpBefore?: number;
+  boss?: boolean;
 };
 
 function resolveSortie(c: Context) {
@@ -371,12 +396,11 @@ function resolveSortie(c: Context) {
     tacticHit = tactic === "focus" ? 2 : tactic === "cover" ? -2 : 0,
     allyDamageFactor = tactic === "focus" ? 1.15 : tactic === "cover" ? .85 : 1,
     incomingFactor = (tactic === "focus" ? 1.15 : tactic === "cover" ? .7 : 1) * (condition === "favorable" ? .85 : condition === "unfavorable" ? 1.15 : condition === "disastrous" ? 1.3 : 1),
-    values = owned(c.state),
+    values = owned(c.state), missionFaction = factionSummary(operation),
     allies: GflCombatant[] = list<unknown>(entry.slots)
-      .filter(Boolean)
-      .map((rawId) => record(values[string(rawId)]))
-      .filter((unit) => Object.keys(unit).length > 0)
-      .map((unit) => {
+      .map((rawId, index) => ({ unit: record(values[string(rawId)]), row: gflFormationRow(index) }))
+      .filter(({ unit }) => Object.keys(unit).length > 0)
+      .map(({ unit, row }) => {
         const hp = record(unit.hp);
         return {
           id: string(unit.id),
@@ -385,12 +409,13 @@ function resolveSortie(c: Context) {
           maxHp: Math.max(1, number(hp.max, 1)),
           power: Math.max(1, number(unit.power, 1)),
           grade: number(unit.grade, 1),
+          class: string(unit.class), row, hpBefore: Math.max(0, number(hp.cur)),
         };
       });
   if (!allies.some((unit) => unit.hp > 0))
     return fail(c, "gfl_echelon_incapacitated");
 
-  const configured = list<RuntimeRecord>(operation.enemies),
+  const configured = list<RuntimeRecord>(operation.enemies), bossName = string(operation.boss).trim(),
     enemyCount = configured.length
       ? Math.min(5, configured.length)
       : clamp(
@@ -405,42 +430,48 @@ function resolveSortie(c: Context) {
         ),
     totalEnemyPower = Math.max(100, number(operation.power, 100)),
     enemies: GflCombatant[] = Array.from({ length: enemyCount }, (_, index) => {
-      const source = configured[index] ?? {},
+      const isBoss = !configured.length && Boolean(bossName) && index === 0, source = configured[index] ?? {},
         unitPower = Math.max(
           20,
-          number(source.power, Math.round(totalEnemyPower / enemyCount)),
+          number(source.power, Math.round(isBoss ? totalEnemyPower * .5 : bossName && !configured.length && enemyCount > 1 ? totalEnemyPower * .5 / (enemyCount - 1) : totalEnemyPower / enemyCount)),
         ),
-        maxHp = Math.max(80, number(source.hp, Math.round(unitPower * 0.75)));
+        maxHp = Math.max(80, number(source.hp, Math.round(isBoss ? unitPower * 1.1 : unitPower * .75)));
       return {
-        id: string(source.id || `enemy-${index + 1}`),
+        id: string(source.id || (isBoss ? "boss" : `enemy-${index + 1}`)),
         name: string(
-          source.name ||
+          source.name || (isBoss ? bossName :
             (enemyCount === 1
               ? operation.enemy || "적대 세력"
-              : `${operation.enemy || "적대 세력"} ${index + 1}`),
+              : `${operation.enemy || "적대 세력"} ${index + 1}`)),
         ),
         hp: maxHp,
         maxHp,
         power: unitPower,
+        boss: isBoss,
       };
     }),
     rounds: RuntimeRecord[] = [],
     defenseReduction =
       DEFENSE_REDUCTION[facilityLevel(c.state, "base2") - 1] ?? 0;
 
+  const hgHitBuff = Math.min(2, allies.reduce((sum, ally) => sum + number(combatProfile(ally.class).hitBuffAlly), 0));
   for (let round = 1; round <= 8; round++) {
     const exchanges: RuntimeRecord[] = [];
     for (const ally of allies.filter((unit) => unit.hp > 0)) {
       const target = enemies.find((unit) => unit.hp > 0);
       if (!target) break;
-      const roll = c.rng.int(1, 20),
+      const profile = combatProfile(ally.class), counter = missionFaction.advantagedClasses.includes(string(ally.class)),
+        roundFactor = round === 1 ? number(profile.round1, 1) : round >= 3 ? number(profile.round3plus, 1) : 1,
+        rowFactor = ally.row === "후열" && (profile.vsMaxHp || profile.round1) ? REAR_DAMAGE_BONUS : 1,
+        maxEnemyHp = Math.max(...enemies.map((unit) => unit.maxHp)), maxHpFactor = profile.vsMaxHp && target.maxHp === maxEnemyHp ? profile.vsMaxHp : 1,
+        roll = c.rng.int(1, 20),
         critical = roll === 20,
-        hit = roll + number(ally.grade, 1) + conditionHit + tacticHit >= 8,
+        hit = roll + number(ally.grade, 1) + conditionHit + tacticHit + hgHitBuff + (counter ? 2 : 0) >= 8,
         dealt = hit
           ? Math.max(
               1,
               Math.round(
-                ally.power * 0.24 * (critical ? 1.6 : 1) * allyDamageFactor - target.power * 0.02,
+                ally.power * 0.24 * (critical ? 1.6 : 1) * allyDamageFactor * roundFactor * rowFactor * maxHpFactor - target.power * 0.02,
               ),
             )
           : 0;
@@ -454,12 +485,20 @@ function resolveSortie(c: Context) {
         critical,
         damage: dealt,
         targetHp: target.hp,
+        counter,
+        hitBuff: hgHitBuff,
+        roundFactor,
+        rowFactor,
+        maxHpFactor,
       });
     }
     for (const foe of enemies.filter((unit) => unit.hp > 0)) {
       const living = allies.filter((unit) => unit.hp > 0);
       if (!living.length) break;
-      const target = living[c.rng.int(0, living.length - 1)]!,
+      const weights = living.map((unit) => Math.round(combatProfile(unit.class).aggro * ROW_AGGRO[unit.row ?? "후열"] * 100)),
+        targetRoll = c.rng.int(1, weights.reduce((sum, weight) => sum + weight, 0));
+      let cursor = 0;
+      const target = living[weights.findIndex((weight) => (cursor += weight) >= targetRoll)]!,
         roll = c.rng.int(1, 20),
         critical = roll === 20,
         hit = roll >= 8,
@@ -471,7 +510,8 @@ function resolveSortie(c: Context) {
               ),
             )
           : 0,
-        dealt = Math.max(0, Math.round(raw * (1 - defenseReduction / 100) * incomingFactor));
+        damageTaken = target.row === "후열" ? 1 : combatProfile(target.class).damageTaken,
+        dealt = Math.max(0, Math.round(raw * damageTaken * (1 - defenseReduction / 100) * incomingFactor));
       target.hp = Math.max(0, target.hp - dealt);
       exchanges.push({
         side: "enemy",
@@ -512,17 +552,19 @@ function resolveSortie(c: Context) {
       ]),
     ];
   }
-  const allyResults = allies.map(({ id, name, hp, maxHp }) => ({
+  const allyResults = allies.map(({ id, name, hp, maxHp, hpBefore }) => ({
       id,
       name,
       hp,
       maxHp,
+      hpBefore,
     })),
-    enemyResults = enemies.map(({ id, name, hp, maxHp }) => ({
+    enemyResults = enemies.map(({ id, name, hp, maxHp, boss }) => ({
       id,
       name,
       hp,
       maxHp,
+      boss,
     })),
     next = state(c.state);
   next.lastBattle = {
@@ -536,6 +578,7 @@ function resolveSortie(c: Context) {
     rewardRate,
     tactic,
     missionCheck: { roll: missionRoll, modifier: risk.modifier, total: missionTotal, condition, risk },
+    factionLabel: missionFaction.counterLabel,
   };
   next.sortie = null;
   c.state.gfl = next;
@@ -553,6 +596,7 @@ function resolveSortie(c: Context) {
     rewardRate,
     tactic,
     missionCheck: { roll: missionRoll, modifier: risk.modifier, total: missionTotal, condition, risk },
+    factionLabel: missionFaction.counterLabel,
     dailyAwards,
     llmCallsRequired: 0,
   });
@@ -1626,6 +1670,7 @@ export function gflModule(): ModuleDefinition {
       "gfl/echelons": (...args) =>
         echelons(record(args[1])).map((entry) => ({
           ...entry,
+          slots: list<unknown>(entry.slots).map((id, index) => ({ id, row: gflFormationRow(index) })),
           rawPower: power(record(args[1]), entry),
           power: effectivePower(record(args[1]), entry),
           trainingBonus:
@@ -1634,6 +1679,7 @@ export function gflModule(): ModuleDefinition {
       "gfl/missions": (...args) =>
         missions(record(args[0])).map((value) => ({
           ...value,
+          ...factionSummary(value),
           completed: list<string>(
             state(record(args[1])).completedMissions,
           ).includes(string(value.id)),
