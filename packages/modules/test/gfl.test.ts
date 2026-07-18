@@ -1062,4 +1062,8 @@ describe("Girls Frontline native module", () => {
       share = logisticsIncome / totalIncome;
     expect(share).toBeLessThanOrEqual(.4);
   });
+  it("병과 전투 성향에서 권장 열과 세력 배지를 셀렉터로 노출한다", () => {
+    const guide = runtime().select("gfl/formation/guide");
+    expect(guide).toMatchObject({ SG: "전열", SMG: "전열", AR: "중열", HG: "중열", MG: "후열", RF: "후열", factions: { 철혈: "⚙", 바랴그단: "🎯", "E.L.I.D": "☣", 패러데우스: "⬡" } });
+  });
 });

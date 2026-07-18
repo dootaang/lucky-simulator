@@ -60,12 +60,15 @@ function commanderStatus(value: RuntimeRecord) {
     title: level >= 20 ? "백전의 지휘관" : null,
   };
 }
-const FACTION_COUNTER: Record<string,{advantaged:string[];label:string}> = {
-  "철혈": { advantaged: ["RF","MG"], label: "기계 장갑 부대 — RF·MG 유리" },
-  "E.L.I.D": { advantaged: ["MG","SG","AR"], label: "감염 군집 — MG·SG·AR 유리" },
-  "바랴그단": { advantaged: [], label: "적성 인형 부대 — 상성 중립" },
-  "패러데우스": { advantaged: ["SG","SMG"], label: "정예 화력 — 방패 병과 가치 상승" },
+const FACTION_COUNTER: Record<string,{advantaged:string[];label:string;badge:string}> = {
+  "철혈": { advantaged: ["RF","MG"], label: "기계 장갑 부대 — RF·MG 유리", badge: "⚙" },
+  "E.L.I.D": { advantaged: ["MG","SG","AR"], label: "감염 군집 — MG·SG·AR 유리", badge: "☣" },
+  "바랴그단": { advantaged: [], label: "적성 인형 부대 — 상성 중립", badge: "🎯" },
+  "패러데우스": { advantaged: ["SG","SMG"], label: "정예 화력 — 방패 병과 가치 상승", badge: "⬡" },
 };
+const FORMATION_GUIDE = Object.fromEntries(Object.entries(CLASS_COMBAT).filter(([name]) => name !== "BOSS").map(([name, profile]) => [name,
+  profile.damageTaken < 1 ? "전열" : profile.round1 || profile.round3plus || profile.vsMaxHp ? "후열" : "중열",
+])) as Record<string,FormationRow>;
 const combatProfile = (className: unknown) => CLASS_COMBAT[string(className)] ?? CLASS_COMBAT.AR!;
 // 진형 정원(3열×2). 배치 검증·패딩이 전부 이 상수를 봐야 한다 — 5칸 시절 숫자를 남기면 6번째 칸이 죽는다.
 export const FORMATION_SIZE = 6;
@@ -2040,6 +2043,10 @@ export function gflModule(): ModuleDefinition {
           limits: { daily: RELATION_DAILY_LIMIT, perChoice: RELATION_CHOICE_DAILY_LIMIT },
         };
       },
+      "gfl/formation/guide": () => ({
+        ...FORMATION_GUIDE,
+        factions: Object.fromEntries(Object.entries(FACTION_COUNTER).map(([name, value]) => [name, value.badge])),
+      }),
       "gfl/locations": (...args) => {
         const schema = record(args[0]),
           value = record(args[1]),

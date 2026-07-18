@@ -246,3 +246,51 @@ test('소녀전선 각도괄호 태그를 채팅 본문의 감정 스프라이�
   expect(dialogueLayout.color).toBe('rgb(229, 191, 121)');
   expect(dialogueLayout.fits).toBe(true);
 });
+
+test('저격 고용에서 이름을 검색해 지정 계약한다',async({page})=>{
+  await page.setViewportSize({width:844,height:720});
+  const simulation=await importGfl(page),console=simulation.getByLabel('소녀전선 지휘 콘솔');
+  await console.getByRole('button',{name:'지휘관으로 시작'}).click();
+  await console.getByRole('button',{name:'인형 고용',exact:true}).click();
+  const picker=console.getByRole('region',{name:'전술인형 선택기'});
+  const before=await picker.locator('.results article').count();
+  expect(before).toBeGreaterThan(1);
+  await picker.getByLabel('인형 이름 검색').fill('M4A1');
+  await expect(picker.locator('.results article')).toHaveCount(1);
+  await expect(picker).toContainText('M4A1');
+  await picker.getByRole('button',{name:'지정 계약'}).click();
+  await expect(console).toContainText('숙소 1/4');
+});
+
+test('관리창 아래에 같은 결정 카드를 표시하고 그 자리에서 후속 결정을 처리한다',async({page})=>{
+  await page.setViewportSize({width:844,height:720});
+  await page.addInitScript(()=>localStorage.setItem('simbot.llm',JSON.stringify({provider:'openai',model:'gpt-4.1-mini',apiKey:'',keepSimulationOpen:true})));
+  const simulation=await importGfl(page),console=simulation.getByLabel('소녀전선 지휘 콘솔');
+  await console.getByRole('button',{name:'지휘관으로 시작'}).click();
+  await console.getByRole('button',{name:'인형 고용',exact:true}).click();
+  await console.getByRole('button',{name:'🎲 오늘의 인형 뽑기'}).click();
+  await console.getByRole('button',{name:'계약',exact:true}).first().click();
+  await console.getByRole('button',{name:/수송 도착/}).click();
+  await expect(simulation).toBeVisible();
+  await console.getByRole('button',{name:'인형',exact:true}).click();
+  await console.getByRole('button',{name:/1:1 대화 시작/}).click();
+  const mirror=simulation.locator('.decision-mirror').getByRole('region',{name:'엔진 결정 카드'});
+  await expect(mirror).toContainText('대화 중 · 시간 정지');
+  await mirror.getByRole('button',{name:'대화를 마무리한다'}).click();
+  await expect(simulation.locator('.decision-mirror')).toHaveCount(0);
+});
+
+test('시설 카드는 하나씩 펼쳐 현재·다음 효과와 증설 버튼을 보여준다',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  const simulation=await importGfl(page),console=simulation.getByLabel('소녀전선 지휘 콘솔');
+  await console.getByRole('button',{name:'지휘관으로 시작'}).click();
+  const cards=console.locator('.facility-grid article');
+  await cards.first().locator('.facility-summary').click();
+  await expect(cards.first()).toContainText('현재 효과');
+  await expect(cards.first()).toContainText('다음 효과');
+  await expect(cards.first().getByRole('button',{name:'시설 증설'})).toBeVisible();
+  await cards.nth(1).locator('.facility-summary').click();
+  await expect(cards.first().locator('.facility-detail')).toHaveCount(0);
+  const noOverflow=await console.evaluate(element=>element.scrollWidth<=element.clientWidth+1);
+  expect(noOverflow).toBe(true);
+});
