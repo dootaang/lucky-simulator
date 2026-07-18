@@ -252,22 +252,22 @@ type RelationChoice = {
   dc: number;
   affinity: number;
   mood: number;
-  minTier: number;
+  tierOffset: number;
   followups: string[];
 };
 // 관계 선택지 사다리. 티어 문턱은 카드에서 회수한 relation(REL_NAMES/REL_THRES)을 그대로 쓰고,
 // 선택지 구성·DC·증감은 Lucky 합성 규칙이다(원본 Choice 캡슐의 %는 LLM 임의값이라 회수 대상이 아님).
 // talk/nickname/encourage 3종의 id와 수치는 기존 저장 회차가 재생하는 값이므로 바꾸지 않는다.
 const RELATION_CHOICES: Record<string, RelationChoice> = {
-  talk: { label: "차분히 대화한다", dc: 8, affinity: 3, mood: 10, minTier: 0, followups: ["nickname", "encourage"] },
-  nickname: { label: "서로 부를 별명을 정한다", dc: 10, affinity: 5, mood: 25, minTier: 0, followups: ["encourage"] },
-  encourage: { label: "진심으로 격려한다", dc: 12, affinity: 8, mood: 20, minTier: 0, followups: ["ask-past"] },
-  "ask-past": { label: "지난 이야기를 묻는다", dc: 10, affinity: 5, mood: 15, minTier: 1, followups: ["confide"] },
-  coffee: { label: "함께 커피를 마신다", dc: 9, affinity: 4, mood: 25, minTier: 1, followups: ["walk"] },
-  train: { label: "함께 훈련한다", dc: 12, affinity: 7, mood: 15, minTier: 2, followups: ["encourage"] },
-  walk: { label: "기지 주변을 함께 걷는다", dc: 11, affinity: 6, mood: 30, minTier: 2, followups: ["confide"] },
-  confide: { label: "속마음을 나눈다", dc: 13, affinity: 10, mood: 25, minTier: 3, followups: ["promise"] },
-  promise: { label: "소중한 약속을 나눈다", dc: 14, affinity: 12, mood: 30, minTier: 4, followups: [] },
+  talk: { label: "차분히 대화한다", dc: 8, affinity: 3, mood: 10, tierOffset: -3, followups: ["nickname", "encourage"] },
+  nickname: { label: "서로 부를 별명을 정한다", dc: 10, affinity: 5, mood: 25, tierOffset: 0, followups: ["encourage"] },
+  encourage: { label: "진심으로 격려한다", dc: 12, affinity: 8, mood: 20, tierOffset: 0, followups: ["ask-past"] },
+  "ask-past": { label: "지난 이야기를 묻는다", dc: 10, affinity: 5, mood: 15, tierOffset: 1, followups: ["confide"] },
+  coffee: { label: "함께 커피를 마신다", dc: 9, affinity: 4, mood: 25, tierOffset: 1, followups: ["walk"] },
+  train: { label: "함께 훈련한다", dc: 12, affinity: 7, mood: 15, tierOffset: 2, followups: ["encourage"] },
+  walk: { label: "기지 주변을 함께 걷는다", dc: 11, affinity: 6, mood: 30, tierOffset: 2, followups: ["confide"] },
+  confide: { label: "속마음을 나눈다", dc: 13, affinity: 10, mood: 25, tierOffset: 3, followups: ["promise"] },
+  promise: { label: "소중한 약속을 나눈다", dc: 14, affinity: 12, mood: 30, tierOffset: 5, followups: [] },
 };
 // 하루 상한 — 같은 인형에게 4회, 같은 선택지는 2회(2회째는 효과 절반). 격려 연타 파밍 차단.
 const RELATION_DAILY_LIMIT = 4,
@@ -276,9 +276,11 @@ function relationTierCount(schema: RuntimeRecord) {
   return list<string>(record(config(schema).relation).names).length;
 }
 // 카드의 티어 수보다 높은 요구치는 마지막 티어로 접는다. relation 설정이 없는 카드는 전부 개방.
-function choiceMinTier(schema: RuntimeRecord, choice: RelationChoice) {
+function choiceRequiredTier(schema: RuntimeRecord, choice: RelationChoice) {
   const count = relationTierCount(schema);
-  return count ? Math.min(choice.minTier, count - 1) : 0;
+  if (!count) return 0;
+  const neutral = relationFor(schema, 0).index;
+  return clamp(neutral + choice.tierOffset, 0, count - 1);
 }
 function relationTierName(schema: RuntimeRecord, index: number) {
   const name = list<string>(record(config(schema).relation).names)[index];
@@ -319,7 +321,10 @@ function relationFor(schema: RuntimeRecord, affinity: unknown) {
     descriptions = list<string>(relation.descriptions),
     score = number(affinity);
   let index = 0;
-  for (let at = 0; at < thresholds.length; at++) if (score >= number(thresholds[at])) index = at;
+  for (let at = 0; at < thresholds.length; at++) {
+    if (at > 0 && number(thresholds[at]) === number(thresholds[at - 1])) continue;
+    if (score >= number(thresholds[at])) index = at;
+  }
   return { label: names[index] ?? "첫 만남", description: descriptions[index] ?? "", index };
 }
 function hireOffers(c: Parameters<Parameters<typeof scoped>[0]>[0]) {
@@ -1006,7 +1011,7 @@ export function gflModule(): ModuleDefinition {
         if (dialogue && string(dialogue.dollId) !== dollId)
           return fail(c, "gfl_dialogue_other_doll", string(dialogue.name));
         const beforeTier = relationFor(c.schema, unit.affinity),
-          requiredTier = choiceMinTier(c.schema, choice);
+          requiredTier = choiceRequiredTier(c.schema, choice);
         if (beforeTier.index < requiredTier)
           return fail(c, "gfl_relation_tier_locked", relationTierName(c.schema, requiredTier));
         // 게이트는 전부 주사위 전에 — 거부된 시도는 RNG를 소비하지 않는다(M6c 규율).
@@ -1067,7 +1072,7 @@ export function gflModule(): ModuleDefinition {
               ? choice.followups
                   .filter((id) => {
                     const next = RELATION_CHOICES[id];
-                    if (!next || afterTier.index < choiceMinTier(c.schema, next)) return false;
+                    if (!next || afterTier.index < choiceRequiredTier(c.schema, next)) return false;
                     return number(usage.choices[id]) + (id === choiceId ? 1 : 0) < RELATION_CHOICE_DAILY_LIMIT;
                   })
                   .slice(0, 2)
@@ -1659,7 +1664,7 @@ export function gflModule(): ModuleDefinition {
               usage = relationUsage(value, dollId),
               choices = Object.entries(RELATION_CHOICES)
                 .map(([id, choice]) => {
-                  const requiredTier = choiceMinTier(schema, choice),
+                  const requiredTier = choiceRequiredTier(schema, choice),
                     used = number(usage.choices[id]),
                     reason =
                       tier.index < requiredTier

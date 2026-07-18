@@ -580,6 +580,44 @@ describe("Girls Frontline native module", () => {
     expect(afterById.train).toMatchObject({ available: false, reason: "tier_locked" });
     expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "train" }).log[0]).toMatchObject({ ok: false, reason: "gfl_relation_tier_locked", detail: "친밀" });
   });
+  it("실카드 11티어는 중립 기준으로 선택지를 해금하고 중복 400 문턱에서 서약을 유지한다", () => {
+    const source = structuredClone(schema) as any;
+    source.gfl.relation = {
+      names: ["적대", "경계", "불편", "첫 만남", "익숙해짐", "호감을 가짐", "신뢰", "소중히 여김", "사랑", "서약", "???"],
+      thresholds: [-150, -80, -20, 0, 20, 50, 80, 120, 150, 400, 400],
+      descriptions: Array(11).fill(""),
+    };
+    const game = runtime(source);
+    game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const expected: Array<[number, string[], string]> = [
+      [-100, ["talk"], "적대"],
+      [0, ["talk", "nickname", "encourage"], "첫 만남"],
+      [25, ["talk", "nickname", "encourage", "ask-past", "coffee"], "익숙해짐"],
+      [55, ["talk", "nickname", "encourage", "ask-past", "coffee", "train", "walk"], "호감을 가짐"],
+      [85, ["talk", "nickname", "encourage", "ask-past", "coffee", "train", "walk", "confide"], "신뢰"],
+      [150, ["talk", "nickname", "encourage", "ask-past", "coffee", "train", "walk", "confide", "promise"], "사랑"],
+      [400, ["talk", "nickname", "encourage", "ask-past", "coffee", "train", "walk", "confide", "promise"], "서약"],
+    ];
+    for (const [affinity, ids, label] of expected) {
+      (game.state.gfl as any).dolls.m4a1.affinity = affinity;
+      const entry = (game.select("gfl/relation/options") as any).dolls.m4a1;
+      expect(entry.tier.label).toBe(label);
+      const available = entry.choices.filter((choice: any) => choice.available).map((choice: any) => choice.id);
+      expect(available).toEqual(expect.arrayContaining(ids));
+      expect(available).toHaveLength(ids.length);
+    }
+  });
+  it("relation 설정이 없는 카드는 관계 선택지 9종을 전부 개방한다", () => {
+    const source = structuredClone(schema) as any;
+    delete source.gfl.relation;
+    const game = runtime(source);
+    game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const choices = (game.select("gfl/relation/options") as any).dolls.m4a1.choices;
+    expect(choices).toHaveLength(9);
+    expect(choices.every((choice: any) => choice.available)).toBe(true);
+  });
   it("같은 선택지 반복은 효과가 절반이 되고 하루 상한을 넘으면 거부한다", () => {
     const game = runtime(); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
     const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.mood = 1000; // 보정 +19 → 어떤 굴림도 성공
