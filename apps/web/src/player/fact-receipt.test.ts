@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toFactLine } from './FactReceipt.svelte';
+import { toFactLine, toFactLines } from './FactReceipt.svelte';
 
 describe('사실 영수증 — 엔진 로그를 사람이 읽는 확정 사실로', () => {
   it('gold_delta를 골드 델타·잔액으로 읽는다', () => {
@@ -132,5 +132,25 @@ describe('전투·아이템 거부 사유', () => {
     ['insufficient_mp', 'MP 부족'],
   ])('%s 코드를 짧은 한국어로 읽는다', (reason, note) => {
     expect(toFactLine({ ok: false, event: 'use_item', reason }, 0)).toMatchObject({ rejected: true, note });
+  });
+  it('GFL 작전 승리를 보상·전리품·지휘 EXP·진급 줄로 펼친다 — 조용한 입금 금지', () => {
+    const lines = toFactLines({ ok: true, event: 'gfl/sortie/resolve', outcome: 'victory', missionId: 'alpha', factionLabel: '기계 장갑 부대 — RF·MG 유리', roundCount: 3, rewards: { gold: 500, parts: 100, res: 0 }, rewardRate: 1, loot: [{ id: 'ram', name: '대용량_RAM', qty: 1 }], commanderExp: { gained: 15, total: 45, level: 2 }, levelUp: { from: 1, to: 2 } }, 0);
+    expect(lines.map((line) => line.label)).toEqual(['작전 승리', '작전 보상 · 자금', '작전 보상 · parts', '전리품 · 대용량_RAM', '지휘 EXP', '지휘관 진급 → Lv 2']);
+    expect(lines[1]).toMatchObject({ delta: '+500', icon: '🪙' });
+    expect(lines[4]).toMatchObject({ delta: '+15', after: '누적 45' });
+    const repeat = toFactLines({ ok: true, event: 'gfl/sortie/resolve', outcome: 'victory', rewards: { gold: 175 }, rewardRate: .35 }, 1);
+    expect(repeat[1]).toMatchObject({ note: '재클리어 35%' });
+  });
+  it('GFL 단계·심문·군수·암시장·관계 판정을 사람 말로 읽는다', () => {
+    expect(toFactLine({ ok: true, event: 'gfl/sortie/stage', stageType: 'recon' }, 0)).toMatchObject({ icon: '🔍', label: '정찰 완료', note: '다음 교전 명중 +1' });
+    expect(toFactLine({ ok: true, event: 'gfl/sortie/stage', stageType: 'mystery', encounter: { name: 'Springfield' } }, 1).note).toContain('Springfield');
+    expect(toFactLine({ ok: true, event: 'gfl/sortie/interrogate', success: false }, 2).note).toContain('매복');
+    expect(toFactLine({ ok: true, event: 'gfl/logistics/collect', reward: { gold: 321, res: 192 } }, 3).note).toBe('자금 +321 · 자원 +192');
+    expect(toFactLine({ ok: true, event: 'gfl/market/buy', name: '옵티컬', price: 60, suspicion: 1 }, 4)).toMatchObject({ delta: '-60', note: '의심도 1' });
+    const check = toFactLine({ ok: true, event: 'gfl/relation/check', name: 'M4A1', label: '차분히 대화한다', success: true, tier: 'critical_success', roll: 20, affinityDelta: 6, affinity: 6, tierChanged: { to: { label: '익숙해짐' } } }, 5);
+    expect(check).toMatchObject({ icon: '❤️', delta: '+6', after: '호감 6' });
+    expect(check.note).toContain('대성공');
+    expect(check.note).toContain('익숙해짐');
+    expect(toFactLine({ ok: true, event: 'gfl/time/end-day', day: 3, raid: { occurred: true, success: false, resourceDelta: -120, loss: 120 }, social: { dissatisfaction: 12 } }, 6).note).toBe('습격 피해 -120 · 불만도 12');
   });
 });

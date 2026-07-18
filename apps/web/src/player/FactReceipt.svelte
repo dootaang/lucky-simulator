@@ -187,15 +187,70 @@
     if (event === 'mail_open') {
       return { key: `${index}`, icon: '🪙', label: s(log.type) === 'reward' ? '우편 보상' : '의뢰 우편', delta: deltaStr(n(log.goldDelta)), after: null, note: s(log.axis), rejected: false };
     }
+    // GFL 네이티브 이벤트 — 보상·전리품·EXP가 "조용한 입금"이 되지 않게 사람 말로 옮긴다(2026-07-19 오너 실측).
+    if (event.startsWith('gfl/')) {
+      const name = s(log.name), outcome = s(log.outcome);
+      if (event === 'gfl/sortie/resolve' || event === 'gfl/sortie/finish' || event === 'gfl/sortie/engage') {
+        const victory = outcome === 'victory';
+        const note = [s(log.missionId), s(log.factionLabel), n(log.roundCount) != null ? `${fmt(n(log.roundCount)!)}라운드` : ''].filter(Boolean).join(' · ');
+        return { key: `${index}`, icon: victory ? '⭐' : '⚠️', label: victory ? '작전 승리' : '작전 실패', delta: null, after: null, note, rejected: false };
+      }
+      if (event === 'gfl/sortie/stage') {
+        const stage = s(log.stageType);
+        if (stage === 'recon') return { key: `${index}`, icon: '🔍', label: '정찰 완료', delta: null, after: null, note: '다음 교전 명중 +1', rejected: false };
+        if (stage === 'other') { const res = log.resource as Log | null; return { key: `${index}`, icon: '🚩', label: '돌발 상황', delta: res ? signed(n(res.qty) ?? 0) : null, after: null, note: res ? '자원 발견' : '이상 없음', rejected: false }; }
+        const enc = log.encounter as Log | undefined;
+        return { key: `${index}`, icon: '❓', label: '정체불명 구역', delta: null, after: null, note: enc ? `무소속 인형 발견 · ${s(enc.name)}` : (Array.isArray(log.loot) && (log.loot as Log[]).length ? '물자 발견' : '아무것도 없었다'), rejected: false };
+      }
+      if (event === 'gfl/sortie/interrogate') { const success = log.success === true; return { key: `${index}`, icon: success ? '⭐' : '⚠️', label: success ? '심문 성공' : '심문 실패', delta: null, after: null, note: success ? '적 정보 확보 — 다음 교전 명중 +1' : '허위 정보 — 다음 교전 매복 주의', rejected: false }; }
+      if (event === 'gfl/sortie/retreat') return { key: `${index}`, icon: '🚪', label: '작전 퇴각', delta: null, after: null, note: '전리품 유지 · 완료 보상 없음', rejected: false };
+      if (event === 'gfl/logistics/collect') { const reward = log.reward as Log | undefined; return { key: `${index}`, icon: '📦', label: '군수지원 수령', delta: null, after: null, note: `자금 ${signed(n(reward?.gold) ?? 0)} · 자원 ${signed(n(reward?.res) ?? 0)}`, rejected: false }; }
+      if (event === 'gfl/refinery/collect') { const y = log.yield as Log | undefined; return { key: `${index}`, icon: '⚗️', label: '가공 완료', delta: null, after: null, note: Object.entries(y ?? {}).map(([k, v]) => `${RESOURCE_LABEL[k] ?? k} +${fmt(n(v) ?? 0)}`).join(' · '), rejected: false }; }
+      if (event === 'gfl/market/buy') return { key: `${index}`, icon: '🕶️', label: `암시장 · ${name}`, delta: deltaStr(-(n(log.price) ?? 0)), after: null, note: `의심도 ${fmt(n(log.suspicion) ?? 0)}`, rejected: false };
+      if (event === 'gfl/relation/check') { const tier = s(log.tier); const tierNote = tier === 'critical_success' ? '대성공' : tier === 'critical_failure' ? '대실패' : tier === 'success' ? '성공' : '실패'; const up = (log.tierChanged as Log | undefined)?.to as Log | undefined; return { key: `${index}`, icon: log.success === true ? '❤️' : '⚠️', label: `${name} · ${s(log.label)}`, delta: deltaStr(n(log.affinityDelta)), after: `호감 ${fmt(n(log.affinity) ?? 0)}`, note: [`🎲 ${fmt(n(log.roll) ?? 0)} → ${tierNote}`, up ? `관계 승급 · ${s(up.label)}` : ''].filter(Boolean).join(' · '), rejected: false }; }
+      if (event === 'gfl/relation/session/end') return { key: `${index}`, icon: '❤️', label: `${name} · 대화 마무리`, delta: deltaStr(n(log.affinityDelta)), after: `호감 ${fmt(n(log.affinity) ?? 0)}`, note: `기분 ${signed(n(log.moodDelta) ?? 0)}`, rejected: false };
+      if (event === 'gfl/relation/outing') return { key: `${index}`, icon: '❤️', label: `${name} · 외출`, delta: deltaStr(n(log.affinityDelta)), after: null, note: [s(log.place), `기분 ${signed(n(log.moodDelta) ?? 0)}`].filter(Boolean).join(' · '), rejected: false };
+      if (event === 'gfl/hire/contract' || event === 'gfl/hire/snipe') return { key: `${index}`, icon: '🤝', label: `${name} 계약`, delta: deltaStr(-(n(log.cost) ?? 0)), after: null, note: '다음 시간대 도착', rejected: false };
+      if (event === 'gfl/boss/recruit' || event === 'gfl/encounter/recruit') return { key: `${index}`, icon: '🤝', label: `${name} 영입`, delta: null, after: null, note: event === 'gfl/boss/recruit' ? '6성 BOSS 합류' : '무소속 인형 합류', rejected: false };
+      if (event === 'gfl/facility/upgrade') return { key: `${index}`, icon: '⭐', label: `시설 증설 Lv.${fmt(n(log.level) ?? 0)}`, delta: null, after: null, note: s(log.facilityId), rejected: false };
+      if (event === 'gfl/time/end-day') {
+        const raid = log.raid as Log | undefined, social = log.social as Log | undefined;
+        const notes = [raid?.occurred === true ? (raid.success === true ? `습격 방어 성공 ${signed(n(raid.resourceDelta) ?? 0)}` : `습격 피해 ${signed(n(raid.resourceDelta) ?? 0)}`) : '', social ? `불만도 ${fmt(n(social.dissatisfaction) ?? 0)}` : ''].filter(Boolean);
+        return { key: `${index}`, icon: '🌙', label: '하루 마감', delta: null, after: n(log.day) != null ? `${fmt(n(log.day)!)}일차` : null, note: notes.join(' · '), rejected: false };
+      }
+      const GFL_LABEL: Record<string, string> = { 'gfl/sortie/start': '작전 출격', 'gfl/relation/session/start': '대화 시작', 'gfl/crew/assign': '근무 배치', 'gfl/crew/remove': '근무 해제', 'gfl/refinery/start': '가공 시작', 'gfl/facility/specialize': '시설 특화', 'gfl/item/use': '물품 사용', 'gfl/time/advance': '시간 진행', 'gfl/location/move': '이동' };
+      return { key: `${index}`, icon: '⚙️', label: GFL_LABEL[event] ?? event, delta: deltaStr(n(log.affinityDelta) ?? n(log.amount)), after: null, note: name || reason, rejected: false };
+    }
     // 알 수 없는 성공 이벤트: 델타/애프터가 있으면 그것만, 아니면 이벤트명.
     return { key: `${index}`, icon: '⚙️', label: event || '엔진 처리', delta: deltaStr(n(log.amount) ?? n(log.delta)), after: after != null ? fmt(after) : null, note: reason, rejected: false };
+  }
+
+  // 굵직한 GFL 결과(보상·전리품·지휘 EXP)는 한 줄에 안 담긴다 — 로그 하나를 여러 영수증 줄로 펼친다.
+  export function toFactLines(log: Log, index: number): FactLine[] {
+    const lines = [toFactLine(log, index)];
+    if (log.ok === false) return lines;
+    const event = s(log.event);
+    if (event === 'gfl/sortie/resolve' || event === 'gfl/sortie/finish' || event === 'gfl/sortie/engage' || event === 'gfl/sortie/stage') {
+      const rewards = log.rewards as Log | null | undefined;
+      for (const [resource, amount] of Object.entries(rewards ?? {})) {
+        const qty = n(amount); if (qty == null || !qty) continue;
+        lines.push({ key: `${index}-r-${resource}`, icon: resource === 'gold' ? '🪙' : RESOURCE_ICON[resource] ?? '📦', label: resource === 'gold' ? '작전 보상 · 자금' : `작전 보상 · ${RESOURCE_LABEL[resource] ?? resource}`, delta: signed(qty), after: null, note: n(log.rewardRate) != null && n(log.rewardRate)! < 1 ? '재클리어 35%' : '', rejected: false });
+      }
+      for (const [at, item] of (Array.isArray(log.loot) ? (log.loot as Log[]) : []).entries())
+        lines.push({ key: `${index}-l-${at}`, icon: '🎁', label: `전리품 · ${s(item.name) || s(item.id)}`, delta: `+${fmt(n(item.qty) ?? 1)}`, after: null, note: '', rejected: false });
+      const exp = log.commanderExp as Log | undefined;
+      if (n(exp?.gained)) lines.push({ key: `${index}-exp`, icon: '🎖️', label: '지휘 EXP', delta: signed(n(exp!.gained)!), after: `누적 ${fmt(n(exp!.total) ?? 0)}`, note: '', rejected: false });
+      const up = log.levelUp as Log | undefined;
+      if (n(up?.to)) lines.push({ key: `${index}-lv`, icon: '✨', label: `지휘관 진급 → Lv ${fmt(n(up!.to)!)}`, delta: null, after: null, note: '', rejected: false });
+    }
+    return lines;
   }
 </script>
 
 <script lang="ts">
   import Icon from '@simbot/ui/Icon.svelte';
   let { logs }: { logs: Log[] } = $props();
-  let lines = $derived(logs.map((log, i) => toFactLine(log, i)));
+  let lines = $derived(logs.flatMap((log, i) => toFactLines(log, i)));
   let confirmed = $derived(lines.filter((l) => !l.rejected).length);
   let blocked = $derived(lines.filter((l) => l.rejected).length);
 </script>
