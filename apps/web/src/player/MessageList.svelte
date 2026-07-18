@@ -8,7 +8,6 @@
   import { toFactLine } from './FactReceipt.svelte';
   import { presentNarrativeIssues } from './narrative-issues';
   import {buildNpcClusters,extractAssetSpeakers,type NpcCluster} from './npc-gallery';
-  import {stripGflBgmMarkers} from './gfl-bgm';
   import {isNativeGflPresentation,renderGflNarrative} from './gfl-presentation';
   import {tick} from 'svelte';
 
@@ -73,7 +72,7 @@
     }
     diagnostics.record({...where,kind:'asset',code:warning.code,summary:`${warning.macro} 처리 실패: ${warning.name}`,detail:{'명령':warning.macro,'이름':warning.name}});
   }
-  function rendered(message:ChatMessage){assetRevision;const options=assetOptions(),budget=new CbsBudget(),render=(content:string)=>renderDisplayContent(content,userName,cardName,assets,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1,{...options,budget}),result=nativeGfl?renderGflNarrative(stripGflBgmMarkers(message.content),render):render(message.content);for(const warning of result.warnings){report(message,warning);if(warning.code==='asset_missing')onassetneeded(warning.name);}return result.html;}
+  function rendered(message:ChatMessage){assetRevision;const options=assetOptions(),budget=new CbsBudget(),render=(content:string)=>renderDisplayContent(content,userName,cardName,assets,session.regexScripts,session.cbsVariables,message.index,session.messages.length-1,{...options,budget}),result=nativeGfl?renderGflNarrative(message.content,render):render(message.content);for(const warning of result.warnings){report(message,warning);if(warning.code==='asset_missing')onassetneeded(warning.name);}return result.html;}
   function cancel(){editing=null;draft='';}
   async function save(message:ChatMessage){if(draft.trim()&&draft!==message.content)await session.editMessage(message.id,draft);cancel();onchange();}
   async function toggleEdit(message:ChatMessage){if(editing===message.id){await save(message);return;}editing=message.id;draft=message.content;}

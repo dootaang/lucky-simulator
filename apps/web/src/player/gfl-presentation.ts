@@ -32,6 +32,8 @@ export function isNativeGflPresentation(project:{content?:unknown;moduleIds?:rea
 
 function cleanGflNarrative(source:string){
   return source
+    .replace(/^\s*BG_[^\r\n]*\|\s*BGM_[^|\r\n]+\|\s*\r?\n?/gim,'')
+    .replace(/\|\s*BGM_[^|\r\n]+\s*\|/gi,'')
     .replace(/\[USER\|([^|\]]+?)\|\]/gi,(_all,quote)=>`\n> ${String(quote).trim()}\n`)
     .replace(/\[UI_IMG\][\s\S]*?\[UI_IMG\]/gi,'')
     .replace(/\[제조완료:[^\]]*\]/gi,'')
