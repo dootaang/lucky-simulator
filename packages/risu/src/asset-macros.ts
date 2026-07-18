@@ -2,6 +2,9 @@ export interface AssetMacroAsset{name:string;type:string;mime:string;bytes:Uint8
 export interface AssetMacroWarning{code:'asset_missing'|'unsupported_asset_macro';macro:string;name:string}
 export interface AssetMacroResult{content:string;warnings:AssetMacroWarning[]}
 export interface AssetResolveOptions{outfits?:Readonly<Record<string,number|undefined>>;variantFor?:(reference:string,candidates:readonly AssetVariant[])=>number|null|undefined;
+// Risu의 채팅 표시 경로는 찾지 못한 에셋 매크로를 글자로 노출하지 않는다. 기본값은 기존 진단·도구 계약을
+// 위해 보존하며, 최종 화면 렌더러만 false를 넘겨 빈 문자열로 처리한다.
+preserveMissing?:boolean;
 // 표시 경로가 blob: 객체 URL을 공급하는 자리. 없으면 base64 data URI로 폴백하는데, 대형 카드에서는
 // 그 팽창(실측: DOMINIUM 인사말 17,551자 → 7,984,138자)이 CBS input 예산을 터뜨려 렌더 전체가 원문으로
 // 주저앉는다. 예산을 올리는 게 아니라 팽창을 없애는 것이 맞다 — 업스트림 Risu도 짧은 URL을 쓴다.
@@ -50,7 +53,7 @@ export function resolveAssetMacros(content:string,assets:readonly AssetMacroAsse
     if(!known.has(macro)){warnings.push({code:'unsupported_asset_macro',macro,name});return original;}
     if(!supported.has(macro)){warnings.push({code:'unsupported_asset_macro',macro,name});return original;}
     const asset=resolveNamedAsset(name,assets,options),url=asset&&(options.urlFor?.(asset)??dataUrl(asset));
-    if(!asset||!url){warnings.push({code:'asset_missing',macro,name:asset?.name??name});return original;}
+    if(!asset||!url){warnings.push({code:'asset_missing',macro,name:asset?.name??name});return options.preserveMissing===false?'':original;}
     if(macro==='raw')return url;
     if(macro==='image')return `<div class="risu-inlay-image"><img src="${url}" alt="${name}"></div>`;
     return `<img src="${url}" alt="${name}">`;

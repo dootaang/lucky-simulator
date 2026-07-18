@@ -31,7 +31,7 @@ function safeCss(css:string){return css.replace(/\{\{[\s\S]*?}}/g,'').replace(/@
 export function renderDisplayContent(content:string,user:string,char:string,assets:readonly AssetMacroAsset[],scripts:readonly RegexScript[]=[],variables:Record<string,string>={},chatIndex=0,lastMessageId=0,assetOptions:DisplayAssetOptions={}):{html:string;warnings:DisplayWarning[]}{
   const budget=new CbsBudget(),cbs=(text:string)=>parseCbs(text,{userName:user,charName:char,chatIndex,lastMessageId,variables,activeModules:assetOptions.activeModules??[],screenWidth:assetOptions.screenWidth??0,budget});
   // Risu ParseMarkdown: CBS -> assets -> editdisplay -> assets created by editdisplay.
-  const first=resolveAssetMacros(cbs(content),assets,{...assetOptions,bare:false}),displayed=applyRegexScripts(first.content,scripts,'display',{parser:cbs}),resolved=resolveAssetMacros(displayed,assets,assetOptions);
+  const displayAssets={...assetOptions,preserveMissing:false},first=resolveAssetMacros(cbs(content),assets,{...displayAssets,bare:false}),displayed=applyRegexScripts(first.content,scripts,'display',{parser:cbs}),resolved=resolveAssetMacros(displayed,assets,displayAssets);
   const styles:string[]=[];const body=resolved.content.replace(styleTree,(_whole,css:string)=>{const clean=safeCss(css).trim();if(clean&&!styles.includes(clean))styles.push(clean);return'';});
   const scoped=styles.length?`<style>@scope (.lucky-card-surface){${styles.join('\n')}}</style>`:'';
   return{html:scoped+sanitizeHtml(renderMarkdown(body)),warnings:uniqueWarnings([...first.warnings,...resolved.warnings,...budgetWarnings(budget)])};}
