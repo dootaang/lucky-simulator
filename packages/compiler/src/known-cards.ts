@@ -8,6 +8,7 @@ import { extractTextPanels } from "./text-panels.ts";
 import type { CompileResult } from "./index.ts";
 
 type Row = Record<string, unknown>;
+export const GFL_TEMPLATE_VERSION = "1.4.0";
 const record = (value: unknown): Row =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Row)
@@ -215,7 +216,7 @@ function gflSchema(parsed: ParsedCard, mined: ReturnType<typeof mineCard>) {
         id: "girls-frontline-ember",
         title: parsed.name,
         template: "genre.gfl",
-        templateVersion: "1.3.0",
+        templateVersion: GFL_TEMPLATE_VERSION,
       },
       resources: [
         { id: "res", label: "자원", basePrice: 1 },
