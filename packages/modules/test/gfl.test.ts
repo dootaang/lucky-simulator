@@ -288,7 +288,10 @@ describe("Girls Frontline native module", () => {
     expect(
       game.dispatch("gfl/hire/snipe", { dollId: "m4a1" }).log[0],
     ).toMatchObject({ ok: false, reason: "gfl_hire_daily_limit" });
-    expect(game.dispatch("gfl/hire/tick").log[0]?.ok).toBe(true);
+    expect(game.dispatch("gfl/time/advance").log[0]).toMatchObject({
+      ok: true,
+      arrivals: [{ dollId: "ump45", name: "UMP45" }],
+    });
     expect(game.select("gfl/dolls")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "ump45", status: "대기" }),
