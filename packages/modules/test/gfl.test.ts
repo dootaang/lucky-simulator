@@ -234,7 +234,7 @@ describe("Girls Frontline native module", () => {
     const first=fight(), second=fight(), allies=first.rounds.flatMap((round:any)=>round.exchanges.filter((row:any)=>row.side==="ally"));
     expect(first).toEqual(second); // 가중 타겟팅도 같은 시드면 같은 결과
     expect(allies.some((row:any)=>row.hitBuff===1)).toBe(true);
-    expect(allies.some((row:any)=>row.actorId==="mg"&&row.roundFactor===1.4)).toBe(true);
+    expect(allies.some((row:any)=>row.actorId==="mg"&&row.roundFactor===1.56)).toBe(true); // 밸런스 검산 −20% 범위, 기본 1.4는 보존
     expect(allies.some((row:any)=>row.actorId==="mg"&&row.rowFactor===1.38)).toBe(true);
     expect(allies.some((row:any)=>row.actorId==="mg"&&row.counter===true)).toBe(true);
     expect(first.factionLabel).toContain("RF·MG 유리");
@@ -1221,5 +1221,63 @@ describe("Girls Frontline native module", () => {
     const auditLog = audit.dispatch("gfl/time/end-day").log[0] as any;
     expect(auditLog.social.audit).toMatchObject({ caught: true, seized: Math.floor(auditGold * .2) });
     expect(Number((audit.state.gfl as any).market.suspicion)).toBe(0);
+  });
+
+  it("지휘 게이지를 단계마다 충전하고 예약 개입 3종과 부족·중복 검증을 적용한다", () => {
+    const make = (type: string) => {
+      const game = sortieGame({ seed: 91 });
+      game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", engagementMode: "quick" });
+      const sortie = (game.state.gfl as any).sortie;
+      sortie.stages = [{ type: "battle" }, { type: "battle" }]; sortie.current = 0; sortie.command = 100;
+      const result = game.dispatch("gfl/sortie/engage", { intervention: { round: 1, type } }).log[0] as any;
+      return { game, result };
+    };
+    for (const type of ["focus", "brace", "barrage"]) {
+      const { result } = make(type);
+      expect(result).toMatchObject({ ok: true, intervention: { round: 1, type }, command: 34 });
+      expect(result.rounds[0].exchanges.some((entry: any) => entry.intervention === type)).toBe(true);
+    }
+    const { game } = make("brace");
+    expect(game.dispatch("gfl/sortie/engage", { intervention: { round: 1, type: "focus" } }).log[0]).toMatchObject({ ok: false, reason: "gfl_intervention_command_missing" });
+  });
+
+  it("병과 스킬은 MP가 있을 때 단계당 한 번 자동 발동하고 명중 지원 합계를 +5로 제한하며 전훈을 누적한다", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.dolls = [
+      { id: "ar", name: "AR", class: "AR", grade: 5, maxHp: 3000, maxMp: 500, power: 500 },
+      { id: "hg", name: "HG", class: "HG", grade: 5, maxHp: 3000, maxMp: 500, power: 300 },
+    ];
+    source.gfl.missions[0] = { ...source.gfl.missions[0], power: 1200, factions: ["철혈"], enemies: [{ id: "tank", name: "표적", power: 500, hp: 4000 }] };
+    const game = runtime(source, 14); game.dispatch("gfl/start", { mode: "commander" });
+    for (const [slot, id] of ["ar", "hg"].entries()) { game.dispatch("gfl/doll/acquire", { dollId: id }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot, dollId: id }); }
+    game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    const battle = reachCombat(game), skills = battle.skills as any[];
+    expect(skills.filter((entry) => entry.dollId === "ar")).toHaveLength(1);
+    expect(skills.filter((entry) => entry.dollId === "hg")).toHaveLength(1);
+    expect((game.state.gfl as any).dolls.ar.mp.cur).toBe(260);
+    expect(battle.rounds.flatMap((entry: any) => entry.exchanges).filter((entry: any) => entry.actorId === "ar" && entry.round === 2).length).toBeLessThanOrEqual(2);
+    expect(Math.max(...battle.rounds.flatMap((entry: any) => entry.exchanges).map((entry: any) => entry.supportHit ?? 0))).toBeLessThanOrEqual(5);
+    expect((game.state.gfl as any).dolls.ar.records).toMatchObject({ kills: expect.any(Number), crits: expect.any(Number), guarded: 0 });
+  });
+
+  it("intel 공개는 적 실데이터를 바꾸지 않고 HG·정찰·심문으로 0/1/2 단계만 연다", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.dolls.push({ id: "hg", name: "HG", class: "HG", grade: 3, maxHp: 1000, power: 1000 });
+    source.gfl.missions[0].enemies = [{ id: "secret", name: "비밀 적", class: "AR", power: 300, hp: 777 }];
+    const game = runtime(source, 2); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "hg" }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "hg" });
+    game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" });
+    expect(game.select("gfl/sortie/intel")).toMatchObject({ level: 1, enemies: [{ name: "비밀 적", class: "AR" }] });
+    expect((game.select("gfl/sortie/intel") as any).enemies[0].hp).toBeUndefined();
+    const sortie = (game.state.gfl as any).sortie; sortie.stages = [{ type: "recon" }, { type: "battle" }]; sortie.current = 0;
+    game.dispatch("gfl/sortie/stage");
+    expect(game.select("gfl/sortie/intel")).toMatchObject({ level: 2, enemies: [{ hp: 777 }] });
+    expect(source.gfl.missions[0].enemies[0].hp).toBe(777);
+  });
+
+  it("포로 심문은 성공 시 정찰, 실패 시 다음 교전 매복을 확정하고 포로를 소멸시킨다", () => {
+    const play = (seed: number) => { const game = sortieGame({ enemyPower: 600, seed }); game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); (game.state.gfl as any).prisoner = { active: true }; return { game, result: game.dispatch("gfl/sortie/interrogate").log[0] as any }; };
+    const success = play(1); expect(success.result.success).toBe(true); expect((success.game.state.gfl as any).sortie).toMatchObject({ intel: 2, scouted: true });
+    const failureSeed = Array.from({ length: 100 }, (_, index) => index + 1).find((seed) => (play(seed).result as any).success === false)!;
+    const failure = play(failureSeed); expect(failure.result).toMatchObject({ success: false, ambush: true }); expect((failure.game.state.gfl as any).prisoner).toBeNull();
   });
 });

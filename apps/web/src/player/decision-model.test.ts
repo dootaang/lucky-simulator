@@ -105,4 +105,14 @@ describe('결정 카드 모델', () => {
     expect(card?.options).toHaveLength(1);
     expect(card?.options[0]).toMatchObject({ id: 'gfl/market/buy', params: { offerId: 'offer-7-1' }, mode: 'ledger' });
   });
+  it('포로 심문의 성공 보상과 실패 매복 위험을 결정 카드에 함께 밝힌다', () => {
+    const cards = buildDecisionCards((id) => id === 'gfl/status' ? { prisoner: { active: true, missionId: 'alpha', capturedAt: 2 } } : null);
+    const card = cards.find((entry) => entry.key === 'gfl-prisoner:alpha:2');
+    expect(card).toMatchObject({ title: '포로 심문', dismissible: true });
+    expect(card?.desc).toContain('매복');
+    expect(card?.options).toEqual([
+      expect.objectContaining({ id: 'gfl/sortie/interrogate', mode: 'narrated' }),
+      expect.objectContaining({ id: 'gfl/sortie/prisoner/release', kind: 'ghost' }),
+    ]);
+  });
 });

@@ -23,10 +23,14 @@ type Doll = RuntimeRecord & {
   mood?: number;
 };
 type FormationRow = "전열" | "중열" | "후열";
-const CLASS_COMBAT: Record<string,{aggro:number;damageTaken:number;vsMaxHp?:number;round1?:number;round3plus?:number;hitBuffAlly?:number;illumination?:number}> = {
-  AR: { aggro: 1, damageTaken: 1 }, SMG: { aggro: 3, damageTaken: .68 }, SG: { aggro: 4, damageTaken: .6 },
-  MG: { aggro: 1, damageTaken: 1, round1: 1.4, round3plus: .8 }, RF: { aggro: .5, damageTaken: 1, vsMaxHp: 1.3 },
-  HG: { aggro: .5, damageTaken: 1, hitBuffAlly: 1, illumination: 2 },
+type CombatSkill = { cost: number; round: number; effect: string };
+const CLASS_COMBAT: Record<string,{aggro:number;damageTaken:number;vsMaxHp?:number;round1?:number;round3plus?:number;hitBuffAlly?:number;illumination?:number;skill?:CombatSkill}> = {
+  AR: { aggro: 1, damageTaken: 1, skill: { cost: 240, round: 2, effect: "double_attack" } },
+  SMG: { aggro: 3, damageTaken: .68, skill: { cost: 180, round: 1, effect: "draw_fire" } },
+  SG: { aggro: 4, damageTaken: .6, skill: { cost: 180, round: 1, effect: "fortify" } },
+  MG: { aggro: 1, damageTaken: 1, round1: 1.4, round3plus: .8, skill: { cost: 240, round: 1, effect: "opening_barrage" } },
+  RF: { aggro: .5, damageTaken: 1, vsMaxHp: 1.3, skill: { cost: 300, round: 2, effect: "sure_critical" } },
+  HG: { aggro: .5, damageTaken: 1, hitBuffAlly: 1, illumination: 2, skill: { cost: 180, round: 1, effect: "command_buff" } },
   BOSS: { aggro: 1.5, damageTaken: .9 },
 };
 const ROW_AGGRO: Record<FormationRow, number> = { 전열: 2.4, 중열: 1, 후열: .4 };
@@ -137,6 +141,7 @@ function acquire(
     mod: 0,
     status,
     equipment: [],
+    records: { kills: 0, crits: 0, guarded: 0 },
     ...(definition.squad ? { squad: definition.squad } : {}),
   };
   gfl.dolls = values;
@@ -185,7 +190,7 @@ const baseLocation = (value: RuntimeRecord) =>
   string(value.location || state(value).baseLocation || "base-command");
 const fieldSortie = (value: RuntimeRecord) => {
   const sortie = record(state(value).sortie);
-  return sortie.active && sortie.command === "field" ? sortie : null;
+  return sortie.active && string(sortie.deploymentCommand || sortie.command) === "field" ? sortie : null;
 };
 const facilityLevel = (value: RuntimeRecord, id: string) =>
   Math.max(1, Math.min(5, number(record(state(value).facilities)[id], 1)));
@@ -711,6 +716,7 @@ function resolveOperationStage(c: Context) {
   const gfl = state(c.state), sortie = record(gfl.sortie), stages = list<RuntimeRecord>(sortie.stages);
   if (!sortie.active || !stages.length) return fail(c, "gfl_sortie_missing");
   if (record(sortie.encounter).dollId) sortie.encounter = null;
+  if (record(gfl.prisoner).active) gfl.prisoner = null;
   const current = clamp(number(sortie.current), 0, stages.length - 1), stage = record(stages[current]),
     type = string(stage.type) as OperationStageType, guide = stageGuide(c.schema, type);
   if (type === "battle" || type === "boss") {
@@ -718,7 +724,7 @@ function resolveOperationStage(c: Context) {
     return resolveSortie(c);
   }
   const effects: Record<string, () => RuntimeRecord> = {
-    recon: () => { sortie.scouted = true; return { scouted: true }; },
+    recon: () => { sortie.scouted = true; sortie.intel = Math.min(2, number(sortie.intel) + 1); return { scouted: true, intel: sortie.intel }; },
     other: () => {
       const roll = c.rng.int(1, 100), found = roll <= 40,
         amount = found ? 50 + Math.floor((roll - 1) * 100 / 39) : 0,
@@ -740,9 +746,10 @@ function resolveOperationStage(c: Context) {
   };
   const result = effects[type]?.() ?? {};
   stage.completed = true; stage.result = result; sortie.current = current + 1;
+  sortie.command = Math.min(100, number(sortie.command) + 34);
   sortie.lastStage = { index: current, stageType: type, guide, ...result };
   gfl.sortie = sortie; c.state.gfl = gfl;
-  return ok(c, { stageIndex: current, stageType: type, guide, current: sortie.current, total: stages.length, ...result });
+  return ok(c, { stageIndex: current, stageType: type, guide, current: sortie.current, total: stages.length, command: sortie.command, ...result });
 }
 
 function recruitEncounter(c: Context) {
@@ -782,6 +789,18 @@ function resolveSortie(c: Context) {
   const stages = list<RuntimeRecord>(sortie.stages), currentStageIndex = clamp(number(sortie.current), 0, Math.max(0, stages.length - 1)),
     currentStage = record(stages[currentStageIndex]), stageType = string(currentStage.type || "battle") as OperationStageType;
   if (stages.length && stageType !== "battle" && stageType !== "boss") return fail(c, "gfl_sortie_stage_not_combat", stageType);
+  if (record(gfl.prisoner).active) gfl.prisoner = null;
+  const requestedIntervention = record(c.params.intervention);
+  let intervention: RuntimeRecord | null = null;
+  if (Object.keys(requestedIntervention).length) {
+    const round = Math.floor(number(requestedIntervention.round)), type = string(requestedIntervention.type);
+    if (round < 1 || round > 8 || !["focus", "brace", "barrage"].includes(type)) return fail(c, "gfl_intervention_invalid");
+    if (record(sortie.intervention).type) return fail(c, "gfl_intervention_duplicate");
+    if (number(sortie.command) < 100) return fail(c, "gfl_intervention_command_missing", number(sortie.command));
+    intervention = { round, type };
+    sortie.command = number(sortie.command) - 100;
+    sortie.intervention = intervention;
+  }
 
   const commanderBefore = commanderStatus(c.state),
     tactic = string(c.params.tactic || sortie.tactic || "balanced"),
@@ -853,55 +872,63 @@ function resolveSortie(c: Context) {
     defenseReduction =
       DEFENSE_REDUCTION[facilityLevel(c.state, "base2") - 1] ?? 0;
 
-  const hgHitBuff = Math.min(2, allies.reduce((sum, ally) => sum + number(combatProfile(ally.class).hitBuffAlly), 0));
+  const hgHitBuff = Math.min(2, allies.reduce((sum, ally) => sum + number(combatProfile(ally.class).hitBuffAlly), 0)),
+    skillUses: RuntimeRecord[] = [], panicChecks: RuntimeRecord[] = [];
+  let panicTriggered = false;
   for (let round = 1; round <= 8; round++) {
     const exchanges: RuntimeRecord[] = [];
+    const activeSkills = new Map<string, CombatSkill>();
     for (const ally of allies.filter((unit) => unit.hp > 0)) {
-      const target = enemies.find((unit) => unit.hp > 0);
-      if (!target) break;
-      const profile = combatProfile(ally.class), counter = missionFaction.advantagedClasses.includes(string(ally.class)),
-        roundFactor = round === 1 ? number(profile.round1, 1) : round >= 3 ? number(profile.round3plus, 1) : 1,
-        rowFactor = ally.row === "후열" && (profile.vsMaxHp || profile.round1) ? REAR_DAMAGE_BONUS : 1,
-        maxEnemyHp = Math.max(...enemies.map((unit) => unit.maxHp)), maxHpFactor = profile.vsMaxHp && target.maxHp === maxEnemyHp ? profile.vsMaxHp : 1,
-        roll = c.rng.int(1, 20),
-        critical = roll === 20,
-        hit = roll + number(ally.grade, 1) + conditionHit + tacticHit + hgHitBuff + (counter ? 2 : 0) >= 8,
-        dealt = hit
-          ? Math.max(
-              1,
-              Math.round(
-                ally.power * 0.24 * (critical ? 1.6 : 1) * allyDamageFactor * roundFactor * rowFactor * maxHpFactor - target.power * 0.02,
-              ),
-            )
-          : 0;
-      target.hp = Math.max(0, target.hp - dealt);
-      exchanges.push({
-        side: "ally",
-        actorId: ally.id,
-        targetId: target.id,
-        roll,
-        hit,
-        critical,
-        damage: dealt,
-        targetHp: target.hp,
-        counter,
-        hitBuff: hgHitBuff,
-        scoutedHit: sortie.scouted ? 1 : 0,
-        roundFactor,
-        rowFactor,
-        maxHpFactor,
-      });
+      if (sortie.ambush === true && round === 1) {
+        exchanges.push({ side: "ally", actorId: ally.id, targetId: null, hit: false, damage: 0, ambush: true });
+        continue;
+      }
+      const profile = combatProfile(ally.class), skill = profile.skill, unit = record(values[ally.id]), mp = record(unit.mp);
+      if (!skill || skill.round !== round || number(mp.cur) < skill.cost) continue;
+      mp.cur = number(mp.cur) - skill.cost; unit.mp = mp; activeSkills.set(ally.id, skill);
+      const entry = { dollId: ally.id, name: ally.name, class: ally.class, round, cost: skill.cost, effect: skill.effect };
+      skillUses.push(entry);
+    }
+    const hgSkillBuff = [...activeSkills.entries()].some(([id, skill]) => string(record(values[id]).class) === "HG" && skill.effect === "command_buff") ? 1 : 0;
+    for (const ally of allies.filter((unit) => unit.hp > 0)) {
+      const panic = record(record(ally).panic);
+      if (number(panic.round) === round && panic.skip === true) {
+        exchanges.push({ side: "ally", actorId: ally.id, targetId: null, hit: false, damage: 0, panic: "skip" });
+        continue;
+      }
+      const attacks = activeSkills.get(ally.id)?.effect === "double_attack" ? 2 : 1;
+      for (let attack = 0; attack < attacks; attack++) {
+        const livingEnemies = enemies.filter((unit) => unit.hp > 0), target = intervention?.type === "focus" && number(intervention.round) === round
+          ? [...livingEnemies].sort((a, b) => a.hp - b.hp)[0] : livingEnemies[0];
+        if (!target) break;
+        const profile = combatProfile(ally.class), skill = activeSkills.get(ally.id), counter = missionFaction.advantagedClasses.includes(string(ally.class)),
+          roundFactor = round === 1 ? (skill?.effect === "opening_barrage" ? 1.56 : number(profile.round1, 1)) : round >= 3 ? number(profile.round3plus, 1) : 1,
+          rowFactor = ally.row === "후열" && (profile.vsMaxHp || profile.round1) ? REAR_DAMAGE_BONUS : 1,
+          maxEnemyHp = Math.max(...enemies.map((unit) => unit.maxHp)), maxHpFactor = profile.vsMaxHp && target.maxHp === maxEnemyHp ? profile.vsMaxHp : 1,
+          roll = c.rng.int(1, 20), sureCritical = skill?.effect === "sure_critical",
+          critical = sureCritical || roll === 20,
+          supportHit = Math.min(5, hgHitBuff + hgSkillBuff + (counter ? 2 : 0) + (sortie.scouted ? 1 : 0)),
+          panicHit = number(panic.round) === round ? -2 : 0,
+          hit = sureCritical || roll + number(ally.grade, 1) + conditionHit + tacticHit + supportHit + panicHit >= 8,
+          skillFactor = skill?.effect === "double_attack" && attack === 1 || skill?.effect === "sure_critical" ? .8 : 1,
+          dealt = hit ? Math.max(1, Math.round(ally.power * 0.24 * (critical ? 1.6 : 1) * allyDamageFactor * roundFactor * rowFactor * maxHpFactor * skillFactor - target.power * 0.02)) : 0,
+          before = target.hp;
+        target.hp = Math.max(0, target.hp - dealt);
+        exchanges.push({ side: "ally", actorId: ally.id, targetId: target.id, roll, hit, critical, damage: dealt, targetHp: target.hp, kill: before > 0 && target.hp <= 0,
+          counter, hitBuff: hgHitBuff + hgSkillBuff, supportHit, scoutedHit: sortie.scouted ? 1 : 0, panic: panicHit ? "hit-2" : null,
+          roundFactor, rowFactor, maxHpFactor, skill: skill ? skill.effect : null, intervention: intervention && number(intervention.round) === round ? intervention.type : null });
+      }
     }
     for (const foe of enemies.filter((unit) => unit.hp > 0)) {
       const living = allies.filter((unit) => unit.hp > 0);
       if (!living.length) break;
-      const weights = living.map((unit) => Math.round(combatProfile(unit.class).aggro * ROW_AGGRO[unit.row ?? "후열"] * 100)),
+      const weights = living.map((unit) => Math.round(combatProfile(unit.class).aggro * (activeSkills.get(unit.id)?.effect === "draw_fire" ? 2 : 1) * ROW_AGGRO[unit.row ?? "후열"] * 100)),
         targetRoll = c.rng.int(1, weights.reduce((sum, weight) => sum + weight, 0));
       let cursor = 0;
       const target = living[weights.findIndex((weight) => (cursor += weight) >= targetRoll)]!,
         roll = c.rng.int(1, 20),
         critical = roll === 20,
-        hit = roll >= 8,
+        hit = roll + (intervention?.type === "barrage" && number(intervention.round) === round ? -3 : 0) >= 8,
         raw = hit
           ? Math.max(
               1,
@@ -910,8 +937,10 @@ function resolveSortie(c: Context) {
               ),
             )
           : 0,
-        damageTaken = target.row === "후열" ? 1 : combatProfile(target.class).damageTaken,
-        dealt = Math.max(0, Math.round(raw * damageTaken * (1 - defenseReduction / 100) * incomingFactor));
+        skillReduction = activeSkills.get(target.id)?.effect === "draw_fire" ? .08 : activeSkills.get(target.id)?.effect === "fortify" ? .12 : 0,
+        damageTaken = (target.row === "후열" ? 1 : combatProfile(target.class).damageTaken) - skillReduction,
+        brace = intervention?.type === "brace" && number(intervention.round) === round ? .5 : 1,
+        dealt = Math.max(0, Math.round(raw * damageTaken * (1 - defenseReduction / 100) * incomingFactor * brace));
       target.hp = Math.max(0, target.hp - dealt);
       exchanges.push({
         side: "enemy",
@@ -922,9 +951,19 @@ function resolveSortie(c: Context) {
         critical,
         damage: dealt,
         targetHp: target.hp,
+        intervention: brace < 1 ? "brace" : intervention?.type === "barrage" && number(intervention.round) === round ? "barrage" : null,
       });
     }
-    rounds.push({ round, exchanges });
+    if (!panicTriggered && allies.some((unit) => unit.hp > 0 && unit.hp / unit.maxHp < .25 && number(unit.hpBefore) / unit.maxHp >= .25)) {
+      panicTriggered = true;
+      for (const ally of allies.filter((unit) => unit.hp > 0)) {
+        const unit = record(values[ally.id]), roll = c.rng.int(1, 20), total = roll + Math.floor(number(unit.mood) / 100) + (unit.squad ? 1 : 0), success = total >= 8;
+        const check = { dollId: ally.id, round, roll, total, success, criticalFailure: roll === 1 }; panicChecks.push(check);
+        if (!success || roll === 1) (ally as RuntimeRecord).panic = { round: round + 1, skip: roll === 1 };
+        if (roll === 1) unit.traumaCandidate = { cause: "panic", night: sortie.night === true, boss: stageType === "boss" };
+      }
+    }
+    rounds.push({ round, exchanges, skills: skillUses.filter((entry) => entry.round === round), panic: panicChecks.filter((entry) => number(entry.round, round) === round) });
     if (!enemies.some((unit) => unit.hp > 0) || !allies.some((unit) => unit.hp > 0))
       break;
   }
@@ -932,12 +971,20 @@ function resolveSortie(c: Context) {
   const outcome = enemies.every((unit) => unit.hp <= 0) ? "victory" : "defeat";
   for (const ally of allies) {
     const unit = record(values[ally.id]),
-      hp = record(unit.hp);
+      hp = record(unit.hp), records = record(unit.records), allyExchanges = rounds.flatMap((entry) => list<RuntimeRecord>(entry.exchanges)).filter((entry) => entry.side === "ally" && entry.actorId === ally.id),
+      guarded = rounds.flatMap((entry) => list<RuntimeRecord>(entry.exchanges)).filter((entry) => entry.side === "enemy" && entry.targetId === ally.id).reduce((sum, entry) => sum + number(entry.damage), 0);
     hp.cur = ally.hp;
     unit.hp = hp;
+    records.kills = number(records.kills) + allyExchanges.filter((entry) => entry.kill === true).length;
+    records.crits = number(records.crits) + allyExchanges.filter((entry) => entry.critical === true).length;
+    records.guarded = number(records.guarded) + (["SG", "SMG"].includes(string(unit.class)) ? guarded : 0);
+    unit.records = records;
     unit.status = ally.hp <= 0 ? "대파" : ally.hp < ally.maxHp ? "손상" : "대기";
+    if (outcome === "defeat" && ally.hp > 0) unit.traumaCandidate = { cause: "defeat", night: sortie.night === true, boss: stageType === "boss" };
   }
-  const loot = outcome === "victory" ? rollOperationLoot(c) : [],
+  const captureRoll = outcome === "victory" && stageType !== "boss" ? c.rng.int(1, 100) : null,
+    prisoner = captureRoll !== null && captureRoll <= 20,
+    loot = outcome === "victory" ? rollOperationLoot(c) : [],
     operationComplete = outcome === "victory" && (!stages.length || currentStageIndex >= stages.length - 1);
   if (outcome === "defeat") {
     const daily = dailyState(c.state);
@@ -1017,13 +1064,22 @@ function resolveSortie(c: Context) {
     night: sortie.night === true,
     nightHitModifier: number(sortie.nightHitModifier),
     nightHg: number(sortie.nightHg),
+    intervention,
+    skills: skillUses,
+    panic: panicChecks,
+    captureRoll,
+    prisoner,
   };
+  if (prisoner) next.prisoner = { active: true, missionId: operation.id, capturedAt: currentStageIndex };
   if (outcome === "defeat" || operationComplete || !stages.length) next.sortie = null;
   else {
     currentStage.completed = true;
-    currentStage.result = { outcome, loot };
+    currentStage.result = { outcome, loot, captureRoll, prisoner };
     sortie.current = currentStageIndex + 1;
     sortie.scouted = false;
+    sortie.ambush = false;
+    sortie.command = Math.min(100, number(sortie.command) + 34);
+    sortie.intervention = null;
     sortie.lastStage = { index: currentStageIndex, stageType, guide: stageGuide(c.schema, stageType), outcome, loot };
     next.sortie = sortie;
   }
@@ -1054,6 +1110,12 @@ function resolveSortie(c: Context) {
     night: sortie.night === true,
     nightHitModifier: number(sortie.nightHitModifier),
     nightHg: number(sortie.nightHg),
+    intervention,
+    skills: skillUses,
+    panic: panicChecks,
+    captureRoll,
+    prisoner,
+    command: next.sortie ? number(record(next.sortie).command) : 0,
     current: next.sortie ? number(record(next.sortie).current) : stages.length,
     total: stages.length || 1,
     dailyAwards,
@@ -1881,12 +1943,14 @@ export function gflModule(): ModuleDefinition {
           if (missing)
             return fail(c, "gfl_sortie_travel_funds_missing", travelCost);
         }
-        const stages = operationStages(c, operation, missionType), night = nightSortie(c.state, entry);
+        const stages = operationStages(c, operation, missionType), night = nightSortie(c.state, entry),
+          intel = members.some((id) => string(record(owned(c.state)[string(id)]).class) === "HG") ? 1 : 0;
         gfl.sortie = {
           active: true,
           missionId: operation.id,
           echelonId: entry.id,
-          command,
+          command: 0,
+          deploymentCommand: command,
           progress: 0,
           engaged: false,
           power: formationPower,
@@ -1897,6 +1961,7 @@ export function gflModule(): ModuleDefinition {
           stages,
           current: 0,
           scouted: false,
+          intel,
           night: night.night,
           nightPhase: night.phase,
           nightHitModifier: night.modifier,
@@ -1914,6 +1979,7 @@ export function gflModule(): ModuleDefinition {
           current: 0,
           travelCost,
           night,
+          intel,
           risk: missionRisk(formationPower, number(operation.power), commander.checkBonus, night.modifier),
           sortiesRemaining: Math.max(0, commander.sortieLimit - number(daily.sortiesUsed)),
         });
@@ -1925,6 +1991,21 @@ export function gflModule(): ModuleDefinition {
       "gfl/sortie/finish": scoped(resolveSortie),
       "gfl/sortie/stage": scoped(resolveOperationStage),
       "gfl/sortie/retreat": scoped(retreatOperation),
+      "gfl/sortie/interrogate": scoped((c) => {
+        const gfl = state(c.state), prisoner = record(gfl.prisoner);
+        if (!prisoner.active) return fail(c, "gfl_prisoner_missing");
+        const roll = c.rng.int(1, 20), modifier = commanderStatus(c.state).checkBonus, total = roll + modifier, success = total >= 12,
+          sortie = record(gfl.sortie);
+        if (success && sortie.active) { sortie.scouted = true; sortie.intel = 2; }
+        if (!success && sortie.active) sortie.ambush = true;
+        gfl.prisoner = null; if (sortie.active) gfl.sortie = sortie; c.state.gfl = gfl;
+        return ok(c, { roll, modifier, total, success, scouted: success, intel: success ? 2 : number(sortie.intel), ambush: !success,
+          narrativeFact: success ? "심문으로 다음 교전의 적 정보를 확보했다." : "심문이 실패해 다음 교전에서 적이 1라운드 선제한다." });
+      }),
+      "gfl/sortie/prisoner/release": scoped((c) => {
+        const gfl = state(c.state); if (!record(gfl.prisoner).active) return fail(c, "gfl_prisoner_missing");
+        gfl.prisoner = null; c.state.gfl = gfl; return ok(c, { released: true });
+      }),
       "gfl/encounter/recruit": scoped(recruitEncounter),
       "gfl/encounter/skip": scoped(skipEncounter),
       "gfl/boss/recruit": scoped((c) => {
@@ -2265,7 +2346,7 @@ export function gflModule(): ModuleDefinition {
           locationId,
           locationName: location?.name ?? locationId,
           effectiveLocation:
-            sortie.active && sortie.command === "field"
+            sortie.active && string(sortie.deploymentCommand || sortie.command) === "field"
               ? {
                   id: `mission:${sortie.missionId}`,
                   name: `작전 현장 · ${sortie.missionId}`,
@@ -2281,6 +2362,7 @@ export function gflModule(): ModuleDefinition {
           featuredDollId: gfl.featuredDollId ?? null,
           followUp: activeFollowUp(value),
           dialogue: activeDialogue(value),
+          prisoner: gfl.prisoner ?? null,
           settings: { relationDifficulty: relationDifficulty(value).id, gossip: string(record(gfl.settings).gossip || "mild") },
           commander: commanderStatus(value),
           dissatisfaction: { value: dissatisfaction(value), ...dissTier(value) },
@@ -2368,6 +2450,17 @@ export function gflModule(): ModuleDefinition {
         ...FORMATION_GUIDE,
         factions: Object.fromEntries(Object.entries(FACTION_COUNTER).map(([name, value]) => [name, value.badge])),
       }),
+      "gfl/sortie/intel": (...args) => {
+        const schema = record(args[0]), value = record(args[1]), sortie = record(state(value).sortie), level = clamp(number(sortie.intel), 0, 2), operation = mission(schema, sortie.missionId);
+        if (!sortie.active || !operation) return { level: 0, enemies: [], estimate: null };
+        const configured = list<RuntimeRecord>(operation.enemies), count = configured.length || clamp(Math.round(number(operation.enemyCount, Math.ceil(Math.max(1, number(operation.power)) / 1200))), 1, 5),
+          estimate = { count, minPower: Math.max(100, Math.floor(number(operation.power) * .8 / 100) * 100), maxPower: Math.ceil(number(operation.power) * 1.2 / 100) * 100 },
+          enemies = level < 1 ? [] : Array.from({ length: count }, (_, index) => {
+            const source = configured[index] ?? {}, isBoss = index === 0 && Boolean(string(operation.boss));
+            return { name: string(source.name || (isBoss ? operation.boss : `${operation.enemy || "적대 세력"} ${index + 1}`)), class: string(source.class || (isBoss ? "BOSS" : "미상")), ...(level >= 2 ? { hp: number(source.hp, Math.round(number(source.power, number(operation.power) / count) * (isBoss ? 1.1 : .75))) } : {}) };
+          });
+        return { level, estimate, enemies };
+      },
       "gfl/locations": (...args) => {
         const schema = record(args[0]),
           value = record(args[1]),
@@ -2541,7 +2634,8 @@ export function gflModule(): ModuleDefinition {
         relation: relationFor(schema, unit.affinity).label,
         status: unit.status,
           };
-        });
+        }), ace = Object.values(owned(value)).map(record).sort((a, b) => number(record(b.records).kills) - number(record(a.records).kills))[0],
+        aceKills = ace ? number(record(ace.records).kills) : 0;
       return {
         commander: {
           locationId,
@@ -2558,6 +2652,7 @@ export function gflModule(): ModuleDefinition {
           supplies: record(value.resources).res ?? 0,
         },
         dolls: units,
+        ...(ace && aceKills > 0 ? { unitAce: { dollId: ace.id, name: ace.name, kills: aceKills, title: "부대 에이스" } } : {}),
         operation: record(gfl.sortie).active
           ? {
               status: "교전 대기",

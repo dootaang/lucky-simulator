@@ -115,6 +115,21 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
       ],
     });
   }
+  const prisoner = rec(gflStatus.prisoner);
+  if (prisoner.active) {
+    cards.push({
+      key: `gfl-prisoner:${String(prisoner.missionId)}:${String(prisoner.capturedAt)}`,
+      icon: 'alert',
+      title: '포로 심문',
+      desc: '심문에 성공하면 다음 교전 명중과 적 정보가 열린다. 실패하면 적의 매복으로 아군이 첫 라운드에 공격하지 못한다.',
+      more: '다음 단계로 진행하면 포로는 자동으로 보내진다.',
+      dismissible: true,
+      options: [
+        { label: '심문한다', id: 'gfl/sortie/interrogate', params: {}, mode: 'narrated', kind: 'primary' },
+        { label: '보내준다', id: 'gfl/sortie/prisoner/release', params: {}, mode: 'ledger', kind: 'ghost' },
+      ],
+    });
+  }
   // 암시장 브로커 — 엔진이 7일마다 제안을 확정하고, 구매는 의심도를 쌓는다(감사 리스크는 카드에 명시).
   const market = rec(gflStatus.market), marketPurchased = Array.isArray(market.purchased) ? (market.purchased as unknown[]).map(String) : [],
     marketOffers = arr(market.offers).filter((offer) => !marketPurchased.includes(String(offer.id)));
