@@ -11,4 +11,7 @@ describe('summarizeWarningCodes',()=>{
   it('첫 등장 순서를 유지한다',()=>{
     expect(summarizeWarningCodes([{code:'b'},{code:'a'},{code:'b'}])).toBe('b ×2, a');
   });
+  it('스프라이트 목록에서 빠진 수를 함께 보여준다',()=>{
+    expect(summarizeWarningCodes([{code:'sprite_catalog_truncated',detail:'전체 700명 · 포함 600명 · 제외 100명'}])).toBe('sprite_catalog_truncated (전체 700명 · 포함 600명 · 제외 100명)');
+  });
 });

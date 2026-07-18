@@ -11,7 +11,7 @@ import {diagnostics} from './diagnostics.svelte.ts';
 type Run=PlaySession['promptRuns'][number];
 const KIND:Record<string,string>={send:'대화',reroll:'다시 굴리기',continue:'이어쓰기',management:'관리 행동'};
 const ms=(value:number|undefined)=>value===undefined?'(모름)':`${Math.round(value)}ms`;
-export function summarizeWarningCodes(warnings:readonly{code:string}[]){if(!warnings.length)return'없음';const counts=new Map<string,number>();for(const warning of warnings)counts.set(warning.code,(counts.get(warning.code)??0)+1);return[...counts].map(([code,count])=>count>1?`${code} ×${count}`:code).join(', ');}
+export function summarizeWarningCodes(warnings:readonly{code:string;detail?:string}[]){if(!warnings.length)return'없음';const counts=new Map<string,{count:number;detail:string|undefined}>();for(const warning of warnings){const current=counts.get(warning.code);counts.set(warning.code,{count:(current?.count??0)+1,detail:current?.detail??warning.detail});}return[...counts].map(([code,value])=>`${value.count>1?`${code} ×${value.count}`:code}${code==='sprite_catalog_truncated'&&value.detail?` (${value.detail})`:''}`).join(', ');}
 
 export function traceRun(run:Run,card:string,chat:string,message:number|null){
   const where={card,chat,message,turn:run.turn} as const;

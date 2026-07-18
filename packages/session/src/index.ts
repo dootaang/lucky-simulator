@@ -37,6 +37,7 @@ import {
   type RegexScript,
   type RuntimeWorkerSuccess,
 } from "@simbot/risu";
+import { buildSpriteCatalog, spriteCommandGuide } from "./sprite-catalog.ts";
 import {
   BUTTON_ONLY_EVENTS,
   resolveSpeakerList,
@@ -307,7 +308,7 @@ function activeModules(project: ProjectRuntime["project"]) {
     ]),
   ];
 }
-function narrativeCatalog(project: ProjectRuntime["project"], assets: readonly Pick<AssetMacroAsset,"name"|"type"|"mime"|"moduleNamespace">[] = []) {
+function narrativeCatalog(project: ProjectRuntime["project"], assets: readonly Pick<AssetMacroAsset,"name"|"type"|"mime"|"moduleNamespace">[] = [], allowNsfw = false) {
   const schema = project.schema,
     block = (Array.isArray(schema.entities) ? schema.entities : [])
       .map(object)
@@ -324,36 +325,24 @@ function narrativeCatalog(project: ProjectRuntime["project"], assets: readonly P
         .map(String)
         .filter(Boolean),
     ),
-    normalize = (value: string) =>
-      value
-        .normalize("NFKC")
-        .toLowerCase()
-        .replace(/[^a-z0-9가-힣]/g, ""),
-    commands = [...new Set([
-      ...(Array.isArray(object(project.content).assetCommands)
-        ? (object(project.content).assetCommands as unknown[]).map(String)
-        : []),
-      ...assets.filter(asset=>asset.mime.startsWith("image/")).map(asset=>asset.name.replace(/[_-]\d+$/,"")),
-    ])]
-      .filter((command) =>
-        aliases.some((items) =>
-          items.some((alias) => {
-            const key = normalize(alias),
-              value = normalize(command);
-            return !!key && (value === key || value.startsWith(key));
-          }),
-        ),
-      )
-      .slice(0, 120);
+    sprites = buildSpriteCatalog(
+      aliases.map((items) => ({ aliases: items })),
+      assets,
+      {
+        allowNsfw,
+        flatCommands: Array.isArray(object(project.content).assetCommands)
+          ? (object(project.content).assetCommands as unknown[]).map(String)
+          : [],
+      },
+    );
   return {
     npcs: npcs.map(
       (npc, index) =>
         `${String(npc.id ?? `npc-${index}`)} (${String(npc.nameKo ?? npc.name ?? npc.nameEn ?? npc.id ?? "이름 없음")})`,
     ),
-    commands,
+    sprites,
   };
 }
-function spriteCommandGuide(commands:readonly string[]){return commands.length?`[유효 스프라이트 명령]\n${commands.join(", ")}\n이미지 태그에는 위 이름만 정확히 사용한다. 목록에 없는 캐릭터·표정 이름은 만들지 않는다.`:"[유효 스프라이트 명령 없음]\n이미지 태그를 만들지 않는다.";}
 function compactPromptRuns(runs: PromptRun[]) {
   const kept = runs.slice(-500),
     detailedFrom = Math.max(0, kept.length - 8);
@@ -1804,12 +1793,12 @@ export class PlaySession {
       persona = this.#persona?.prompt?.trim()
         ? `\n플레이어 페르소나: ${this.#persona.name}\n${this.#persona.prompt}`
         : "",
-      catalog = narrativeCatalog(this.runtime.project,this.#assets),
+      catalog = narrativeCatalog(this.runtime.project,this.#assets,this.#cbsVariables.toggle_GFNSFW === "1"),
       npcGuide = [
         catalog.npcs.length
           ? `[등장 가능한 NPC]\n${catalog.npcs.join("\n")}`
           : "",
-        spriteCommandGuide(catalog.commands),
+        spriteCommandGuide(catalog.sprites),
       ]
         .filter(Boolean)
         .join("\n"),
@@ -1825,7 +1814,7 @@ export class PlaySession {
       ],
       assistantPrefill: "",
       trace: [],
-      warnings: [],
+      warnings: catalog.sprites.warnings.map((warning) => ({ ...warning, path: "sprite-catalog" })),
     };
   }
   #syncMessageSeq() {
@@ -1910,8 +1899,8 @@ export class PlaySession {
       seed: this.runtime.snapshot().rng,
       turn: this.#turn,
     }).entries.map(({ content, name }) => ({ content, name }));
-    const catalog=narrativeCatalog(this.runtime.project,this.#assets),nativeGfl=object(this.runtime.project.content).nativePresentation==='gfl',card=nativeGfl?{...this.#card,systemPrompt:`${this.#card.systemPrompt??'{{original}}'}\n${spriteCommandGuide(catalog.commands)}`} : this.#card;
-    return compilePrompt({
+    const catalog=narrativeCatalog(this.runtime.project,this.#assets,this.#cbsVariables.toggle_GFNSFW === "1"),nativeGfl=object(this.runtime.project.content).nativePresentation==='gfl',card=nativeGfl?{...this.#card,systemPrompt:`${this.#card.systemPrompt??'{{original}}'}\n${spriteCommandGuide(catalog.sprites)}`} : this.#card;
+    const compiled = compilePrompt({
       preset: this.#preset,
       activeModules: activeModules(this.runtime.project),
       assets:this.#assets.map(asset=>({...asset,bytes:null})),
@@ -1922,15 +1911,18 @@ export class PlaySession {
       memory,
       engineContext: {
         facts: `다음 JSON은 엔진이 소유한 현재 사실이다. 서사로 수치를 바꾸지 말고 이벤트 결과만 따른다.\n${JSON.stringify(this.#engineStateForPrompt())}`,
-        availableActions: `제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(", ") || "(없음)"}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.\n${spriteCommandGuide(catalog.commands)}`,
+        availableActions: `제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(", ") || "(없음)"}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.\n${spriteCommandGuide(catalog.sprites)}`,
         groundedMemory: retrieval.abstained
           ? "관련 근거가 부족하므로 과거 사실을 추측하지 않는다."
           : memory,
       },
     });
+    compiled.warnings.push(...catalog.sprites.warnings.map((warning) => ({ ...warning, path: "sprite-catalog" })));
+    return compiled;
   }
 }
 
 // 체크포인트·redo·대안·사건 원장은 snapshot에 저장되며 무결성 해시로 함께 봉인한다.
 export * from "./chat-store.ts";
 export * from "./providers/index.ts";
+export * from "./sprite-catalog.ts";
