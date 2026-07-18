@@ -1719,6 +1719,27 @@ export class PlaySession {
           }),
           this.#turn,
         );
+        // GFL 관계 리듬은 수치 로그와 함께 사람이 읽을 수 있는 장면 사실도 보존한다.
+        // 다음 대화 프롬프트가 외출 장소·트라우마 진전·약속 맥락을 임의로 다시 만들지 않게 한다.
+        if (eventId.startsWith("gfl/relation/") && typeof log.narrativeFact === "string") {
+          const dollId = String(log.dollId ?? "");
+          this.memory.replace(
+            memoryRecord({
+              id: `gfl-relation:${evidenceId}`,
+              text: log.narrativeFact,
+              turn: this.#turn,
+              status: "approved",
+              kind: "relation",
+              ...(dollId ? { entities: [dollId] } : {}),
+              canonicalAnchors: [`gfl-relation:${eventId}:${dollId || evidenceId}`],
+              importance: 6,
+              lifecycle: { state: "active", timeScope: "current" },
+              evidence: [{ kind: "event", id: String(journalIndex) }],
+              sourceEventIndexes: [journalIndex],
+            }),
+            this.#turn,
+          );
+        }
         // 티어 통과는 장기 회상 앵커가 된다 — "N일차에 신뢰가 되었다"를 나중에 사람 말로 찾을 수 있게
         // JSON 사실과 별도로 읽을 수 있는 기억을 남긴다. 같은 앵커의 옛 티어 기억은 replace가 폐기한다.
         const tier = log.tierChanged as

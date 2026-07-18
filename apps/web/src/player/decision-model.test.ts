@@ -67,6 +67,17 @@ describe('결정 카드 모델', () => {
     expect(follow?.options[0]).toMatchObject({ id: 'gfl/relation/check', params: { dollId: 'm4a1', choice: 'nickname', followup: true }, mode: 'narrated' });
     expect(follow?.options[0]?.label).toContain('DC 9');
   });
+  it('GFL 약속 요청과 복수 계약 기념일을 엔진 결정 카드로 만든다', () => {
+    const cards = buildDecisionCards((id) => id === 'gfl/status' ? {
+      promiseRequest: { dollId: 'm4a1', name: 'M4A1', type: 'sortie', deadline: 6, requestedDay: 3 },
+      anniversaries: [{ dollId: 'm4a1', name: 'M4A1', days: 7 }, { dollId: 'ump45', name: 'UMP45', days: 30 }],
+    } : null);
+    const promise = cards.find((card) => card.key === 'gfl-promise:m4a1:3');
+    expect(promise).toMatchObject({ title: 'M4A1의 약속', desc: '다음 작전에 데려가 주세요', dismissible: true });
+    expect(promise?.options).toEqual([expect.objectContaining({ label: '약속한다', id: 'gfl/relation/promise/accept' }), expect.objectContaining({ label: '지금은 어렵다', id: 'gfl/relation/promise/decline' })]);
+    expect(cards.filter((card) => card.key.startsWith('gfl-anniversary:'))).toHaveLength(2);
+    expect(cards.find((card) => card.key === 'gfl-anniversary:ump45:30')?.options[0]).toMatchObject({ id: 'gfl/relation/anniversary', mode: 'scene' });
+  });
   it('GFL 관계 판정의 티어 승급을 특별한 장면 카드로 만든다', () => {
     const log = { ok: true, event: 'gfl/relation/check', dollId: 'm4a1', name: 'M4A1', tierChanged: { from: { label: '첫 만남', index: 0 }, to: { label: '신뢰', index: 1, description: '서로를 믿는다' } } };
     const cards = buildDecisionCards(() => null, { logs: [log], turn: 5 });

@@ -130,6 +130,17 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
       ],
     });
   }
+  const promiseRequest = rec(gflStatus.promiseRequest);
+  if (promiseRequest.dollId) {
+    const labels: Record<string,string> = { sortie: '다음 작전에 데려가 주세요', repair: '수복을 미루지 말아 주세요', anniversary: '기념일에 시간을 내주세요' };
+    cards.push({ key: `gfl-promise:${String(promiseRequest.dollId)}:${String(promiseRequest.requestedDay)}`, icon: 'heart', title: `${String(promiseRequest.name)}의 약속`,
+      desc: labels[String(promiseRequest.type)] ?? '약속을 지켜 주세요', more: String(promiseRequest.type) === 'repair' ? 'HP 50% 미만부터 1일 · 동시 3개까지' : `기한 ${num(promiseRequest.deadline)}일차 · 동시 3개까지`, dismissible: true,
+      options: [{ label: '약속한다', id: 'gfl/relation/promise/accept', params: {}, mode: 'narrated', kind: 'primary' }, { label: '지금은 어렵다', id: 'gfl/relation/promise/decline', params: {}, mode: 'ledger', kind: 'ghost' }] });
+  }
+  for (const anniversary of arr(gflStatus.anniversaries).filter((entry) => entry.viewed !== true)) {
+    cards.push({ key: `gfl-anniversary:${String(anniversary.dollId)}:${num(anniversary.days)}`, icon: 'heart', title: `함께한 지 ${num(anniversary.days)}일`, desc: `${String(anniversary.name)}와의 계약 기념일이다. 오늘 관계 행동 효과가 1.5배가 된다.`, more: '오늘 자정까지',
+      options: [{ label: '특별한 장면 열기', id: 'gfl/relation/anniversary', params: { dollId: String(anniversary.dollId) }, mode: 'scene', kind: 'primary' }] });
+  }
   // 암시장 브로커 — 엔진이 7일마다 제안을 확정하고, 구매는 의심도를 쌓는다(감사 리스크는 카드에 명시).
   const market = rec(gflStatus.market), marketPurchased = Array.isArray(market.purchased) ? (market.purchased as unknown[]).map(String) : [],
     marketOffers = arr(market.offers).filter((offer) => !marketPurchased.includes(String(offer.id)));

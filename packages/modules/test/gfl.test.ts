@@ -1280,4 +1280,96 @@ describe("Girls Frontline native module", () => {
     const failureSeed = Array.from({ length: 100 }, (_, index) => index + 1).find((seed) => (play(seed).result as any).success === false)!;
     const failure = play(failureSeed); expect(failure.result).toMatchObject({ success: false, ambush: true }); expect((failure.game.state.gfl as any).prisoner).toBeNull();
   });
+
+  it("병과 취향은 DC를 보정하고 선호 행동 첫 성공 뒤에만 상세와 ♥를 공개한다", () => {
+    const game = runtime(); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.mood = 1000;
+    let options = (game.select("gfl/relation/options") as any).dolls.m4a1;
+    expect(options).toMatchObject({ preferenceKnown: false, preference: null, preferenceHint: "?" });
+    expect(options.choices.find((entry: any) => entry.id === "train")).toMatchObject({ dc: 10 });
+    expect(options.choices.find((entry: any) => entry.id === "coffee")).toMatchObject({ dc: 11 });
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "train" }).log[0]).toMatchObject({ ok: true, dc: 10, preferenceMod: -2, preferenceRevealed: true });
+    options = (game.select("gfl/relation/options") as any).dolls.m4a1;
+    expect(options.preference).toEqual({ preferred: "train", disliked: "coffee" });
+    expect(options.choices.find((entry: any) => entry.id === "train").label).toContain("♥");
+  });
+
+  it("계약 7일 기념일은 여러 인형에게 동시에 열리고 그날 관계 효과를 1.5배로 만든다", () => {
+    const source: any = structuredClone(schema); source.initialState.day = 7; source.initialState.clock = { day: 7, hour: 20, turn: 0, phase: "저녁" };
+    const game = runtime(source); game.dispatch("gfl/start", { mode: "commander" });
+    for (const id of ["m4a1", "ump45"]) { game.dispatch("gfl/doll/acquire", { dollId: id }); (game.state.gfl as any).dolls[id].hiredDay = 1; }
+    const end = game.dispatch("gfl/time/end-day").log[0] as any;
+    expect(end.anniversaries).toHaveLength(2); expect(end.anniversaries.map((entry: any) => entry.days)).toEqual([7, 7]);
+    const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.mood = 1000;
+    expect(game.dispatch("gfl/relation/check", { dollId: "m4a1", choice: "talk" }).log[0]).toMatchObject({ ok: true, affinityDelta: 5, moodDelta: 15 });
+  });
+
+  it("외출은 신뢰·대기 조건과 일일 제한을 지키며 시간대 한 칸을 비용으로 쓴다", () => {
+    const source: any = structuredClone(schema); source.gfl.relation = { names: ["적대", "경계", "중립", "호의", "친밀", "애착"], thresholds: [-100, -30, 0, 20, 50, 80], descriptions: [] };
+    const game = runtime(source, 11); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1;
+    expect(game.dispatch("gfl/relation/outing", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_relation_tier_locked" });
+    unit.affinity = 80; (game.state.gfl as any).promises = [{ dollId: "m4a1", type: "anniversary", deadline: 7, fulfilled: false }]; const beforeTurn = Number((game.state.clock as any).turn), outing = game.dispatch("gfl/relation/outing", { dollId: "m4a1" }).log[0] as any;
+    expect(outing).toMatchObject({ ok: true, affinityDelta: 4, moodDelta: 20, timeAdvanced: true }); expect(["시장 거리", "강변 방벽", "옛 카페"]).toContain(outing.place);
+    expect(Number((game.state.clock as any).turn)).toBe(beforeTurn + 1);
+    expect((game.state.gfl as any).promises[0].fulfilled).toBe(false);
+    expect(game.dispatch("gfl/relation/outing", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_outing_daily_limit" });
+  });
+
+  it("트라우마 치유는 실패 보너스를 막고 성공 3회 뒤 조건 명중 +1 훈장을 남긴다", () => {
+    const source: any = structuredClone(schema); source.gfl.relation = { names: ["중립", "호의", "신뢰", "사랑", "서약"], thresholds: [0, 20, 50, 100, 200], descriptions: [] };
+    const make = (seed: number) => { const game = runtime(source, seed); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); const unit = (game.state.gfl as any).dolls.m4a1; unit.affinity = 490; unit.trauma = "철혈 공포"; unit.traumaProgress = 0; game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }); return game; };
+    const failed = Array.from({ length: 100 }, (_, i) => make(i + 1)).find((game) => (game.dispatch("gfl/relation/heal-trauma", { dollId: "m4a1" }).log[0] as any).success === false)!;
+    expect(failed.dispatch("gfl/relation/session/end").log[0]).toMatchObject({ ok: true, affinityDelta: 0, moodDelta: 0 });
+    const healed = make(20260719); let last: any; for (let count = 0; count < 30 && (healed.state.gfl as any).dolls.m4a1.trauma; count++) last = healed.dispatch("gfl/relation/heal-trauma", { dollId: "m4a1" }).log[0];
+    expect(last).toMatchObject({ success: true, progress: 3, medal: "철혈 공포" }); expect((healed.state.gfl as any).dolls.m4a1).toMatchObject({ trauma: null, overcomeMedal: "철혈 공포" });
+  });
+
+  it("전투 후보는 야간·보스·철혈 우선순위로 트라우마 하나만 확정하고 해당 조건 명중을 바꾼다", () => {
+    const tag = (candidate: any, options: any = {}) => { const game=sortieGame(options); (game.state.gfl as any).dolls.m4a1.traumaCandidate=candidate; if(candidate.night)(game.state.clock as any).phase="심야"; game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); reachCombat(game); return (game.state.gfl as any).dolls.m4a1.trauma; };
+    expect(tag({cause:"panic",night:true,boss:true})).toBe("야간 공포"); expect(tag({cause:"panic",boss:true},{boss:"Scarecrow"})).toBe("포화 공포"); expect(tag({cause:"panic"})).toBe("철혈 공포");
+    const hit = (key: "trauma"|"overcomeMedal") => { const game=sortieGame({seed:42}); (game.state.gfl as any).dolls.m4a1[key]="철혈 공포"; game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1"}); return reachCombat(game).rounds.flatMap((row:any)=>row.exchanges).find((row:any)=>row.actorId==="m4a1").traumaHit; };
+    expect(hit("trauma")).toBe(-2); expect(hit("overcomeMedal")).toBe(1);
+  });
+
+  it("약속은 세 종류를 엔진에서 요청하고 상한에서도 RNG를 고정하며 이행·위반 영수증을 정산한다", () => {
+    const requested = new Set<string>();
+    for (let seed = 1; seed <= 300 && requested.size < 3; seed++) { const game = runtime(schema, seed); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }); const row = game.dispatch("gfl/relation/session/end").log[0] as any; if (row.promiseRequested) requested.add(row.promiseRequested.type); }
+    expect([...requested].sort()).toEqual(["anniversary", "repair", "sortie"]);
+    const capped = runtime(schema, 77), open = runtime(schema, 77);
+    for (const game of [capped, open]) { game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); }
+    (capped.state.gfl as any).promises = [{}, {}, {}]; (open.state.gfl as any).promises = [{}, {}];
+    for (const game of [capped, open]) { game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }); game.dispatch("gfl/relation/session/end"); }
+    expect(capped.snapshot().rng).toEqual(open.snapshot().rng); expect((capped.state.gfl as any).promiseRequest).toBeFalsy();
+    const settle = runtime(); settle.dispatch("gfl/start", { mode: "commander" }); settle.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); settle.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
+    (settle.state.gfl as any).promises = [{ dollId: "m4a1", name: "M4A1", type: "sortie", deadline: 2, fulfilled: false }, { dollId: "ump45", name: "UMP45", type: "anniversary", deadline: 1, fulfilled: false }];
+    settle.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); (settle.state.gfl as any).sortie = null; (settle.state.clock as any).phase = "저녁";
+    const receipts = (settle.dispatch("gfl/time/end-day").log[0] as any).promiseReceipts;
+    expect(receipts).toEqual(expect.arrayContaining([expect.objectContaining({ type: "sortie", fulfilled: true, affinityDelta: 5 }), expect.objectContaining({ type: "anniversary", fulfilled: false, dissatisfactionDelta: 3 })]));
+    const repair=runtime(); repair.dispatch("gfl/start",{mode:"commander"}); repair.dispatch("gfl/doll/acquire",{dollId:"m4a1"}); const damaged=(repair.state.gfl as any).dolls.m4a1; damaged.hp.cur=400; (repair.state.gfl as any).promiseRequest={dollId:"m4a1",name:"M4A1",type:"repair",deadline:null,triggered:false};
+    expect(repair.dispatch("gfl/relation/promise/accept").log[0]).toMatchObject({ok:true,promise:{triggered:true,deadline:2}}); repair.dispatch("gfl/location/move",{locationId:"base-maintenance"}); repair.dispatch("gfl/repair/start",{dollId:"m4a1"}); expect((repair.state.gfl as any).promises[0].fulfilled).toBe(true);
+    const anniversary=runtime(); anniversary.dispatch("gfl/start",{mode:"commander"}); anniversary.dispatch("gfl/doll/acquire",{dollId:"m4a1"}); (anniversary.state.gfl as any).anniversaries=[{dollId:"m4a1",days:7,day:1}]; (anniversary.state.gfl as any).promises=[{dollId:"m4a1",type:"anniversary",deadline:1,fulfilled:false}]; anniversary.dispatch("gfl/relation/anniversary",{dollId:"m4a1"}); expect((anniversary.state.gfl as any).promises[0].fulfilled).toBe(true);
+    const deadline=runtime(); deadline.dispatch("gfl/start",{mode:"commander"}); deadline.dispatch("gfl/doll/acquire",{dollId:"m4a1"}); (deadline.state.gfl as any).promises=[{dollId:"m4a1",type:"sortie",deadline:2,fulfilled:false}]; (deadline.state.clock as any).phase="저녁"; expect((deadline.dispatch("gfl/time/end-day").log[0] as any).promiseReceipts).toHaveLength(0); expect((deadline.state.gfl as any).promises).toHaveLength(1);
+  });
+
+  it("질투 3모드는 같은 RNG를 쓰고 mild/full 효과와 연속 난입 금지를 지킨다", () => {
+    const source: any = structuredClone(schema); source.initialState.day = 10; source.initialState.clock.day = 10; source.gfl.relation = { names: ["중립", "호의", "친밀", "신뢰", "사랑"], thresholds: [0, 20, 40, 60, 100], descriptions: [] };
+    const seed = Array.from({ length: 200 }, (_, i) => i + 1).find((candidate) => { const game = runtime(source, candidate); game.dispatch("gfl/start", { mode: "commander" }); for (const id of ["m4a1", "ump45"]) { game.dispatch("gfl/doll/acquire", { dollId: id }); const unit=(game.state.gfl as any).dolls[id]; unit.affinity=100; unit.hiredDay=1; } return Number((game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }).log[0] as any).intruder?.dollId?.length) > 0; })!;
+    const run = (mode: string) => { const game = runtime(source, seed); game.dispatch("gfl/start", { mode: "commander" }); for (const id of ["m4a1", "ump45"]) { game.dispatch("gfl/doll/acquire", { dollId: id }); const unit=(game.state.gfl as any).dolls[id]; unit.affinity=100; unit.hiredDay=1; } game.dispatch("gfl/settings/update", { jealousy: mode }); const before={...((game.state.gfl as any).dolls.ump45)}; const result=game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }).log[0] as any; return { game,result,before,rng:game.snapshot().rng }; };
+    const off=run("off"), mild=run("mild"), full=run("full"); expect(off.rng).toEqual(mild.rng); expect(mild.rng).toEqual(full.rng); expect(off.result.intruder).toBeNull();
+    expect((mild.game.state.gfl as any).dolls.ump45.mood).toBe(Number(mild.before.mood)-10); expect((full.game.state.gfl as any).dolls.ump45.affinity).toBe(Number(full.before.affinity)-3);
+    mild.game.dispatch("gfl/relation/session/end"); (mild.game.state as any).day += 1; (mild.game.state.clock as any).day += 1;
+    expect(mild.game.dispatch("gfl/relation/session/start", { dollId: "m4a1" }).log[0]).toMatchObject({ ok: true, intruder: null });
+  });
+
+  it("비밀 취미는 발견 전 숨고 발견 후 전용 DC7 캡슐을 열며 사용자 호칭은 한 번만 저장되어 판정 +1을 준다", () => {
+    const seed = Array.from({ length: 200 }, (_, i) => i + 1).find((candidate) => { const probe=runtime(schema,candidate); probe.dispatch("gfl/start",{mode:"commander"}); probe.dispatch("gfl/doll/acquire",{dollId:"m4a1"}); return (probe.dispatch("gfl/relation/session/start",{dollId:"m4a1"}).log[0] as any).hobbyDiscovered===true; })!;
+    const game = runtime(schema, seed); game.dispatch("gfl/start", { mode: "commander" }); game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    expect((game.select("gfl/dolls") as any[])[0].secretHobby).toBeUndefined(); expect(game.dispatch("gfl/relation/session/start",{dollId:"m4a1"}).log[0]).toMatchObject({hobbyDiscovered:true});
+    expect((game.select("gfl/relation/options") as any).dolls.m4a1.choices.find((entry:any)=>entry.id==="hobby")).toMatchObject({ dc:7 });
+    const criticalSeed=Array.from({length:200},(_,i)=>i+1).find((candidate)=>{const probe=runtime(schema,candidate);probe.dispatch("gfl/start",{mode:"commander"});probe.dispatch("gfl/doll/acquire",{dollId:"m4a1"});const doll=(probe.state.gfl as any).dolls.m4a1;doll.affinity=490;doll.mood=1000;return (probe.dispatch("gfl/relation/check",{dollId:"m4a1",choice:"talk"}).log[0] as any).tier==="critical_success";})!;
+    const named=runtime(schema,criticalSeed); named.dispatch("gfl/start",{mode:"commander"}); named.dispatch("gfl/doll/acquire",{dollId:"m4a1"}); const candidate=(named.state.gfl as any).dolls.m4a1;candidate.affinity=490;candidate.mood=1000;expect(named.dispatch("gfl/relation/check",{dollId:"m4a1",choice:"talk"}).log[0]).toMatchObject({tier:"critical_success"}); expect((named.select("gfl/relation/options") as any).dolls.m4a1.callsignEligible).toBe(true);
+    expect(named.dispatch("gfl/relation/callsign",{dollId:"m4a1",callsign:"별빛"}).log[0]).toMatchObject({ok:true,callsign:"별빛"}); expect(named.dispatch("gfl/relation/callsign",{dollId:"m4a1",callsign:"다른 이름"}).log[0]).toMatchObject({ok:false,reason:"gfl_callsign_locked"});
+    const renamed=(named.state.gfl as any).dolls.m4a1; renamed.affinity=100; renamed.mood=100; const checked=named.dispatch("gfl/relation/check",{dollId:"m4a1",choice:"nickname"}).log[0] as any; expect(checked.modifier).toBe(4);
+  });
 });

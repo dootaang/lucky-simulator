@@ -142,6 +142,8 @@ function acquire(
     status,
     equipment: [],
     records: { kills: 0, crits: 0, guarded: 0 },
+    hiredDay: day(c.state),
+    secretHobby: SECRET_HOBBIES[stableIndex(`${definition.id}:${day(c.state)}`, SECRET_HOBBIES.length)],
     ...(definition.squad ? { squad: definition.squad } : {}),
   };
   gfl.dolls = values;
@@ -484,6 +486,23 @@ type RelationChoice = {
   tierOffset: number;
   followups: string[];
 };
+const CLASS_PREFERENCES: Record<string,{preferred:string;disliked:string}> = {
+  AR: { preferred: "train", disliked: "coffee" }, SMG: { preferred: "walk", disliked: "ask-past" },
+  RF: { preferred: "talk", disliked: "train" }, HG: { preferred: "coffee", disliked: "walk" },
+  MG: { preferred: "encourage", disliked: "confide" }, SG: { preferred: "train", disliked: "coffee" },
+};
+const SECRET_HOBBIES = ["모형 수집","몰래 낮잠","매운맛 중독","낡은 음반 감상","별자리 관측","화분 돌보기","퍼즐 맞추기","수제 과자","고전 영화","기계 시계 수리","길고양이 돌보기","손편지 쓰기"] as const;
+const OUTING_PLACES = ["시장 거리","강변 방벽","옛 카페"] as const;
+const PROMISE_TYPES = ["sortie","repair","anniversary"] as const;
+function stableIndex(value: string, size: number) { let hash = 2166136261; for (const char of value) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619); return Math.abs(hash) % Math.max(1, size); }
+function preferenceOf(unit: RuntimeRecord) { return CLASS_PREFERENCES[string(unit.class)] ?? { preferred: "talk", disliked: "train" }; }
+function markInteraction(value: RuntimeRecord, dollId: string) { const gfl = state(value), rows = record(gfl.lastInteractions); rows[dollId] = day(value); gfl.lastInteractions = rows; }
+function fulfillPromise(value: RuntimeRecord, dollId: string, type: string) { const promise = list<RuntimeRecord>(state(value).promises).find((entry) => entry.dollId === dollId && entry.type === type && entry.fulfilled !== true); if (promise) promise.fulfilled = true; }
+function confirmTrauma(unit: RuntimeRecord) {
+  const candidate = record(unit.traumaCandidate); if (!Object.keys(candidate).length || unit.trauma) return;
+  unit.trauma = candidate.night === true ? "야간 공포" : candidate.boss === true ? "포화 공포" : "철혈 공포";
+  unit.traumaProgress = 0; unit.traumaCandidate = null;
+}
 // 관계 선택지 사다리. 티어 문턱은 카드에서 회수한 relation(REL_NAMES/REL_THRES)을 그대로 쓰고,
 // 선택지 구성·DC·증감은 Lucky 합성 규칙이다(원본 Choice 캡슐의 %는 LLM 임의값이라 회수 대상이 아님).
 // talk/nickname/encourage 3종의 id와 수치는 기존 저장 회차가 재생하는 값이므로 바꾸지 않는다.
@@ -497,6 +516,7 @@ const RELATION_CHOICES: Record<string, RelationChoice> = {
   walk: { label: "기지 주변을 함께 걷는다", dc: 11, affinity: 6, mood: 30, tierOffset: 2, followups: ["confide"] },
   confide: { label: "속마음을 나눈다", dc: 13, affinity: 10, mood: 25, tierOffset: 3, followups: ["promise"] },
   promise: { label: "소중한 약속을 나눈다", dc: 14, affinity: 12, mood: 30, tierOffset: 5, followups: [] },
+  hobby: { label: "취미를 함께한다", dc: 7, affinity: 6, mood: 15, tierOffset: 0, followups: [] },
 };
 // 하루 상한 — 같은 인형에게 4회, 같은 선택지는 2회(2회째는 효과 절반). 격려 연타 파밍 차단.
 const RELATION_DAILY_LIMIT = 4,
@@ -909,13 +929,17 @@ function resolveSortie(c: Context) {
           critical = sureCritical || roll === 20,
           supportHit = Math.min(5, hgHitBuff + hgSkillBuff + (counter ? 2 : 0) + (sortie.scouted ? 1 : 0)),
           panicHit = number(panic.round) === round ? -2 : 0,
-          hit = sureCritical || roll + number(ally.grade, 1) + conditionHit + tacticHit + supportHit + panicHit >= 8,
+          trauma = string(record(values[ally.id]).trauma), fearCondition = sortie.night === true ? "야간 공포" : stageType === "boss" ? "포화 공포" : missionFaction.factions.includes("철혈") || string(operation.enemy).includes("철혈") ? "철혈 공포" : "",
+          traumaApplies = Boolean(fearCondition) && trauma === fearCondition,
+          medalHit = Boolean(fearCondition) && string(record(values[ally.id]).overcomeMedal) === fearCondition ? 1 : 0,
+          traumaHit = traumaApplies ? -2 : medalHit,
+          hit = sureCritical || roll + number(ally.grade, 1) + conditionHit + tacticHit + supportHit + panicHit + traumaHit >= 8,
           skillFactor = skill?.effect === "double_attack" && attack === 1 || skill?.effect === "sure_critical" ? .8 : 1,
           dealt = hit ? Math.max(1, Math.round(ally.power * 0.24 * (critical ? 1.6 : 1) * allyDamageFactor * roundFactor * rowFactor * maxHpFactor * skillFactor - target.power * 0.02)) : 0,
           before = target.hp;
         target.hp = Math.max(0, target.hp - dealt);
         exchanges.push({ side: "ally", actorId: ally.id, targetId: target.id, roll, hit, critical, damage: dealt, targetHp: target.hp, kill: before > 0 && target.hp <= 0,
-          counter, hitBuff: hgHitBuff + hgSkillBuff, supportHit, scoutedHit: sortie.scouted ? 1 : 0, panic: panicHit ? "hit-2" : null,
+          counter, hitBuff: hgHitBuff + hgSkillBuff, supportHit, scoutedHit: sortie.scouted ? 1 : 0, panic: panicHit ? "hit-2" : null, traumaHit,
           roundFactor, rowFactor, maxHpFactor, skill: skill ? skill.effect : null, intervention: intervention && number(intervention.round) === round ? intervention.type : null });
       }
     }
@@ -980,7 +1004,16 @@ function resolveSortie(c: Context) {
     records.guarded = number(records.guarded) + (["SG", "SMG"].includes(string(unit.class)) ? guarded : 0);
     unit.records = records;
     unit.status = ally.hp <= 0 ? "대파" : ally.hp < ally.maxHp ? "손상" : "대기";
-    if (outcome === "defeat" && ally.hp > 0) unit.traumaCandidate = { cause: "defeat", night: sortie.night === true, boss: stageType === "boss" };
+    if (ally.hp <= 0) unit.traumaCandidate = { cause: "incapacitated", night: sortie.night === true, boss: stageType === "boss" };
+    else if (outcome === "defeat") unit.traumaCandidate = { cause: "defeat", night: sortie.night === true, boss: stageType === "boss" };
+    for (const promise of list<RuntimeRecord>(state(c.state).promises)) {
+      if (promise.dollId === ally.id && promise.type === "repair" && promise.fulfilled !== true && promise.triggered !== true && ally.hp < ally.maxHp * .5) {
+        promise.triggered = true;
+        promise.triggeredDay = day(c.state);
+        promise.deadline = day(c.state) + 1;
+      }
+    }
+    confirmTrauma(unit);
   }
   const captureRoll = outcome === "victory" && stageType !== "boss" ? c.rng.int(1, 100) : null,
     prisoner = captureRoll !== null && captureRoll <= 20,
@@ -1171,11 +1204,13 @@ export function gflModule(): ModuleDefinition {
         return ok(c, { dollId: id });
       }),
       "gfl/settings/update": scoped((c) => {
-        const difficulty = string(c.params.relationDifficulty), gossip = string(c.params.gossip), gfl = state(c.state), settings = record(gfl.settings);
+        const difficulty = string(c.params.relationDifficulty), gossip = string(c.params.gossip), jealousy = string(c.params.jealousy), gfl = state(c.state), settings = record(gfl.settings);
         if (difficulty && !["relaxed", "standard", "strict"].includes(difficulty)) return fail(c, "gfl_relation_difficulty_invalid", difficulty);
         if (gossip && !["off", "mild", "full"].includes(gossip)) return fail(c, "gfl_gossip_mode_invalid", gossip);
+        if (jealousy && !["off", "mild", "full"].includes(jealousy)) return fail(c, "gfl_jealousy_mode_invalid", jealousy);
         if (difficulty) settings.relationDifficulty = difficulty;
         if (gossip) settings.gossip = gossip;
+        if (jealousy) settings.jealousy = jealousy;
         gfl.settings = settings; c.state.gfl = gfl;
         return ok(c, { settings });
       }),
@@ -1575,8 +1610,28 @@ export function gflModule(): ModuleDefinition {
       steps.push(row);
       if (row.newDay) break;
     }
-    const settlement = steps.at(-1) ?? {}, raid = resolveDailyRaid(c), social = resolveBaseSocial(c, record(raid), defeatsToday);
-    return ok(c, { steps: steps.length, day: settlement.day, phase: settlement.phase, daily: settlement.daily, raid, social, dailyAwards });
+    const settlement = steps.at(-1) ?? {}, gfl = state(c.state), today = day(c.state), anniversaries: RuntimeRecord[] = [];
+    for (const raw of Object.values(owned(c.state))) {
+      const unit = record(raw), hired = number(unit.hiredDay), elapsed = hired > 0 ? today - hired : 0;
+      if ([7, 30, 100].includes(elapsed)) { unit.anniversaryDay = today; anniversaries.push({ dollId: unit.id, name: unit.name, days: elapsed, day: today, viewed: false }); }
+      else if (number(unit.anniversaryDay) !== today) unit.anniversaryDay = null;
+    }
+    gfl.anniversaries = anniversaries;
+    const receipts: RuntimeRecord[] = [], remaining: RuntimeRecord[] = [];
+    for (const promise of list<RuntimeRecord>(gfl.promises)) {
+      if (promise.type === "repair" && promise.triggered !== true && promise.fulfilled !== true) { remaining.push(promise); continue; }
+      if (promise.fulfilled !== true && number(promise.deadline) >= today) { remaining.push(promise); continue; }
+      const unit = record(owned(c.state)[string(promise.dollId)]), fulfilled = promise.fulfilled === true;
+      if (Object.keys(unit).length) {
+        unit.affinity = clamp(number(unit.affinity) + (fulfilled ? 5 : -8), -200, 500);
+        unit.mood = moodClamp(unit, number(unit.mood) + (fulfilled ? 15 : -20));
+      }
+      if (!fulfilled) gfl.dissatisfaction = clamp(number(gfl.dissatisfaction) + 3, 0, 100);
+      receipts.push({ dollId: promise.dollId, name: promise.name, type: promise.type, fulfilled, affinityDelta: fulfilled ? 5 : -8, moodDelta: fulfilled ? 15 : -20, dissatisfactionDelta: fulfilled ? 0 : 3 });
+    }
+    gfl.promises = remaining; gfl.promiseReceipts = receipts; c.state.gfl = gfl;
+    const raid = resolveDailyRaid(c), social = resolveBaseSocial(c, record(raid), defeatsToday);
+    return ok(c, { steps: steps.length, day: settlement.day, phase: settlement.phase, daily: settlement.daily, raid, social, anniversaries, promiseReceipts: receipts, dailyAwards });
   }),
       "gfl/relation/check": scoped((c) => {
         if (
@@ -1593,6 +1648,7 @@ export function gflModule(): ModuleDefinition {
           return fail(c, "gfl_doll_not_owned", dollId);
         if (!choice)
           return fail(c, "gfl_relation_choice_unknown", c.params.choice);
+        if (choiceId === "hobby" && unit.hobbyKnown !== true) return fail(c, "gfl_relation_hobby_locked", dollId);
         const dialogue = activeDialogue(c.state);
         if (dialogue && string(dialogue.dollId) !== dollId)
           return fail(c, "gfl_dialogue_other_doll", string(dialogue.name));
@@ -1615,11 +1671,12 @@ export function gflModule(): ModuleDefinition {
                   (option) => string(option.choice) === choiceId,
                 )
               : undefined,
-          dc = Math.max(2, choice.dc + number(followOption?.dcMod)),
+          preference = preferenceOf(unit), preferenceMod = choiceId === preference.preferred ? -2 : choiceId === preference.disliked ? 2 : 0,
+          dc = Math.max(2, choice.dc + number(followOption?.dcMod) + preferenceMod),
           roll = c.rng.int(1, 20),
           modifier =
             Math.floor(number(unit.affinity) / 50) +
-            Math.floor(number(unit.mood) / 100),
+            Math.floor(number(unit.mood) / 100) + (unit.callsign ? 1 : 0),
           total = roll + modifier,
           success = total >= dc,
           tier = success
@@ -1639,13 +1696,17 @@ export function gflModule(): ModuleDefinition {
                   : 1,
           repeatFactor = used > 0 ? 0.5 : 1,
           difficulty = relationDifficulty(c.state),
-          affinityDelta = Math.round(choice.affinity * multiplier * (multiplier < 0 ? difficulty.loss : difficulty.gain) * repeatFactor),
-          moodDelta = Math.round(choice.mood * multiplier * repeatFactor);
+          anniversaryFactor = number(unit.anniversaryDay) === day(c.state) ? 1.5 : 1,
+          affinityDelta = Math.round(choice.affinity * multiplier * (multiplier < 0 ? difficulty.loss : difficulty.gain) * repeatFactor * anniversaryFactor),
+          moodDelta = Math.round(choice.mood * multiplier * repeatFactor * anniversaryFactor);
         unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
         unit.mood = moodClamp(unit, number(unit.mood) + moodDelta);
         markRelationUse(c, dollId, choiceId);
         // 항명 해소 — 마음이 풀리면 총을 든다.
         if (success && unit.refusal === true) unit.refusal = false;
+        if (success && choiceId === preference.preferred) unit.preferenceKnown = true;
+        if (tier === "critical_success" && !unit.callsign) unit.callsignEligible = true;
+        markInteraction(c.state, dollId);
         const afterTier = relationFor(c.schema, unit.affinity),
           tierChanged =
             afterTier.index > beforeTier.index
@@ -1690,6 +1751,8 @@ export function gflModule(): ModuleDefinition {
           difficulty: difficulty.id,
           relation: afterTier.label,
           repeated: used > 0,
+          preferenceMod,
+          preferenceRevealed: unit.preferenceKnown === true,
           remainingToday,
           ...(followOption ? { followUpBonus: number(followOption.dcMod) } : {}),
           ...(tierChanged ? { tierChanged } : {}),
@@ -1721,18 +1784,35 @@ export function gflModule(): ModuleDefinition {
           days = record(gfl.dialogueDays);
         if (number(days[dollId]) === today)
           return fail(c, "gfl_dialogue_daily_limit", string(unit.name));
+        const jealousyRoll = c.rng.int(1, 100), hobbyRoll = c.rng.int(1, 100), settings = record(gfl.settings), jealousy = string(settings.jealousy || "mild"),
+          neutral = relationFor(c.schema, 0).index, interactions = record(gfl.lastInteractions),
+          candidates = Object.values(owned(c.state)).map(record).filter((other) => string(other.id) !== dollId && string(other.id) !== string(gfl.lastJealousTarget) && relationFor(c.schema, other.affinity).index >= neutral + 3 && number(interactions[string(other.id)], number(other.hiredDay)) <= today - 3),
+          intruder = jealousyRoll <= 25 && candidates.length ? candidates[(jealousyRoll - 1) % candidates.length]! : null;
+        if (hobbyRoll <= 15) unit.hobbyKnown = true;
+        if (intruder && jealousy !== "off") {
+          intruder.mood = moodClamp(intruder, number(intruder.mood) - 10);
+          if (jealousy === "full") intruder.affinity = clamp(number(intruder.affinity) - 3, -200, 500);
+          gfl.lastJealousTarget = intruder.id;
+        }
         gfl.dialogue = {
           dollId,
           name: unit.name,
           day: today,
           startedTurn: number(record(c.state.clock).turn),
+          jealousyRoll,
+          hobbyRoll,
+          hobbyDiscovered: hobbyRoll <= 15,
+          ...(intruder && jealousy !== "off" ? { intruder: { dollId: intruder.id, name: intruder.name, mode: jealousy } } : {}),
         };
+        markInteraction(c.state, dollId);
         c.state.gfl = gfl;
         const tier = relationFor(c.schema, unit.affinity);
         return ok(c, {
           dollId,
           name: unit.name,
           relation: tier.label,
+          hobbyDiscovered: hobbyRoll <= 15,
+          intruder: intruder && jealousy !== "off" ? { dollId: intruder.id, name: intruder.name, mode: jealousy } : null,
           narrativeFact: `${string(unit.name)}와의 1:1 대화가 시작됐다. 대화가 끝날 때까지 기지의 시간은 흐르지 않는다.`,
         });
       }),
@@ -1750,8 +1830,11 @@ export function gflModule(): ModuleDefinition {
         // 보너스는 엔진 고정값(난이도 배율만 적용) — 대화 길이·내용으로 수치를 흥정할 수 없다.
         const difficulty = relationDifficulty(c.state),
           beforeTier = relationFor(c.schema, unit.affinity),
-          affinityDelta = Math.round(2 * difficulty.gain),
-          moodDelta = 10;
+          dialogueFactor = dialogue.noBonus === true ? 0 : Object.keys(record(dialogue.intruder)).length ? .5 : 1,
+          anniversaryFactor = number(unit.anniversaryDay) === day(c.state) ? 1.5 : 1,
+          affinityDelta = Math.round(2 * difficulty.gain * dialogueFactor * anniversaryFactor),
+          moodDelta = Math.round(10 * dialogueFactor * anniversaryFactor),
+          promiseRoll = c.rng.int(1, 100);
         unit.affinity = clamp(number(unit.affinity) + affinityDelta, -200, 500);
         unit.mood = moodClamp(unit, number(unit.mood) + moodDelta);
         const afterTier = relationFor(c.schema, unit.affinity),
@@ -1759,6 +1842,12 @@ export function gflModule(): ModuleDefinition {
         days[dollId] = number(dialogue.day, day(c.state));
         gfl.dialogueDays = days;
         gfl.dialogue = null;
+        const promises = list<RuntimeRecord>(gfl.promises);
+        if (promiseRoll <= 40 && promises.length < 3) {
+          const type = PROMISE_TYPES[stableIndex(`${dollId}:${day(c.state)}:${promiseRoll}`, PROMISE_TYPES.length)]!;
+          const hired = number(unit.hiredDay), nextAnniversary = [7, 30, 100].map((days) => hired + days).find((at) => hired > 0 && at >= day(c.state));
+          gfl.promiseRequest = { dollId, name: unit.name, type, deadline: type === "sortie" ? day(c.state) + 3 : type === "repair" ? null : nextAnniversary ?? day(c.state) + 100, requestedDay: day(c.state), ...(type === "repair" ? { triggered: false } : {}) };
+        }
         c.state.gfl = gfl;
         const dailyAwards = markDaily(c, "relations");
         return ok(c, {
@@ -1766,6 +1855,8 @@ export function gflModule(): ModuleDefinition {
           name: unit.name,
           affinityDelta,
           moodDelta,
+          promiseRoll,
+          promiseRequested: gfl.promiseRequest ?? null,
           affinity: unit.affinity,
           mood: unit.mood,
           relation: afterTier.label,
@@ -1780,6 +1871,66 @@ export function gflModule(): ModuleDefinition {
           dailyAwards,
           narrativeFact: `${string(unit.name)}와의 대화를 마무리했다. 기지의 시간이 다시 흐른다.`,
         });
+      }),
+      "gfl/relation/outing": scoped((c) => {
+        const dollId = string(c.params.dollId), unit = record(owned(c.state)[dollId]), gfl = state(c.state), today = day(c.state);
+        if (!Object.keys(unit).length) return fail(c, "gfl_doll_not_owned", dollId);
+        if (fieldSortie(c.state)) return fail(c, "gfl_commander_in_field");
+        if (activeDialogue(c.state)) return fail(c, "gfl_dialogue_active");
+        if (string(unit.status) !== "대기") return fail(c, "gfl_outing_doll_unavailable", string(unit.status));
+        if (relationFor(c.schema, unit.affinity).index < relationFor(c.schema, 0).index + 3) return fail(c, "gfl_relation_tier_locked", "신뢰");
+        const outingDays = record(gfl.outingDays); if (number(outingDays[dollId]) === today) return fail(c, "gfl_outing_daily_limit", dollId);
+        if (string(record(c.state.clock).phase) === "새벽") return fail(c, "gfl_dawn_requires_end_day");
+        const jealousyRoll = c.rng.int(1, 100), hobbyRoll = c.rng.int(1, 100), jealousy = string(record(gfl.settings).jealousy || "mild"), interactions = record(gfl.lastInteractions), neutral = relationFor(c.schema, 0).index,
+          candidates = Object.values(owned(c.state)).map(record).filter((other) => string(other.id) !== dollId && string(other.id) !== string(gfl.lastJealousTarget) && relationFor(c.schema, other.affinity).index >= neutral + 3 && number(interactions[string(other.id)], number(other.hiredDay)) <= today - 3),
+          intruderId = jealousyRoll <= 25 && candidates.length ? string(candidates[(jealousyRoll - 1) % candidates.length]!.id) : "";
+        const advance = c.registry.dispatch(c.schema, c.state, { id: "gfl/time/advance", params: {} }, c.rng), row = record(advance.log[0]);
+        if (!row.ok) return advance;
+        c.state = advance.state;
+        const next = state(c.state), nextUnit = record(owned(c.state)[dollId]), intruder = record(owned(c.state)[intruderId]), difficulty = relationDifficulty(c.state), anniversaryFactor = number(nextUnit.anniversaryDay) === day(c.state) ? 1.5 : 1,
+          jealousyFactor = intruderId && jealousy !== "off" ? .5 : 1,
+          affinityDelta = Math.round(4 * difficulty.gain * anniversaryFactor * jealousyFactor), moodDelta = Math.round(20 * anniversaryFactor * jealousyFactor), place = OUTING_PLACES[stableIndex(`${dollId}:${today}`, OUTING_PLACES.length)]!;
+        nextUnit.affinity = clamp(number(nextUnit.affinity) + affinityDelta, -200, 500); nextUnit.mood = moodClamp(nextUnit, number(nextUnit.mood) + moodDelta);
+        if (hobbyRoll <= 15) nextUnit.hobbyKnown = true;
+        if (intruderId && jealousy !== "off") { intruder.mood = moodClamp(intruder, number(intruder.mood) - 10); if (jealousy === "full") intruder.affinity = clamp(number(intruder.affinity) - 3, -200, 500); next.lastJealousTarget = intruderId; }
+        const nextOutings = record(next.outingDays); nextOutings[dollId] = today; next.outingDays = nextOutings; c.state.gfl = next;
+        markInteraction(c.state, dollId);
+        if (number(nextUnit.anniversaryDay) === day(c.state)) fulfillPromise(c.state, dollId, "anniversary");
+        return ok(c, { dollId, name: nextUnit.name, place, affinityDelta, moodDelta, timeAdvanced: true, phase: row.phase, jealousyRoll, hobbyRoll, hobbyDiscovered: hobbyRoll <= 15,
+          intruder: intruderId && jealousy !== "off" ? { dollId: intruderId, name: intruder.name, mode: jealousy } : null, narrativeFact: `${string(nextUnit.name)}와 ${place}로 외출했다. 기지 시간대가 한 칸 흘렀다.` });
+      }),
+      "gfl/relation/heal-trauma": scoped((c) => {
+        const dialogue = activeDialogue(c.state), dollId = string(c.params.dollId || dialogue?.dollId), unit = record(owned(c.state)[dollId]);
+        if (!dialogue || string(dialogue.dollId) !== dollId) return fail(c, "gfl_dialogue_missing");
+        if (!unit.trauma) return fail(c, "gfl_trauma_missing", dollId);
+        const roll = c.rng.int(1, 20), modifier = relationFor(c.schema, unit.affinity).index, total = roll + modifier, success = total >= 12;
+        if (success) unit.traumaProgress = Math.min(3, number(unit.traumaProgress) + 1);
+        else { const active = record(state(c.state).dialogue); active.noBonus = true; state(c.state).dialogue = active; }
+        let medal = null; if (number(unit.traumaProgress) >= 3) { medal = string(unit.trauma); unit.overcomeMedal = medal; unit.trauma = null; unit.traumaProgress = 3; }
+        return ok(c, { dollId, name: unit.name, roll, modifier, total, success, progress: unit.traumaProgress, medal, noSessionBonus: !success, narrativeFact: `${string(unit.name)}의 트라우마 치유 ${success ? "진전" : "휴식"}: ${number(unit.traumaProgress)}/3.` });
+      }),
+      "gfl/relation/callsign": scoped((c) => {
+        const dollId = string(c.params.dollId), callsign = string(c.params.callsign).trim(), unit = record(owned(c.state)[dollId]);
+        if (!Object.keys(unit).length) return fail(c, "gfl_doll_not_owned", dollId);
+        if (!unit.callsignEligible || unit.callsign) return fail(c, "gfl_callsign_locked", dollId);
+        if (!callsign || [...callsign].length > 20) return fail(c, "gfl_callsign_invalid");
+        unit.callsign = callsign; unit.callsignEligible = false; return ok(c, { dollId, name: unit.name, callsign });
+      }),
+      "gfl/relation/promise/accept": scoped((c) => {
+        const gfl = state(c.state), request = record(gfl.promiseRequest), promises = list<RuntimeRecord>(gfl.promises);
+        if (!request.dollId) return fail(c, "gfl_promise_request_missing"); if (promises.length >= 3) return fail(c, "gfl_promise_limit", 3);
+        const accepted: RuntimeRecord = { ...request, acceptedDay: day(c.state), fulfilled: false };
+        if (accepted.type === "repair") {
+          const unit = record(owned(c.state)[string(accepted.dollId)]), hp = record(unit.hp);
+          if (number(hp.max) > 0 && number(hp.cur) < number(hp.max) * .5) { accepted.triggered = true; accepted.triggeredDay = day(c.state); accepted.deadline = day(c.state) + 1; }
+        }
+        promises.push(accepted); gfl.promises = promises; gfl.promiseRequest = null; c.state.gfl = gfl; return ok(c, { promise: accepted });
+      }),
+      "gfl/relation/promise/decline": scoped((c) => { const gfl = state(c.state); if (!record(gfl.promiseRequest).dollId) return fail(c, "gfl_promise_request_missing"); gfl.promiseRequest = null; c.state.gfl = gfl; return ok(c, { declined: true }); }),
+      "gfl/relation/anniversary": scoped((c) => {
+        const dollId = string(c.params.dollId), unit = record(owned(c.state)[dollId]), gfl = state(c.state), anniversaries = list<RuntimeRecord>(gfl.anniversaries), entry = anniversaries.find((row) => row.dollId === dollId);
+        if (!entry) return fail(c, "gfl_anniversary_missing", dollId); entry.viewed = true; fulfillPromise(c.state, dollId, "anniversary");
+        return ok(c, { dollId, name: unit.name, days: entry.days, narrativeFact: `${string(unit.name)}와 함께한 지 ${number(entry.days)}일이 되는 특별한 장면이다.` });
       }),
       "gfl/manufacture/start": scoped((c) => {
         if (baseLocation(c.state) !== "base-maintenance")
@@ -1875,6 +2026,7 @@ export function gflModule(): ModuleDefinition {
         });
         gfl.repairs = repairs;
         c.state.gfl = gfl;
+        if (number(hp.cur) < number(hp.max) * .5) fulfillPromise(c.state, id, "repair");
         const dailyAwards = markDaily(c, "management");
         return ok(c, { job: repairs.at(-1), dailyAwards });
       }),
@@ -1969,6 +2121,7 @@ export function gflModule(): ModuleDefinition {
         };
         daily.sortiesUsed = number(daily.sortiesUsed) + 1;
         c.state.gfl = gfl;
+        for (const member of members.map(string)) fulfillPromise(c.state, member, "sortie");
         return ok(c, {
           missionId: operation.id,
           echelonId: entry.id,
@@ -2363,7 +2516,11 @@ export function gflModule(): ModuleDefinition {
           followUp: activeFollowUp(value),
           dialogue: activeDialogue(value),
           prisoner: gfl.prisoner ?? null,
-          settings: { relationDifficulty: relationDifficulty(value).id, gossip: string(record(gfl.settings).gossip || "mild") },
+          promiseRequest: gfl.promiseRequest ?? null,
+          promises: list<RuntimeRecord>(gfl.promises),
+          promiseReceipts: list<RuntimeRecord>(gfl.promiseReceipts),
+          anniversaries: list<RuntimeRecord>(gfl.anniversaries),
+          settings: { relationDifficulty: relationDifficulty(value).id, gossip: string(record(gfl.settings).gossip || "mild"), jealousy: string(record(gfl.settings).jealousy || "mild") },
           commander: commanderStatus(value),
           dissatisfaction: { value: dissatisfaction(value), ...dissTier(value) },
           market: gfl.market ?? null,
@@ -2403,9 +2560,11 @@ export function gflModule(): ModuleDefinition {
               tier = relationFor(schema, unit.affinity),
               usage = relationUsage(value, dollId),
               choices = Object.entries(RELATION_CHOICES)
+                .filter(([id]) => id !== "hobby" || unit.hobbyKnown === true)
                 .map(([id, choice]) => {
                   const requiredTier = choiceRequiredTier(schema, choice),
                     used = number(usage.choices[id]),
+                    preference = preferenceOf(unit), preferenceMod = id === preference.preferred ? -2 : id === preference.disliked ? 2 : 0,
                     reason =
                       tier.index < requiredTier
                         ? "tier_locked"
@@ -2416,8 +2575,8 @@ export function gflModule(): ModuleDefinition {
                             : null;
                   return {
                     id,
-                    label: choice.label,
-                    dc: choice.dc,
+                    label: `${choice.label}${unit.preferenceKnown === true && id === preference.preferred ? " ♥" : ""}`,
+                    dc: choice.dc + preferenceMod,
                     affinity: choice.affinity,
                     mood: choice.mood,
                     minTier: requiredTier,
@@ -2435,6 +2594,12 @@ export function gflModule(): ModuleDefinition {
                 tier: { label: tier.label, index: tier.index },
                 remaining: Math.max(0, RELATION_DAILY_LIMIT - usage.total),
                 dialogueUsed: number(days[dollId]) === today,
+                outingUsed: number(record(state(value).outingDays)[dollId]) === today,
+                outingAvailable: tier.index >= relationFor(schema, 0).index + 3 && string(unit.status) === "대기" && !fieldSortie(value) && !activeDialogue(value) && number(record(state(value).outingDays)[dollId]) !== today,
+                preferenceKnown: unit.preferenceKnown === true,
+                preference: unit.preferenceKnown === true ? preferenceOf(unit) : null,
+                preferenceHint: unit.preferenceKnown === true ? RELATION_CHOICES[preferenceOf(unit).preferred]?.label : "?",
+                callsignEligible: unit.callsignEligible === true && !unit.callsign,
                 choices,
               },
             ] as const;
@@ -2481,8 +2646,8 @@ export function gflModule(): ModuleDefinition {
   "gfl/dolls": (...args) => {
     const schema = record(args[0]);
     return Object.values(owned(record(args[1]))).map((raw) => {
-      const unit = record(raw);
-      return { ...unit, oathed: unit.oathed === true, relation: relationFor(schema, unit.affinity) };
+      const unit = record(raw), { secretHobby, ...visible } = unit;
+      return { ...visible, ...(unit.hobbyKnown === true ? { secretHobby } : {}), oathed: unit.oathed === true, relation: relationFor(schema, unit.affinity) };
     });
   },
       "gfl/echelons": (...args) =>
@@ -2672,6 +2837,12 @@ export function gflModule(): ModuleDefinition {
               with: name,
               relation: tier.label,
               ...(tier.description ? { relationNote: tier.description } : {}),
+              ...(unit.preferenceKnown === true ? { preference: preferenceOf(unit) } : {}),
+              ...(unit.hobbyKnown === true ? { secretHobby: unit.secretHobby } : {}),
+              ...(unit.callsign ? { callsign: unit.callsign } : {}),
+              ...(unit.trauma ? { trauma: unit.trauma, traumaProgress: number(unit.traumaProgress) } : {}),
+              promises: list<RuntimeRecord>(gfl.promises).filter((entry) => entry.dollId === unit.id),
+              intrusion: dialogue.intruder ?? null,
               rule: `시간이 멈춘 1:1 대화 장면이다. ${name}와의 대화에만 집중하고, 다른 인형의 등장·작전 진행·시간 경과·수치 변화를 서술하지 않는다. 보너스는 대화를 마무리할 때 엔진이 확정한다.`,
             },
           };

@@ -1,6 +1,7 @@
 import{expect,test}from'@playwright/test';
 import{strToU8,zipSync}from'fflate';
 import{joinBytes,makePngChunk,PNG_SIGNATURE}from'@simbot/card';
+import{createSimPack,packSimPack}from'@simbot/simpack';
 
 const classes=Array.from({length:20},(_,index)=>`["${index===0?'M4A1':`D${index+1}`}"]="${index===0?'AR':'SMG'}"`).join(',');
 const grades=Array.from({length:20},(_,index)=>`["${index===0?'M4A1':`D${index+1}`}"]=${index===0?5:3}`).join(',');
@@ -27,6 +28,12 @@ const png=joinBytes(PNG_SIGNATURE,makePngChunk('tEXt',strToU8(`chara-ext-asset_:
 const pixel=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'));
 const dollIds=Array.from({length:20},(_,index)=>index===0?'M4A1':`D${index+1}`);
 const assetModule=zipSync(Object.fromEntries([...dollIds.map(id=>[`assets/${id}_normal.png`,pixel]),['assets/FAMAS_normal.png',pixel],['assets/FAMAS_smile.png',pixel]]));
+
+const romanceSchema:any={initialState:{day:1,gold:10000,resources:{res:3000,parts:20,cores:9},items:{},player:{level:1,exp:0,pools:{hp:{cur:1000,max:1000},mp:{cur:1000,max:1000}}},clock:{day:1,hour:8,turn:0,phase:'오전'},location:'base-command',gfl:{started:true,mode:'commander',baseLocation:'base-command',dolls:{m4a1:{id:'m4a1',name:'M4A1',class:'AR',grade:5,hp:{cur:400,max:1000},mp:{cur:1000,max:1000},baseMaxHp:1000,basePower:1000,power:1000,mood:90,affinity:80,mod:0,status:'대기',equipment:[],records:{kills:0,crits:0,guarded:0},hiredDay:1,secretHobby:'모형 수집'}},echelons:[{id:'e1',name:'제1제대',slots:['m4a1',null,null,null,null,null],fairyId:null}],facilities:{base1:1,base2:1,base3:1,base4:1,base5:1},manufacturing:[],repairs:[],logistics:[],completedMissions:[],sortie:null,settings:{relationDifficulty:'standard',jealousy:'mild'},daily:{day:1,sortiesUsed:0,sortiesCompleted:0,management:0,relations:0,endDay:0,claimed:[]},promises:[],promiseRequest:{dollId:'m4a1',name:'M4A1',type:'repair',deadline:null,requestedDay:1,triggered:false},promiseReceipts:[],anniversaries:[],outingDays:{},lastInteractions:{}}},resources:[{id:'res',basePrice:1},{id:'parts',basePrice:1},{id:'cores',basePrice:1}],locations:[{id:'base-command',name:'지휘관실'},{id:'base-hall',name:'복도'},{id:'base-maintenance',name:'정비실'},{id:'base-outside',name:'기지 외부'}],gfl:{dolls:[{id:'m4a1',name:'M4A1',class:'AR',grade:5,maxHp:1000,maxMp:1000,power:1000,mood:90}],items:[],equipment:[],fairies:[],missions:[{id:'alpha',name:'ALPHA',theater:'front',stars:0,power:100,enemy:'철혈',rewards:{gold:100},enemies:[{id:'target',name:'표적',power:10,hp:10}]}],facilities:[],hire:{capacity:[4,8,12,16,20]},relation:{names:['적대','경계','불편','첫 만남','익숙해짐','호감을 가짐','신뢰','소중히 여김','사랑','서약','???'],thresholds:[-150,-80,-20,0,20,50,80,120,150,400,400],descriptions:[]}}};
+const romanceProject=createSimPack({id:'gfl-romance-e2e',title:'연애 리듬 검증',schema:romanceSchema,screens:[{id:'play',title:'대화',layout:'chat',regions:{main:[{widget:'chat'}]}},{id:'romance',title:'연애 리듬',layout:'dashboard',regions:{main:[{widget:'gfl-console'}]}}],navigation:[{id:'play',screenId:'play',label:'대화'},{id:'romance',screenId:'romance',label:'연애 리듬'}]});
+(romanceProject.manifest.modules as unknown as Record<string,unknown>).installed=['genre.gfl'];
+(romanceProject.manifest.content as unknown as Record<string,unknown>).nativePresentation='gfl';
+const romanceSimpack=Buffer.from(packSimPack(romanceProject));
 
 async function importGfl(page:import('@playwright/test').Page){
   await page.goto('/');
@@ -189,6 +196,19 @@ test('관계 선택지 캡슐과 1:1 대화 세션이 엔진 상태로 작동한
   await console.getByRole('button',{name:'인형',exact:true}).click();
   await expect(console.getByRole('button',{name:/1:1 대화 시작/})).toBeDisabled();
   await expect(console).toContainText('오늘 완료');
+});
+
+test('신뢰 인형과 외출해 시간대를 쓰고 수락한 수복 약속의 이행 영수증을 받는다',async({page})=>{
+  await page.goto('/'); await expect(page.getByRole('button',{name:/카드 가져오기/}).first()).toBeVisible({timeout:15_000});
+  await page.locator('input[accept=".simpack,.charx,.png,.json"]').setInputFiles({name:'gfl-romance.simpack',mimeType:'application/zip',buffer:romanceSimpack});
+  await page.getByRole('button',{name:'연애 리듬'}).click(); const console=page.getByLabel('소녀전선 지휘 콘솔');
+  await console.getByRole('button',{name:'인형',exact:true}).click(); await expect(console).toContainText('취향 · ?');
+  const outing=console.getByRole('button',{name:'함께 외출 · 시간대 1칸'}); await expect(outing).toBeEnabled(); await outing.click();
+  await expect(console.locator('header.status')).toContainText('오후'); await expect(outing).toBeDisabled();
+  await expect(console.locator('.promise-request')).toContainText('M4A1의 약속 요청'); await console.locator('.promise-request').getByRole('button',{name:'약속한다'}).click();
+  await console.getByRole('button',{name:'정비실',exact:true}).click(); await console.getByRole('button',{name:'인형',exact:true}).click(); await console.getByRole('button',{name:'수복 투입'}).click(); await console.getByRole('button',{name:'다음 시간대',exact:true}).click();
+  await expect(console.getByRole('button',{name:'하루 마감',exact:true})).toBeEnabled(); await console.getByRole('button',{name:'하루 마감',exact:true}).click();
+  await console.getByRole('button',{name:'인형',exact:true}).click(); await expect(console).toContainText('✓ 약속 이행 완료'); await expect(console).toContainText('호감 +5 · 기분 +15');
 });
 
 test('군수지원 복귀 보상을 수령하고 심야 작전의 실제 명중 보정을 확인한다',async({page})=>{
