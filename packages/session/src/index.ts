@@ -1,4 +1,4 @@
-import type { EngineJournalData, EngineJournalDataV02, MemoryRecord, SealedEngineJournalEpoch, SealedEpochRef } from "@simbot/contracts";
+import type { EngineJournalData, EngineJournalDataV02, EngineJournalEvent, MemoryRecord, SealedEngineJournalEpoch, SealedEpochRef } from "@simbot/contracts";
 import {
   ContinuityPatchLedger,
   ingestMemoryTurn,
@@ -154,6 +154,7 @@ export type SessionActionPhase =
   | "prompt-complete"
   | "provider-complete"
   | "receipt-complete"
+  | "action-durable"
   | "save-start"
   | "save-complete";
 export type SessionActionTrace = (phase: SessionActionPhase, at: number) => void;
@@ -222,6 +223,8 @@ export interface SessionSnapshot {
   shardManifest?: SessionShardManifest;
   // 조립 단계가 별도 레코드에서 가져와 붙이는 봉인 본문 — integrity 서명 범위 밖(참조의 sealHash가 본문을 검증).
   sealedEpochBodies?: SealedEngineJournalEpoch[];
+  // 디스크 조립 단계에서만 붙는 외부 WAL. 본체 integrity에는 포함하지 않고 자체 hash와 baseIntegrity로 검증한다.
+  pendingActionReceipt?: ActionWalReceipt;
 }
 export const SEALED_EPOCH_CONTRACT = "simbot-sealed-epoch/0.1";
 export const SESSION_SHARD_CONTRACT = "simbot-session-shard/0.1";
@@ -239,6 +242,23 @@ export interface LedgerNarrativeDelta {
   firstJournalIndex: number;
   lastJournalIndex: number;
   summaries: string[];
+}
+export const ACTION_WAL_CONTRACT = "simbot-action-wal/0.1";
+export interface ActionWalReceipt {
+  contract: typeof ACTION_WAL_CONTRACT;
+  sessionId: string;
+  baseIntegrity: string;
+  mode: "ledger" | "narrated";
+  events: EngineJournalEvent[];
+  expectedJournalCursor: number;
+  expectedStateHash: string;
+  expectedRng: number;
+  expectedLogsHash: string;
+  turnAfter: number;
+  hash: string;
+}
+function actionWalHash(value: Omit<ActionWalReceipt, "hash">) {
+  return stableHash(value);
 }
 interface SessionShardRecord {
   contract: typeof SESSION_SHARD_CONTRACT;
@@ -559,6 +579,10 @@ export class PlaySession {
   // 파동 4 샤드 상태 — 완결 청크 해시 캐시(append-only 동안 유효). null이면 다음 저장이 전량 재기록.
   #messageShardHashes: string[] | null = null;
   #journalShardHashes: string[] | null = null;
+  #persistedIntegrity: string | null = null;
+  #backgroundSave: Promise<void> | null = null;
+  #backgroundSaveError: unknown = null;
+  #walPresent = false;
   #alternates: AlternateState[] = [];
   #responseBranches: ResponseBranchSet[] = [];
   #promptRuns: PromptRun[] = [];
@@ -1147,12 +1171,15 @@ export class PlaySession {
       false,
     );
   }
-  async runLedgerAction(id: string, params: Record<string, unknown> = {}, trace?: SessionActionTrace) {
+  async runLedgerAction(id: string, params: Record<string, unknown> = {}, trace?: SessionActionTrace, returnAfterReceipt = false) {
     if (this.#busy) throw new Error("session_busy");
     this.#busy = true;
     this.#notify();
     traceAction(trace, "session-start");
     try {
+      await this.#flushBackgroundSave();
+      await this.#ensurePersistedBase();
+      const eventOffset = this.#journal.rawEvents.length;
       this.#pushCheckpoint();
       traceAction(trace, "checkpoint-complete");
       const result = this.runtime.dispatch(id, params),
@@ -1171,8 +1198,11 @@ export class PlaySession {
       this.#turn += 1;
       traceAction(trace, "receipt-complete");
       traceAction(trace, "save-start");
-      await this.save();
+      const durable = await this.#persistActionReceipt("ledger", eventOffset, logs, this.#turn);
       traceAction(trace, "save-complete");
+      if (durable) traceAction(trace, "action-durable");
+      if (durable && returnAfterReceipt) this.#queueBackgroundSave();
+      else await this.save();
       return result;
     } finally {
       this.#busy = false;
@@ -1202,6 +1232,9 @@ export class PlaySession {
     const started = Date.now(),
       stateBefore = this.runtime.snapshot();
     try {
+      await this.#flushBackgroundSave();
+      await this.#ensurePersistedBase();
+      const eventOffset = this.#journal.rawEvents.length;
       this.#pushCheckpoint();
       traceAction(trace, "checkpoint-complete");
       const intent = applyRegexScripts(
@@ -1228,6 +1261,13 @@ export class PlaySession {
       traceAction(trace, "engine-complete");
       traceAction(trace, "memory-complete");
       this.#lastLogs = clone(logs);
+      const durable = await this.#persistActionReceipt("narrated", eventOffset, logs, this.#turn + 1);
+      if (durable) {
+        traceAction(trace, "action-durable");
+        this.#notify();
+        // 영수증 확정 뒤 브라우저가 엔진 결과를 먼저 그릴 수 있게 한 태스크 양보한다.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
       const prompt = this.#managementPrompt(
           events.map((event) => event.id),
           logs,
@@ -1562,10 +1602,13 @@ export class PlaySession {
   static async #fetchShards(repository: SessionRepository<SessionSnapshot>, sessionId: string, kind: SessionShardRecord["kind"], info: { chunks: string[]; total: number }) {
     const items: unknown[] = [];
     for (let offset = 0; offset < info.chunks.length; offset += 1) {
-      const row = await repository.get(PlaySession.shardRecordId(sessionId, kind, offset)),
+      const expectedHash = info.chunks[offset]!,
+        row = await repository.get(PlaySession.shardRecordId(sessionId, kind, offset, expectedHash))
+          ?? await repository.get(PlaySession.shardRecordId(sessionId, kind, offset)), // 구형 고정 ID 하위호환
         record = row?.payload as unknown as SessionShardRecord | undefined;
       if (!record || record.contract !== SESSION_SHARD_CONTRACT || record.kind !== kind || !Array.isArray(record.items))
         throw new Error(`session_corrupt:shard_missing:${kind}:${offset}`);
+      if (stableHash(record.items) !== expectedHash) throw new Error(`session_corrupt:shard_hash:${kind}:${offset}`);
       items.push(...record.items);
     }
     if (items.length !== info.total) throw new Error(`session_corrupt:shard_missing:${kind}:total`);
@@ -1586,18 +1629,29 @@ export class PlaySession {
     }
     const journal = assembled.journal;
     const refs = journal && journal.contract === "simbot-event-journal/0.2" ? journal.sealedEpochRefs ?? [] : [];
-    if (!refs.length || (journal && journal.contract === "simbot-event-journal/0.2" && journal.sealedEpochs.length)) return assembled;
-    const bodies: SealedEngineJournalEpoch[] = [];
-    for (const ref of refs) {
-      const row = await repository.get(PlaySession.sealedEpochRecordId(payload.id, ref.offset)),
-        record = row?.payload as unknown as { contract?: string; epoch?: SealedEngineJournalEpoch } | undefined;
-      if (!record || record.contract !== SEALED_EPOCH_CONTRACT || !record.epoch)
-        throw new Error(`journal_corrupt:sealed_epoch_record_${ref.offset}`);
-      if (record.epoch.sealHash !== ref.sealHash || record.epoch.sealedIndex !== ref.sealedIndex)
-        throw new Error(`journal_corrupt:sealed_epoch_record_${ref.offset}_hash`);
-      bodies.push(record.epoch);
+    if (refs.length && journal && journal.contract === "simbot-event-journal/0.2" && !journal.sealedEpochs.length) {
+      const bodies: SealedEngineJournalEpoch[] = [];
+      for (const ref of refs) {
+        const row = await repository.get(PlaySession.sealedEpochRecordId(payload.id, ref.offset)),
+          record = row?.payload as unknown as { contract?: string; epoch?: SealedEngineJournalEpoch } | undefined;
+        if (!record || record.contract !== SEALED_EPOCH_CONTRACT || !record.epoch)
+          throw new Error(`journal_corrupt:sealed_epoch_record_${ref.offset}`);
+        if (record.epoch.sealHash !== ref.sealHash || record.epoch.sealedIndex !== ref.sealedIndex)
+          throw new Error(`journal_corrupt:sealed_epoch_record_${ref.offset}_hash`);
+        bodies.push(record.epoch);
+      }
+      assembled = { ...assembled, sealedEpochBodies: bodies };
     }
-    return { ...assembled, sealedEpochBodies: bodies };
+    const walRow = await repository.get(PlaySession.actionWalRecordId(payload.id)),
+      receipt = walRow?.payload as unknown as ActionWalReceipt | undefined;
+    if (receipt) {
+      if (receipt.contract !== ACTION_WAL_CONTRACT || receipt.sessionId !== payload.id)
+        throw new Error("session_corrupt:action_wal_contract");
+      const { hash, ...unsigned } = receipt;
+      if (!hash || hash !== actionWalHash(unsigned)) throw new Error("session_corrupt:action_wal_hash");
+      assembled = { ...assembled, pendingActionReceipt: clone(receipt) };
+    }
+    return assembled;
   }
   #effectiveJournal(data: SessionSnapshot): EngineJournalData | undefined {
     const journal = data.journal;
@@ -1613,13 +1667,14 @@ export class PlaySession {
     }
     return { ...journal, sealedEpochs: bodies };
   }
-  static shardRecordId(sessionId: string, kind: "messages" | "journal-events", offset: number) {
-    return `${sessionId}::shard:${kind}:${offset}`;
+  static shardRecordId(sessionId: string, kind: "messages" | "journal-events", offset: number, hash?: string) {
+    return `${sessionId}::shard:${kind}:${offset}${hash ? `:${hash}` : ""}`;
   }
+  static actionWalRecordId(sessionId: string) { return `${sessionId}::action-wal`; }
   // append-only 배열을 청크로 나눠 바뀐 꼬리만 다시 쓴다. 완결 청크 해시는 캐시를 신뢰한다
   // (배열을 자르는 모든 연산이 캐시를 무효화하므로 — 무효화 지점은 #messagesChain과 동일 + truncateTo).
   async #writeShards(kind: "messages" | "journal-events", items: readonly unknown[], chunkSize: number, previous: string[] | null) {
-    const chunkCount = Math.ceil(items.length / chunkSize) || 0, hashes: string[] = [];
+    const chunkCount = Math.ceil(items.length / chunkSize) || 0, hashes: string[] = [], obsolete: string[] = [];
     for (let offset = 0; offset < chunkCount; offset += 1) {
       const complete = (offset + 1) * chunkSize <= items.length,
         cached = previous?.[offset],
@@ -1629,24 +1684,75 @@ export class PlaySession {
       hashes.push(hash);
       if (cached === hash && complete) continue; // 내용 동일 — 재기록 불필요
       await this.#repository!.put({
-        id: PlaySession.shardRecordId(this.id, kind, offset),
+        // 내용 해시를 ID에 넣는 copy-on-write: 새 꼬리를 먼저 써도 기존 코어가 가리키는 청크는 변하지 않는다.
+        id: PlaySession.shardRecordId(this.id, kind, offset, hash),
         schemaHash: this.runtime.project.projectId,
         title: `${this.#card.name} · ${kind} ${offset}`,
         updatedAt: Date.now(),
         payload: { contract: SESSION_SHARD_CONTRACT, sessionId: this.id, kind, offset, items: chunk } as unknown as SessionSnapshot,
       });
+      if (cached && cached !== hash) {
+        obsolete.push(PlaySession.shardRecordId(this.id, kind, offset, cached));
+        obsolete.push(PlaySession.shardRecordId(this.id, kind, offset));
+      }
     }
-    for (let orphan = chunkCount; orphan < (previous?.length ?? 0); orphan += 1)
-      await this.#repository!.delete(PlaySession.shardRecordId(this.id, kind, orphan));
-    return hashes;
+    for (let orphan = chunkCount; orphan < (previous?.length ?? 0); orphan += 1) {
+      obsolete.push(PlaySession.shardRecordId(this.id, kind, orphan, previous![orphan]!));
+      obsolete.push(PlaySession.shardRecordId(this.id, kind, orphan));
+    }
+    return { hashes, obsolete };
   }
-  async save() {
+  async #ensurePersistedBase() {
+    if (this.#repository && !this.#persistedIntegrity) await this.#saveNow();
+  }
+  async #persistActionReceipt(mode: ActionWalReceipt["mode"], eventOffset: number, logs: Record<string, unknown>[], turnAfter: number) {
+    if (!this.#repository || !this.#persistedIntegrity) return false;
+    const head = this.#journal.head(), unsigned: Omit<ActionWalReceipt, "hash"> = {
+      contract: ACTION_WAL_CONTRACT,
+      sessionId: this.id,
+      baseIntegrity: this.#persistedIntegrity,
+      mode,
+      events: clone(this.#journal.rawEvents.slice(eventOffset)),
+      expectedJournalCursor: head.index,
+      expectedStateHash: head.stateHash,
+      expectedRng: head.rng,
+      expectedLogsHash: stableHash(logs),
+      turnAfter,
+    };
+    const receipt: ActionWalReceipt = { ...unsigned, hash: actionWalHash(unsigned) };
+    await this.#repository.put({
+      id: PlaySession.actionWalRecordId(this.id),
+      schemaHash: this.runtime.project.projectId,
+      title: `${this.#card.name} · action receipt`,
+      updatedAt: Date.now(),
+      payload: receipt as unknown as SessionSnapshot,
+    });
+    this.#walPresent = true;
+    return true;
+  }
+  async #flushBackgroundSave() {
+    if (this.#backgroundSave) await this.#backgroundSave;
+    if (this.#backgroundSaveError) {
+      const reason = this.#backgroundSaveError;
+      this.#backgroundSaveError = null;
+      throw reason;
+    }
+  }
+  #queueBackgroundSave() {
+    if (!this.#repository) return;
+    const task = this.#saveNow(), handled = task.catch((reason) => { this.#backgroundSaveError = reason; }),
+      queued = handled.finally(() => { if (this.#backgroundSave === queued) this.#backgroundSave = null; });
+    this.#backgroundSave = queued;
+  }
+  async #saveNow() {
     if (!this.#repository) return;
     await this.#persistSealedEpochs();
     // 원본 배열을 그대로 샤딩한다 — put이 구조적 클론을 뜨므로 여기서 또 클론하지 않는다(파동 4).
     const rawMessages = this.#messages, rawEvents = this.#journal.rawEvents, shell = this.#journal.toPersistedShell();
-    this.#messageShardHashes = await this.#writeShards("messages", rawMessages, MESSAGE_SHARD_SIZE, this.#messageShardHashes);
-    this.#journalShardHashes = await this.#writeShards("journal-events", rawEvents, JOURNAL_SHARD_SIZE, this.#journalShardHashes);
+    const messageWrite = await this.#writeShards("messages", rawMessages, MESSAGE_SHARD_SIZE, this.#messageShardHashes),
+      journalWrite = await this.#writeShards("journal-events", rawEvents, JOURNAL_SHARD_SIZE, this.#journalShardHashes);
+    this.#messageShardHashes = messageWrite.hashes;
+    this.#journalShardHashes = journalWrite.hashes;
     const manifest: SessionShardManifest = {
       version: 1,
       messages: { chunkSize: MESSAGE_SHARD_SIZE, total: rawMessages.length, chunks: this.#messageShardHashes },
@@ -1660,6 +1766,17 @@ export class PlaySession {
       updatedAt: Date.now(),
       payload: { ...core, shardManifest: manifest },
     });
+    this.#persistedIntegrity = core.integrity ?? null;
+    // 새 코어가 새 해시 청크를 가리킨 뒤에만 이전 청크를 정리한다. 중간 종료 시에도 옛 코어는 완전하다.
+    for (const id of [...messageWrite.obsolete, ...journalWrite.obsolete]) await this.#repository.delete(id);
+    if (this.#walPresent) {
+      await this.#repository.delete(PlaySession.actionWalRecordId(this.id));
+      this.#walPresent = false;
+    }
+  }
+  async save() {
+    await this.#flushBackgroundSave();
+    await this.#saveNow();
   }
   snapshot(): SessionSnapshot {
     return this.#snapshotWith(this.#journal.toJSON()); // 내보내기·백업은 자기완결(본문 인라인)
@@ -1733,6 +1850,7 @@ export class PlaySession {
         throw new Error("session_corrupt:integrity");
     } else if (value.integrity !== sessionIntegrity(value))
       throw new Error("session_corrupt:integrity");
+    this.#persistedIntegrity = value.integrity ?? null;
     const currentFingerprint = runtimeSchemaFingerprint(this.runtime),
       compiled = !!this.runtime.project.schema._compiler,
       schemaChanged =
@@ -1836,6 +1954,8 @@ export class PlaySession {
     this.memory.reset(data.memory);
     this.#continuityPatches.reset(data.continuityPatches ?? []);
     this.#syncMessageSeq();
+    if (data.pendingActionReceipt)
+      this.#recoverActionReceipt(data.pendingActionReceipt, value.integrity ?? "", schemaChanged);
     if (epochResult) {
       const diagnostic = {
         kind: "card",
@@ -1864,6 +1984,48 @@ export class PlaySession {
         },
       ];
     this.#notify();
+  }
+  #recoverActionReceipt(receipt: ActionWalReceipt, baseIntegrity: string, schemaChanged: boolean) {
+    this.#walPresent = true;
+    if (receipt.expectedJournalCursor <= this.#journal.cursor) return; // 코어 저장 뒤 WAL 삭제만 실패한 안전한 잔여물
+    if (schemaChanged) throw new Error("session_corrupt:action_wal_schema");
+    if (receipt.baseIntegrity !== baseIntegrity) throw new Error("session_corrupt:action_wal_base");
+    if (!receipt.events.length || receipt.events[0]?.parentIndex !== this.#journal.cursor)
+      throw new Error("session_corrupt:action_wal_parent");
+    const turnBefore = this.#turn, logs: Record<string, unknown>[] = [];
+    this.#pushCheckpoint();
+    for (const expected of receipt.events) {
+      const rows = this.runtime.dispatch(expected.event.id, expected.event.params as Record<string, unknown>).log as Record<string, unknown>[],
+        actual = this.#journal.rawEvents.at(-1);
+      if (!actual || stableHash(actual) !== stableHash(expected))
+        throw new Error(`session_corrupt:action_wal_replay:${expected.index}`);
+      logs.push(...rows);
+      this.#recordEngineFacts(expected.event.id, rows, actual.index);
+      if (receipt.mode === "ledger")
+        for (const log of rows) if (log.ok) this.#enqueueLedgerNarrative(expected.event.id, log, actual.index);
+    }
+    const head = this.#journal.head();
+    if (head.index !== receipt.expectedJournalCursor || head.stateHash !== receipt.expectedStateHash || head.rng !== receipt.expectedRng || stableHash(logs) !== receipt.expectedLogsHash)
+      throw new Error("session_corrupt:action_wal_head");
+    if (receipt.turnAfter !== turnBefore + 1) throw new Error("session_corrupt:action_wal_turn");
+    this.#lastLogs = clone(logs);
+    this.#lastSpeakers = [];
+    this.#narrativeIssues = [];
+    if (receipt.mode === "ledger") this.#append("assistant", "장부에 반영되었습니다.", "ledger", { facts: logs });
+    else {
+      this.#ledgerNarrativeQueue = [];
+      this.#append("assistant", "관리 결과가 반영되었습니다.", "engine", {
+        facts: logs,
+        chips: [{ ok: true, kind: "system", text: "종료 직전 엔진 결과 복구 · 서사만 생략" }],
+      });
+    }
+    this.#turn = receipt.turnAfter;
+    this.#messagesChain = null;
+    this.#messageShardHashes = null;
+    this.#journalShardHashes = null;
+    // 디스크 코어는 아직 영수증 이전 상태다. 다음 행동 전에 복구 결과를 먼저 전체 저장하게 한다.
+    this.#persistedIntegrity = null;
+    this.#syncMessageSeq();
   }
   static #presetKey(preset: Pick<PromptPreset, "id" | "version">) {
     return `${preset.id}:${preset.version}`;

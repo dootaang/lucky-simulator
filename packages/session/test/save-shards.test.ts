@@ -16,10 +16,10 @@ describe('저장 샤딩',()=>{
     expect(core.shardManifest?.messages.chunks.length).toBe(Math.ceil(clicks/MESSAGE_SHARD_SIZE));
     expect(core.shardManifest?.journalEvents.chunks.length).toBe(Math.ceil(clicks/JOURNAL_SHARD_SIZE));
     // 완결 첫 청크는 이후 저장에서 다시 쓰이지 않는다 — updatedAt이 멈춰 있어야 한다.
-    const first=await repository.get(PlaySession.shardRecordId('shards','messages',0)),stamp=first!.updatedAt;
+    const firstHash=core.shardManifest!.messages.chunks[0]!,first=await repository.get(PlaySession.shardRecordId('shards','messages',0,firstHash)),stamp=first!.updatedAt;
     await new Promise(resolve=>setTimeout(resolve,3));
     await session.runLedgerAction('progression/gain',{source:'train'});
-    expect((await repository.get(PlaySession.shardRecordId('shards','messages',0)))!.updatedAt).toBe(stamp);
+    expect((await repository.get(PlaySession.shardRecordId('shards','messages',0,firstHash)))!.updatedAt).toBe(stamp);
     const restored=make(repository);
     restored.restore(await PlaySession.assembleSnapshot((await repository.get('shards'))!.payload,repository));
     expect(restored.turn).toBe(clicks+1);
@@ -31,11 +31,10 @@ describe('저장 샤딩',()=>{
     for(let i=0;i<5;i+=1)await session.runLedgerAction('progression/gain',{source:'train'});
     const core=(await repository.get('shards'))!.payload;
     // 변조: 청크 내용 1필드
-    const shardId=PlaySession.shardRecordId('shards','messages',0),row=(await repository.get(shardId))!;
+    const shardId=PlaySession.shardRecordId('shards','messages',0,core.shardManifest!.messages.chunks[0]),row=(await repository.get(shardId))!;
     ((row.payload as unknown as {items:Array<{content:string}>}).items[0]!).content='조작';
     await repository.put(row);
-    const tampered=await PlaySession.assembleSnapshot((await repository.get('shards'))!.payload,repository);
-    expect(()=>make(repository).restore(tampered)).toThrow('session_corrupt:integrity');
+    await expect(PlaySession.assembleSnapshot((await repository.get('shards'))!.payload,repository)).rejects.toThrow('session_corrupt:shard_hash');
     // 누락: 청크 삭제
     await repository.delete(shardId);
     await expect(PlaySession.assembleSnapshot(core,repository)).rejects.toThrow('session_corrupt:shard_missing');
@@ -60,7 +59,7 @@ describe('저장 샤딩',()=>{
     await upgraded.save();
     const after=(await repository.get('legacy'))!.payload.shardManifest!;
     if(after.messages.chunks.length<before)
-      expect(await repository.get(PlaySession.shardRecordId('legacy','messages',before-1))).toBeNull();
+      expect(await repository.get(PlaySession.shardRecordId('legacy','messages',before-1,hot.shardManifest!.messages.chunks[before-1]))).toBeNull();
     const reopened=new PlaySession({id:'legacy',runtime:runtime(),preset:defaultCardPreset(),card:{name:'S'},repository,provider});
     reopened.restore(await PlaySession.assembleSnapshot((await repository.get('legacy'))!.payload,repository));
     expect(reopened.turn).toBe(upgraded.turn);
