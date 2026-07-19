@@ -1952,6 +1952,7 @@ export class PlaySession {
       if (checkpoint.bindings.preset) this.#rememberPreset(checkpoint.bindings.preset);
     setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
     this.memory.reset(data.memory);
+    this.memory.compactEngineFacts(); // 구형 장기 회차도 첫 복원에서 반복 엔진 사실을 즉시 다이어트한다.
     this.#continuityPatches.reset(data.continuityPatches ?? []);
     this.#syncMessageSeq();
     if (data.pendingActionReceipt)
@@ -2065,7 +2066,7 @@ export class PlaySession {
       turn: this.#turn,
       messageCount: this.#messages.length,
       ...(includeMessages ? { messages: this.messages } : {}),
-      memory: this.memory.all(),
+      memory: this.memory.checkpoint(),
       continuityPatches: this.continuityPatches,
       lastLogs: this.lastLogs,
       cbsVariables: clone(this.#cbsVariables),
@@ -2087,6 +2088,7 @@ export class PlaySession {
     this.#messagesChain = null;
     this.#messageShardHashes = null;
     this.memory.reset(value.memory);
+    this.memory.compactEngineFacts();
     this.#continuityPatches.reset(value.continuityPatches ?? []);
     this.#lastLogs = clone(value.lastLogs);
     if (value.cardRuntimeCursor !== undefined) {
@@ -2183,6 +2185,7 @@ export class PlaySession {
     }
     this.#turn = value.turn ?? this.#turn;
     this.memory.reset(value.memory);
+    this.memory.compactEngineFacts();
     this.#continuityPatches.reset(value.continuityPatches ?? []);
     if (value.cardRuntimeCursor !== undefined) {
       const card = this.#cardRuntimeJournal.moveTo(value.cardRuntimeCursor);

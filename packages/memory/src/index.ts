@@ -11,12 +11,19 @@ export class MemoryLedger {
   approve(id: string){const value=this.#required(id);this.#records.set(id,{...value,status:'approved'});}
   reject(id: string){const value=this.#required(id);this.#records.set(id,{...value,status:'rejected'});}
   supersede(id: string,turn: number){const value=this.#required(id);this.#records.set(id,{...value,status:'superseded',validToTurn:turn,lifecycle:{...value.lifecycle,state:'superseded',timeScope:'past'}});}
-  replace(record: MemoryRecord,turn: number){const anchors=new Set(record.canonicalAnchors??[]),supersedes:string[]=[];if(record.status!=='approved'||!anchors.size)throw new Error('memory_replacement_requires_approved_anchor');for(const value of this.#records.values())if(value.status==='approved'&&(value.canonicalAnchors??[]).some((anchor)=>anchors.has(anchor))){this.supersede(value.id,turn);supersedes.push(value.id);}this.add({...record,supersedes,lifecycle:{...record.lifecycle,state:'active',timeScope:'current'}});}
+  replace(record: MemoryRecord,turn: number){const anchors=new Set(record.canonicalAnchors??[]),supersedes:string[]=[];if(record.status!=='approved'||!anchors.size)throw new Error('memory_replacement_requires_approved_anchor');for(const value of this.#records.values())if(value.status==='approved'&&(value.canonicalAnchors??[]).some((anchor)=>anchors.has(anchor))){this.supersede(value.id,turn);supersedes.push(value.id);}this.add({...record,supersedes,lifecycle:{...record.lifecycle,state:'active',timeScope:'current'}});if(record.kind==='engine-fact')this.#compactEngineAnchors(anchors,1);}
   get(id: string){const value=this.#records.get(id);return value?structuredClone(value):null;}
   all(){return[...this.#records.values()].map((value)=>structuredClone(value));}
+  // 체크포인트는 외부에 노출되지 않는 불변 레코드 참조를 공유한다. 원장의 모든 변경 메서드는
+  // 기존 객체를 수정하지 않고 Map의 값을 교체하므로, 과거 체크포인트는 이후 행동에도 변하지 않는다.
+  checkpoint(){return[...this.#records.values()];}
+  // 엔진 사실의 원본 감사 기록은 이벤트 저널에 영구 보존된다. 기억 검색에는 앵커별 현재값과
+  // 직전값만 남겨 오래 플레이해도 저장/undo가 같은 사실의 수천 사본을 복제하지 않게 한다.
+  compactEngineFacts(maxPastPerAnchor=1){const anchors=new Set<string>();for(const value of this.#records.values())if(value.kind==='engine-fact')for(const anchor of value.canonicalAnchors??[])anchors.add(anchor);return this.#compactEngineAnchors(anchors,maxPastPerAnchor);}
   eligible(turn: number,viewer: Viewer={},includePast=false){return[...this.#records.values()].filter((value)=>(value.status==='approved'||value.status==='superseded'&&(includePast||value.validToTurn==null||value.validToTurn>=turn))&&value.validFromTurn<=turn&&(includePast||value.validToTurn==null||value.validToTurn>=turn)&&visible(value,viewer)).map((value)=>structuredClone(value));}
   score(query: string,turn: number,viewer: Viewer={},includePast=false){const terms=tokens(query);return this.eligible(turn,viewer,includePast).map((record)=>({record,evidenceScore:lexicalScore(terms,tokens(record.text))})).filter((entry)=>entry.evidenceScore>0).sort((a,b)=>b.evidenceScore-a.evidenceScore||b.record.validFromTurn-a.record.validFromTurn||a.record.id.localeCompare(b.record.id));}
   retrieve(query: string,turn: number,viewer: Viewer={},limit=8): Retrieval {const records=this.score(query,turn,viewer).slice(0,limit).map(({record})=>record);return records.length?{records,abstained:false}:{records:[],abstained:true,reason:'insufficient_grounding'};}
+  #compactEngineAnchors(anchors:Set<string>,maxPast:number){let removed=0;for(const anchor of anchors){const past=[...this.#records.values()].filter((value)=>value.kind==='engine-fact'&&value.status==='superseded'&&(value.canonicalAnchors??[]).includes(anchor)).sort((a,b)=>(b.validToTurn??b.validFromTurn)-(a.validToTurn??a.validFromTurn)||b.validFromTurn-a.validFromTurn||b.id.localeCompare(a.id));for(const value of past.slice(Math.max(0,maxPast)))if(this.#records.delete(value.id))removed+=1;}return removed;}
   #required(id: string){const value=this.#records.get(id);if(!value)throw new Error(`memory_not_found:${id}`);return value;}
 }
 
