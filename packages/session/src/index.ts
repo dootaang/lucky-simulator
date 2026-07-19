@@ -1,4 +1,4 @@
-import type { EngineJournalData, EngineJournalDataV02, EngineJournalEvent, MemoryRecord, SealedEngineJournalEpoch, SealedEpochRef } from "@simbot/contracts";
+import type { EngineJournalData, EngineJournalDataV02, EngineJournalEvent, MemoryArchivePage, MemoryRecord, SealedEngineJournalEpoch, SealedEpochRef } from "@simbot/contracts";
 import {
   ContinuityPatchLedger,
   ingestMemoryTurn,
@@ -184,6 +184,7 @@ export interface SessionCheckpoint {
   messageCount: number;
   messages?: ChatMessage[];
   memory: MemoryRecord[];
+  memoryArchivePages?: MemoryArchivePage[];
   continuityPatches?: ContinuityPatchRecord[];
   lastLogs: Record<string, unknown>[];
   cbsVariables: Record<string, string>;
@@ -209,6 +210,7 @@ export interface SessionSnapshot {
   messages: ChatMessage[];
   engine: { state: Record<string, unknown>; rng: number };
   memory: MemoryRecord[];
+  memoryArchivePages?: MemoryArchivePage[];
   continuityPatches?: ContinuityPatchRecord[];
   lastLogs: Record<string, unknown>[];
   cbsVariables?: Record<string, string>;
@@ -331,7 +333,9 @@ export function sessionIntegrityV2(
     }),
     messages: precomputed.messages ?? messagesChainHash(snapshot.messages),
     engine: stableHash(snapshot.engine),
-    memory: stableHash(snapshot.memory),
+    memory: snapshot.memoryArchivePages
+      ? stableHash({active:snapshot.memory,archivePages:snapshot.memoryArchivePages})
+      : stableHash(snapshot.memory),
     ...(snapshot.journal ? { journal: precomputed.journal ?? journalIntegrityHash(snapshot.journal) } : {}),
     ...(snapshot.history ? { history: stableHash(snapshot.history) } : {}),
     ...(snapshot.bindings ? { bindings: stableHash(snapshot.bindings) } : {}),
@@ -363,6 +367,7 @@ export function sessionIntegrity(
       messages: snapshot.messages,
       engine: snapshot.engine,
       memory: snapshot.memory,
+      ...(snapshot.memoryArchivePages ? { memoryArchivePages: snapshot.memoryArchivePages } : {}),
       ...(snapshot.continuityPatches
         ? { continuityPatches: snapshot.continuityPatches }
         : {}),
@@ -546,6 +551,7 @@ export interface AlternateState {
   engine: { state: Record<string, unknown>; rng: number };
   logs: Record<string, unknown>[];
   memory: MemoryRecord[];
+  memoryArchivePages?: MemoryArchivePage[];
   continuityPatches?: ContinuityPatchRecord[];
   speakers: SpeakerReference[];
   promptRuns: PromptRun[];
@@ -1243,6 +1249,7 @@ export class PlaySession {
         facts: logs,
       });
       this.#turn += 1;
+      this.memory.archiveNarrativeMemories(this.#turn);
       traceAction(trace, "receipt-complete");
       traceAction(trace, "save-start");
       const durable = await this.#persistActionReceipt("ledger", eventOffset, logs, this.#turn, trace);
@@ -1427,6 +1434,7 @@ export class PlaySession {
       this.#promptRuns = compactPromptRuns([...this.#promptRuns, run]);
       this.#ledgerNarrativeQueue = [];
       this.#turn += 1;
+      this.memory.archiveNarrativeMemories(this.#turn);
       traceAction(trace, "receipt-complete");
       traceAction(trace, "save-start");
       await this.save();
@@ -1621,6 +1629,7 @@ export class PlaySession {
         };
       this.#promptRuns = compactPromptRuns([...this.#promptRuns, run]);
       this.#turn += 1;
+      this.memory.archiveNarrativeMemories(this.#turn);
       await this.save();
       return {
         response: { ...response, text: assistantText },
@@ -1827,6 +1836,7 @@ export class PlaySession {
         messages,
         engine: this.runtime.snapshot(),
         memory: this.memory.all(),
+        ...(this.memory.archivePages().length ? { memoryArchivePages: this.memory.archivePages() } : {}),
         ...(patches.length ? { continuityPatches: patches } : {}),
         lastLogs: this.lastLogs,
         cbsVariables: clone(this.#cbsVariables),
@@ -1985,7 +1995,7 @@ export class PlaySession {
     for (const checkpoint of [...this.#checkpoints, ...this.#redoStack])
       if (checkpoint.bindings.preset) this.#rememberPreset(checkpoint.bindings.preset);
     setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
-    this.memory.reset(data.memory);
+    this.memory.reset(data.memory,data.memoryArchivePages??[]);
     this.memory.compactEngineFacts(); // 구형 장기 회차도 첫 복원에서 반복 엔진 사실을 즉시 다이어트한다.
     this.#continuityPatches.reset(data.continuityPatches ?? []);
     this.#syncMessageSeq();
@@ -2107,6 +2117,7 @@ export class PlaySession {
       messageCount: this.#messages.length,
       ...(includeMessages ? { messages: this.messages } : {}),
       memory: this.memory.checkpoint(),
+      ...(this.memory.archiveCheckpoint().length ? { memoryArchivePages: clone(this.memory.archiveCheckpoint()) } : {}),
       continuityPatches: this.continuityPatches,
       lastLogs: this.lastLogs,
       cbsVariables: clone(this.#cbsVariables),
@@ -2127,7 +2138,7 @@ export class PlaySession {
     this.#messages = messages;
     this.#messagesChain = null;
     this.#messageShardHashes = null;
-    this.memory.reset(value.memory);
+    this.memory.reset(value.memory,value.memoryArchivePages??[]);
     this.memory.compactEngineFacts();
     this.#continuityPatches.reset(value.continuityPatches ?? []);
     this.#lastLogs = clone(value.lastLogs);
@@ -2183,6 +2194,7 @@ export class PlaySession {
       engine: this.#journal.stateAt(journalCursor),
       logs: atHead ? this.lastLogs : clone(next?.lastLogs ?? []),
       memory: atHead ? this.memory.all() : clone(next?.memory ?? []),
+      memoryArchivePages: atHead ? this.memory.archivePages() : clone(next?.memoryArchivePages ?? []),
       continuityPatches: atHead
         ? this.continuityPatches
         : clone(next?.continuityPatches ?? []),
@@ -2224,7 +2236,7 @@ export class PlaySession {
       this.#journal.moveTo(value.journalCursor);
     }
     this.#turn = value.turn ?? this.#turn;
-    this.memory.reset(value.memory);
+    this.memory.reset(value.memory,value.memoryArchivePages??[]);
     this.memory.compactEngineFacts();
     this.#continuityPatches.reset(value.continuityPatches ?? []);
     if (value.cardRuntimeCursor !== undefined) {
@@ -2381,7 +2393,7 @@ export class PlaySession {
       patch = this.#continuityPatches.propose(
         response.continuityPatch,
         this.#turn,
-        this.memory.all().map((record) => record.id),
+        this.memory.allStored().map((record) => record.id),
       ),
       invalid = factReferenceVerdicts.filter((verdict) => !verdict.ok);
     if (invalid.length)

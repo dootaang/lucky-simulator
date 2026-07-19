@@ -6,7 +6,7 @@
   let tab = $state<'health'|'prompt'|'memory'|'state'>('health');
   let selected = $state('');
   let runs = $derived.by(() => { void version; return session.promptRuns; });
-  let memories = $derived.by(() => { void version; return session.memory.all().sort((a,b)=>b.validFromTurn-a.validFromTurn); });
+  let memories = $derived.by(() => { void version; return session.memory.allStored().sort((a,b)=>b.validFromTurn-a.validFromTurn); });
   let candidates = $derived(memories.filter((memory)=>memory.status==='candidate'));
   let patches = $derived.by(() => { void version; return session.continuityPatches; });
   let pendingPatches = $derived(patches.filter((patch)=>patch.status==='pending'));
