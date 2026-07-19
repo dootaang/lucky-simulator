@@ -391,6 +391,9 @@ test('채팅 결정 카드에서 게이지·오토런을 직접 다룬다',async
   await console.getByRole('button',{name:'제대',exact:true}).click();
   await console.locator('.roster button').first().click();
   await console.getByRole('button',{name:'작전',exact:true}).click();
+  await console.getByRole('button',{name:'엔진 전용 · LLM 0회',exact:true}).click();
+  const chatMessagesBefore=await page.locator('.message').count();
+  const modelMessagesBefore=await page.locator('.message .meta .model').count();
   await console.getByRole('button',{name:/레드·오렌지 작전구역/}).click();
   await console.getByRole('button',{name:/ALPHA/}).click();
   await console.locator('.mission-types button').filter({hasText:'소탕 임무'}).click();
@@ -400,4 +403,6 @@ test('채팅 결정 카드에서 게이지·오토런을 직접 다룬다',async
   await expect(mirror).toContainText('지휘 게이지 0/100');
   await mirror.getByRole('button',{name:'자동 진행 · 정지 지점까지'}).click();
   await expect(page.getByText(/자동 진행 · \d+단계/).first()).toBeVisible();
+  await expect(page.locator('.message')).toHaveCount(chatMessagesBefore+2);
+  await expect(page.locator('.message .meta .model')).toHaveCount(modelMessagesBefore);
 });

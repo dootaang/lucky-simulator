@@ -177,22 +177,22 @@ export function buildDecisionCards(select: (id: string) => unknown, context: Dec
       icons: Record<string, string> = { battle: '⚔', boss: '👑', recon: '🔍', other: '🚩', mystery: '❓' };
     // 전투의 결정권을 채팅으로 — 전술 3택·개입·오토런이 관리창 없이도 이 카드에서 끝난다.
     const options: DecisionOption[] = [];
-    const eachStage = String(rec(gflStatus.settings).stageNarration) === 'each';
+    const narration=String(rec(gflStatus.settings).stageNarration),eachStage=narration==='each',combatMode:DecisionOption['mode']=narration==='silent'?'ledger':'narrated';
     if (quick) {
-      if (type === 'boss') options.push({ label: '👑 보스 교전', id: 'gfl/sortie/stage', params: {}, mode: 'narrated', kind: 'primary' });
-      else if (eachStage) options.push({ label: '단계 진행', id: 'gfl/sortie/stage', params: {}, mode: 'narrated', kind: 'primary' });
+      if (type === 'boss') options.push({ label: '👑 보스 교전', id: 'gfl/sortie/stage', params: {}, mode: combatMode, kind: 'primary' });
+      else if (eachStage) options.push({ label: '단계 진행', id: 'gfl/sortie/stage', params: {}, mode: combatMode, kind: 'primary' });
       else {
-        options.push({ label: '자동 진행 · 정지 지점까지', id: 'gfl/sortie/auto', params: {}, mode: 'narrated', kind: 'primary' });
-        options.push({ label: '한 단계만', id: 'gfl/sortie/stage', params: {}, mode: 'narrated', kind: 'ghost' });
+        options.push({ label: '자동 진행 · 정지 지점까지', id: 'gfl/sortie/auto', params: {}, mode: combatMode, kind: 'primary' });
+        options.push({ label: '한 단계만', id: 'gfl/sortie/stage', params: {}, mode: combatMode, kind: 'ghost' });
       }
     } else if (combat) {
-      options.push({ label: '집중 사격', id: 'gfl/sortie/engage', params: { tactic: 'focus' }, mode: 'narrated', kind: 'primary' });
-      options.push({ label: '균형 전술', id: 'gfl/sortie/engage', params: { tactic: 'balanced' }, mode: 'narrated', kind: 'primary' });
-      options.push({ label: '엄폐 전진', id: 'gfl/sortie/engage', params: { tactic: 'cover' }, mode: 'narrated', kind: 'primary' });
+      options.push({ label: '집중 사격', id: 'gfl/sortie/engage', params: { tactic: 'focus' }, mode: combatMode, kind: 'primary' });
+      options.push({ label: '균형 전술', id: 'gfl/sortie/engage', params: { tactic: 'balanced' }, mode: combatMode, kind: 'primary' });
+      options.push({ label: '엄폐 전진', id: 'gfl/sortie/engage', params: { tactic: 'cover' }, mode: combatMode, kind: 'primary' });
       if (gauge >= 100) for (const [kind2, label] of [['focus', '📣 집중사격 지시'], ['brace', '📣 긴급 엄폐'], ['barrage', '📣 탄막 요청']] as const)
-        options.push({ label: `${label} + 균형 전술 · 1라운드`, id: 'gfl/sortie/engage', params: { tactic: 'balanced', intervention: { round: 1, type: kind2 } }, mode: 'narrated', kind: 'ghost' });
+        options.push({ label: `${label} + 균형 전술 · 1라운드`, id: 'gfl/sortie/engage', params: { tactic: 'balanced', intervention: { round: 1, type: kind2 } }, mode: combatMode, kind: 'ghost' });
     } else {
-      options.push({ label: '단계 진행', id: 'gfl/sortie/stage', params: {}, mode: 'narrated', kind: 'primary' });
+      options.push({ label: '단계 진행', id: 'gfl/sortie/stage', params: {}, mode: combatMode, kind: 'primary' });
     }
     cards.push({
       key: `gfl-sortie:${String(sortie.missionId)}:${String(sortie.echelonId)}:${current}`,

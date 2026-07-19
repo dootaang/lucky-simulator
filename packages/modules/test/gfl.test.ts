@@ -1128,6 +1128,8 @@ describe("Girls Frontline native module", () => {
     expect(settings.dispatch("gfl/settings/update", { stageNarration: "nope" }).log[0]).toMatchObject({ ok: false, reason: "gfl_stage_narration_invalid" });
     expect(settings.dispatch("gfl/settings/update", { stageNarration: "each" }).log[0]).toMatchObject({ ok: true });
     expect((settings.select("gfl/status") as any).settings.stageNarration).toBe("each");
+    expect(settings.dispatch("gfl/settings/update", { stageNarration: "silent" }).log[0]).toMatchObject({ ok: true });
+    expect((settings.select("gfl/status") as any).settings.stageNarration).toBe("silent");
   });
   it("근무 배치가 적성 효과·훈련 보너스·기분 소모·수면 절반을 만든다", () => {
     const source: any = structuredClone(schema);

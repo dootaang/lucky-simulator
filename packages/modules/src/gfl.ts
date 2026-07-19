@@ -1249,7 +1249,7 @@ export function gflModule(): ModuleDefinition {
         if (difficulty && !["relaxed", "standard", "strict"].includes(difficulty)) return fail(c, "gfl_relation_difficulty_invalid", difficulty);
         if (gossip && !["off", "mild", "full"].includes(gossip)) return fail(c, "gfl_gossip_mode_invalid", gossip);
         if (jealousy && !["off", "mild", "full"].includes(jealousy)) return fail(c, "gfl_jealousy_mode_invalid", jealousy);
-        if (stageNarration && !["auto", "each"].includes(stageNarration)) return fail(c, "gfl_stage_narration_invalid", stageNarration);
+        if (stageNarration && !["auto", "each", "silent"].includes(stageNarration)) return fail(c, "gfl_stage_narration_invalid", stageNarration);
         if (difficulty) settings.relationDifficulty = difficulty;
         if (gossip) settings.gossip = gossip;
         if (jealousy) settings.jealousy = jealousy;

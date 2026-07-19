@@ -24,6 +24,10 @@ describe('결정 카드 모델', () => {
     expect(each[0]!.options).toEqual([expect.objectContaining({ label: '단계 진행', id: 'gfl/sortie/stage' })]);
     const boss = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: { ...base, current: 1 } } : null);
     expect(boss[0]!.options).toEqual([expect.objectContaining({ label: '👑 보스 교전', id: 'gfl/sortie/stage' })]);
+    const silent = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: base, settings: { stageNarration: 'silent' } } : null);
+    expect(silent[0]!.options.every(option=>option.mode==='ledger')).toBe(true);
+    const silentTactical=buildDecisionCards((id)=>id==='gfl/status'?{sortie:{...base,engagementMode:'tactical'},settings:{stageNarration:'silent'}}:null);
+    expect(silentTactical[0]!.options.every(option=>option.mode==='ledger')).toBe(true);
   });
   it('야전 조우 인형은 엔진 상태에 있을 때만 영입·두고 가기 카드로 제시한다', () => {
     const cards = buildDecisionCards((id) => id === 'gfl/status' ? { sortie: { active: true, missionId: 'alpha', encounter: { dollId: 'springfield', name: 'Springfield' } } } : null);
