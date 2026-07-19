@@ -3,6 +3,7 @@ import type {
   EngineJournalDataV02,
   EngineJournalEvent,
   SealedEngineJournalEpoch,
+  SealedEpochRef,
 } from "@simbot/contracts";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
@@ -212,17 +213,32 @@ export class SessionJournal {
     this.#runtime.restore(migratedInitial);
     return clone(epoch);
   }
-  toJSON(): EngineJournalDataV02 {
+  #dataCore() {
     return {
-      contract: "simbot-event-journal/0.2",
+      contract: "simbot-event-journal/0.2" as const,
       schemaHash: this.#schemaHash,
-      sealedEpochs: clone(this.#sealedEpochs),
       baseIndex: this.#baseIndex,
       initial: { state: jsonRecord(clone(this.#initial.state)), rng: this.#initial.rng },
       snapshotInterval: this.#snapshotInterval,
       events: clone(this.#events),
       cursor: this.#cursor,
       head: this.head(),
+    };
+  }
+  sealedEpochRefs(): SealedEpochRef[] {
+    return this.#sealedEpochs.map((epoch, offset) => ({ offset, sealedIndex: epoch.sealedIndex, sealHash: epoch.sealHash, schemaHash: epoch.schemaHash }));
+  }
+  get sealedEpochCount() { return this.#sealedEpochs.length; }
+  // 영속용 읽기 전용 뷰 — 클론 없이 내보내므로 호출자는 절대 변형하지 말 것(봉인 본문은 불변).
+  sealedEpochAt(offset: number): SealedEngineJournalEpoch | undefined { return this.#sealedEpochs[offset]; }
+  // 디스크 핫 저장용: 봉인 본문 없이 참조만 — 본문은 sealed-epoch 레코드가 1회 보관한다(파동 2).
+  toPersistedJSON(): EngineJournalDataV02 {
+    return { ...this.#dataCore(), sealedEpochs: [], ...(this.#sealedEpochs.length ? { sealedEpochRefs: this.sealedEpochRefs() } : {}) };
+  }
+  toJSON(): EngineJournalDataV02 {
+    return {
+      ...this.#dataCore(),
+      sealedEpochs: clone(this.#sealedEpochs),
     };
   }
   restore(data: EngineJournalData) {

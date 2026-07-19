@@ -24,3 +24,15 @@ describe('채팅 정렬 — 리스 문법(최신이 위)',()=>{
     expect(new Set(after.chats.map((chat)=>chat.name)).size).toBe(after.chats.length);
   });
 });
+
+describe('봉인 에폭 GC — 채팅 삭제가 분리 레코드를 남기지 않는다',()=>{
+  it('remove가 세션 레코드와 sealed-epoch 레코드를 함께 지운다',async()=>{
+    const repository=createMemoryRepository<ChatIndex>(),store=new ChatStore(repository,'card:gc'),chat=await store.create();
+    const sessionId=`card:gc:chat:${chat.chatId}`;
+    await repository.put({id:sessionId,schemaHash:'card:gc',title:'s',updatedAt:Date.now(),payload:{journal:{contract:'simbot-event-journal/0.2',sealedEpochRefs:[{offset:0,sealedIndex:3,sealHash:'h',schemaHash:'s'}]}} as unknown as ChatIndex});
+    await repository.put({id:`${sessionId}::sealed-epoch:0`,schemaHash:'card:gc',title:'epoch',updatedAt:Date.now(),payload:{contract:'simbot-sealed-epoch/0.1'} as unknown as ChatIndex});
+    await store.remove(chat.chatId);
+    expect(await repository.get(sessionId)).toBeNull();
+    expect(await repository.get(`${sessionId}::sealed-epoch:0`)).toBeNull();
+  });
+});

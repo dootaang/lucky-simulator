@@ -72,12 +72,44 @@ async function measure(warmEvents: number, sampleClicks: number) {
     puts: repository.puts,
   };
 }
+// 봉인 에폭 시나리오: 이벤트 400개를 쌓고 스키마 개정 2회로 에폭 2개를 만든 뒤 클릭을 계측 —
+// 파동 2(분리 보관)의 핵심 지표는 "payload가 봉인 역사와 무관한가"다.
+async function measureSealed(sampleClicks: number) {
+  const repository = perfRepository();
+  let session = new PlaySession({ id: "perf-sealed", runtime: makeRuntime(), preset, card: { name: "Perf" }, repository, provider: { async complete() { return { text: "ok" }; } } });
+  for (let revision = 0; revision < 3; revision += 1) {
+    if (revision > 0) {
+      const runtime = new ProjectRuntime({
+        projectId: "perf", schema: {
+          progression: { sources: { train: [2, 2] }, thresholds: [1_000_000] }, revision,
+          initialState: { player: { level: 1, exp: 0 }, roster: bulk, clock: { day: 1, turn: 0 } },
+        },
+        screens: [{ id: "play", regions: { actions: [{ widget: "action-group", actions: [{ event: { id: "progression/gain", params: { source: "train" } } }] }] } }],
+        navigation: [], content: {}, featureToggles: {}, moduleIds: [],
+      });
+      const next = new PlaySession({ id: "perf-sealed", runtime, preset, card: { name: "Perf" }, repository, provider: { async complete() { return { text: "ok" }; } } });
+      next.restore(await PlaySession.assembleSnapshot((await repository.get("perf-sealed"))!.payload, repository));
+      await next.save();
+      session = next;
+    }
+    for (let i = 0; i < 200; i += 1) await session.runLedgerAction("progression/gain", { source: "train" });
+  }
+  const samples: number[] = [];
+  for (let i = 0; i < sampleClicks; i += 1) {
+    const started = performance.now();
+    await session.runLedgerAction("progression/gain", { source: "train" });
+    samples.push(performance.now() - started);
+  }
+  samples.sort((a, b) => a - b);
+  return { epochs: 2, totalEvents: 600, p50: Number(quantile(samples, 0.5).toFixed(2)), p95: Number(quantile(samples, 0.95).toFixed(2)), payloadBytes: repository.lastBytes };
+}
 const small = await measure(50, 100);
 const large = await measure(1000, 100);
+const sealed = await measureSealed(100);
 const report = {
   contract: "click-perf-harness/0.1",
   node: process.version,
-  small, large,
+  small, large, sealed,
   growthFactorP95: Number((large.p95 / Math.max(0.01, small.p95)).toFixed(2)),
   payloadGrowthFactor: Number((large.payloadBytes / Math.max(1, small.payloadBytes)).toFixed(2)),
 };

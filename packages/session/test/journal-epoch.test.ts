@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ModuleRegistry, type ModuleDefinition } from "@simbot/kernel";
 import { defaultCardPreset } from "@simbot/risu";
 import { ProjectRuntime, type RuntimeProject } from "@simbot/runtime";
+import { createMemoryRepository } from "@simbot/persistence";
 import { PlaySession, sessionIntegrity, type SessionSnapshot } from "../src/index.ts";
 
 const provider = {
@@ -134,5 +135,70 @@ describe("save epochs", () => {
     const old = session(1, 1);
     await old.send("기록");
     expect(() => session(2, 1, "throw").restore(old.snapshot())).toThrow("test_seal_boom");
+  });
+});
+
+describe("봉인 에폭 분리 보관 — 파동 2", () => {
+  async function sealedSetup() {
+    const repository = createMemoryRepository<SessionSnapshot>(),
+      first = new PlaySession({ id: "epoch-split", runtime: new ProjectRuntime(project(1, 1), 7, new ModuleRegistry().register(module())), preset: defaultCardPreset(), card: { name: "Epoch" }, provider, repository });
+    await first.send("hello");
+    await first.send("again");
+    // 스키마 개정 → 로드 시 봉인 발생
+    const second = new PlaySession({ id: "epoch-split", runtime: new ProjectRuntime(project(2, 5), 7, new ModuleRegistry().register(module())), preset: defaultCardPreset(), card: { name: "Epoch" }, provider, repository });
+    second.restore(await PlaySession.assembleSnapshot((await repository.get("epoch-split"))!.payload, repository));
+    await second.save(); // 봉인 본문이 별도 레코드로 1회 기록된다
+    return { repository, second };
+  }
+  it("핫 저장은 참조만 들고, 본문 레코드와 조립해 리플레이 왕복이 성립한다", async () => {
+    const { repository, second } = await sealedSetup();
+    const hot = (await repository.get("epoch-split"))!.payload;
+    expect(hot.journal?.contract).toBe("simbot-event-journal/0.2");
+    if (hot.journal?.contract !== "simbot-event-journal/0.2") return;
+    expect(hot.journal.sealedEpochs).toHaveLength(0); // 본문 없음
+    expect(hot.journal.sealedEpochRefs).toHaveLength(1); // 참조만
+    const body = await repository.get(PlaySession.sealedEpochRecordId("epoch-split", 0));
+    expect(body).toBeTruthy(); // 분리 레코드 존재
+    const third = new PlaySession({ id: "epoch-split", runtime: new ProjectRuntime(project(2, 5), 7, new ModuleRegistry().register(module())), preset: defaultCardPreset(), card: { name: "Epoch" }, provider, repository });
+    third.restore(await PlaySession.assembleSnapshot(hot, repository));
+    expect(third.runtime.snapshot()).toEqual(second.runtime.snapshot()); // 조립 왕복 등가
+  });
+  it("본문 변조는 sealHash로, 참조 변조는 integrity로, 본문 누락은 조립 오류로 잡힌다", async () => {
+    const { repository } = await sealedSetup();
+    const hot = (await repository.get("epoch-split"))!.payload;
+    // ① 본문 1바이트 변조
+    const recordId = PlaySession.sealedEpochRecordId("epoch-split", 0),
+      body = (await repository.get(recordId))!;
+    (body.payload as unknown as { epoch: { sealHash: string } }).epoch.sealHash = "tampered";
+    await repository.put(body);
+    await expect(PlaySession.assembleSnapshot(hot, repository)).rejects.toThrow("sealed_epoch_record_0");
+    // ② 참조 변조 → integrity 거부
+    const forged = structuredClone(hot);
+    if (forged.journal?.contract === "simbot-event-journal/0.2" && forged.journal.sealedEpochRefs)
+      (forged.journal.sealedEpochRefs as unknown as Array<{ sealHash: string }>)[0]!.sealHash = "forged";
+    const victim = new PlaySession({ id: "epoch-split", runtime: new ProjectRuntime(project(2, 5), 7, new ModuleRegistry().register(module())), preset: defaultCardPreset(), card: { name: "Epoch" }, provider, repository });
+    expect(() => victim.restore({ ...forged, sealedEpochBodies: [] })).toThrow("session_corrupt:integrity");
+    // ③ 조립 없이 restore → 본문 누락 오류
+    expect(() => victim.restore(hot)).toThrow("journal_epoch_bodies_missing");
+  });
+  it("구형 인라인 스냅샷은 그대로 로드되고 다음 save에서 분리형으로 승격된다", async () => {
+    const { repository } = await sealedSetup();
+    // 인라인 백업(자기완결 snapshot())을 구형 저장으로 가장
+    const fresh = new PlaySession({ id: "epoch-legacy", runtime: new ProjectRuntime(project(2, 5), 7, new ModuleRegistry().register(module())), preset: defaultCardPreset(), card: { name: "Epoch" }, provider, repository });
+    const donor = (await repository.get("epoch-split"))!.payload,
+      assembled = await PlaySession.assembleSnapshot(donor, repository);
+    fresh.restore(assembled);
+    const inline = resign({ ...fresh.snapshot(), id: "epoch-legacy" }); // 본문 인라인 스냅샷
+    expect(inline.journal?.contract).toBe("simbot-event-journal/0.2");
+    if (inline.journal?.contract === "simbot-event-journal/0.2") expect(inline.journal.sealedEpochs.length).toBe(1);
+    const upgraded = new PlaySession({ id: "epoch-legacy", runtime: new ProjectRuntime(project(2, 5), 7, new ModuleRegistry().register(module())), preset: defaultCardPreset(), card: { name: "Epoch" }, provider, repository });
+    upgraded.restore(inline); // 조립 없이도 로드된다(하위호환)
+    await upgraded.save();
+    const hot = (await repository.get("epoch-legacy"))!.payload;
+    if (hot.journal?.contract === "simbot-event-journal/0.2") {
+      expect(hot.journal.sealedEpochs).toHaveLength(0);
+      expect(hot.journal.sealedEpochRefs).toHaveLength(1); // 승격 완료
+    }
+    expect(await repository.get(PlaySession.sealedEpochRecordId("epoch-legacy", 0))).toBeTruthy();
   });
 });

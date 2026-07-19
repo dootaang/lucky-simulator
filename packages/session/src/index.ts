@@ -1,4 +1,4 @@
-import type { EngineJournalData, MemoryRecord } from "@simbot/contracts";
+import type { EngineJournalData, MemoryRecord, SealedEngineJournalEpoch, SealedEpochRef } from "@simbot/contracts";
 import {
   ContinuityPatchLedger,
   ingestMemoryTurn,
@@ -198,7 +198,10 @@ export interface SessionSnapshot {
   bindings?: SessionBindings;
   ledgerDeltas?: string[];
   integrity?: string;
+  // 조립 단계가 별도 레코드에서 가져와 붙이는 봉인 본문 — integrity 서명 범위 밖(참조의 sealHash가 본문을 검증).
+  sealedEpochBodies?: SealedEngineJournalEpoch[];
 }
+export const SEALED_EPOCH_CONTRACT = "simbot-sealed-epoch/0.1";
 export const MAX_SESSION_IMPORT_BYTES = 30 * 1024 * 1024;
 export function parseSessionBackup(
   text: string,
@@ -445,6 +448,7 @@ export class PlaySession {
   #checkpoints: SessionCheckpoint[] = [];
   #redoStack: SessionCheckpoint[] = [];
   #presetSnapshots = new Map<string, PromptPreset>();
+  #persistedEpochOffsets = new Set<number>();
   #alternates: AlternateState[] = [];
   #responseBranches: ResponseBranchSet[] = [];
   #promptRuns: PromptRun[] = [];
@@ -1396,17 +1400,73 @@ export class PlaySession {
       this.#busy = false;
     }
   }
+  static sealedEpochRecordId(sessionId: string, offset: number) {
+    return `${sessionId}::sealed-epoch:${offset}`;
+  }
+  // 봉인 본문은 불변 — 세션당 1회만 기록하고 이후 save에서는 건드리지 않는다(파동 2).
+  async #persistSealedEpochs() {
+    if (!this.#repository) return;
+    for (let offset = 0; offset < this.#journal.sealedEpochCount; offset += 1) {
+      if (this.#persistedEpochOffsets.has(offset)) continue;
+      const epoch = this.#journal.sealedEpochAt(offset);
+      if (!epoch) continue;
+      await this.#repository.put({
+        id: PlaySession.sealedEpochRecordId(this.id, offset),
+        schemaHash: this.runtime.project.projectId,
+        title: `${this.#card.name} · sealed epoch ${offset}`,
+        updatedAt: Date.now(),
+        payload: { contract: SEALED_EPOCH_CONTRACT, sessionId: this.id, offset, epoch } as unknown as SessionSnapshot,
+      });
+      this.#persistedEpochOffsets.add(offset);
+    }
+  }
+  // 디스크 로드용 조립: 참조만 든 스냅샷에 봉인 본문 레코드를 붙여 restore 가능한 형태로 만든다.
+  // 본문은 integrity 범위 밖의 sealedEpochBodies에 실리고, 참조의 sealHash가 본문 변조를 잡는다.
+  static async assembleSnapshot(payload: SessionSnapshot, repository: SessionRepository<SessionSnapshot>): Promise<SessionSnapshot> {
+    const journal = payload.journal;
+    const refs = journal && journal.contract === "simbot-event-journal/0.2" ? journal.sealedEpochRefs ?? [] : [];
+    if (!refs.length || (journal && journal.contract === "simbot-event-journal/0.2" && journal.sealedEpochs.length)) return payload;
+    const bodies: SealedEngineJournalEpoch[] = [];
+    for (const ref of refs) {
+      const row = await repository.get(PlaySession.sealedEpochRecordId(payload.id, ref.offset)),
+        record = row?.payload as unknown as { contract?: string; epoch?: SealedEngineJournalEpoch } | undefined;
+      if (!record || record.contract !== SEALED_EPOCH_CONTRACT || !record.epoch)
+        throw new Error(`journal_corrupt:sealed_epoch_record_${ref.offset}`);
+      if (record.epoch.sealHash !== ref.sealHash || record.epoch.sealedIndex !== ref.sealedIndex)
+        throw new Error(`journal_corrupt:sealed_epoch_record_${ref.offset}_hash`);
+      bodies.push(record.epoch);
+    }
+    return { ...payload, sealedEpochBodies: bodies };
+  }
+  #effectiveJournal(data: SessionSnapshot): EngineJournalData | undefined {
+    const journal = data.journal;
+    if (!journal || journal.contract !== "simbot-event-journal/0.2") return journal;
+    const refs = journal.sealedEpochRefs ?? [];
+    if (!refs.length || journal.sealedEpochs.length) return journal;
+    const bodies = data.sealedEpochBodies ?? [];
+    if (bodies.length !== refs.length) throw new Error("journal_epoch_bodies_missing");
+    for (const [offset, ref] of refs.entries()) {
+      const body = bodies[offset];
+      if (!body || body.sealHash !== ref.sealHash || body.sealedIndex !== ref.sealedIndex)
+        throw new Error(`journal_corrupt:sealed_epoch_record_${ref.offset}_hash`);
+    }
+    return { ...journal, sealedEpochs: bodies };
+  }
   async save() {
     if (!this.#repository) return;
+    await this.#persistSealedEpochs();
     await this.#repository.put({
       id: this.id,
       schemaHash: this.runtime.project.projectId,
       title: this.#card.name,
       updatedAt: Date.now(),
-      payload: this.snapshot(),
+      payload: this.#snapshotWith(this.#journal.toPersistedJSON()),
     });
   }
   snapshot(): SessionSnapshot {
+    return this.#snapshotWith(this.#journal.toJSON()); // 내보내기·백업은 자기완결(본문 인라인)
+  }
+  #snapshotWith(journal: EngineJournalData): SessionSnapshot {
     const patches = this.continuityPatches,
       base = {
         contract: "simbot-play-session/0.1" as const,
@@ -1422,7 +1482,7 @@ export class PlaySession {
         cbsVariables: clone(this.#cbsVariables),
         cardRuntimeJournal: this.#cardRuntimeJournal.toJSON(),
         lastSpeakers: this.rawLastSpeakers,
-        journal: this.#journal.toJSON(),
+        journal,
         // 디스크 undo는 최근 5개만(RAM 30개 유지 — 오너 결정 1). 참조된 프리셋 본문은 사전으로 동봉.
         history: this.#persistedHistory(),
         bindings: {
@@ -1463,15 +1523,16 @@ export class PlaySession {
       (!!value.journal && value.journal.schemaHash !== currentFingerprint);
     const data = clone(value); // 프록시일 수 있는 입력을 여기서 한 번 평평하게 만든다(엔진·원장 내부 clone 보호).
     let epochResult: { applied: Array<{ moduleId: string; changed: boolean }>; baseIndex: number } | null = null;
-    if (data.journal) {
+    const journalData = this.#effectiveJournal(data); // 분리 보관된 봉인 본문을 참조 검증 후 합친다(파동 2)
+    if (journalData) {
       if (schemaChanged) {
         const migrated = this.runtime.sealMigrations(data.engine.state),
           migratedSnapshot = { state: migrated.state, rng: data.engine.rng };
-        this.#journal.adoptForSeal(data.journal, data.engine);
+        this.#journal.adoptForSeal(journalData, data.engine);
         this.#journal.seal(migratedSnapshot, currentFingerprint);
         epochResult = { applied: migrated.applied, baseIndex: this.#journal.baseIndex };
       } else {
-        this.#journal.restore(data.journal);
+        this.#journal.restore(journalData);
         if (stableStringify(this.runtime.snapshot()) !== stableStringify(data.engine))
           throw new Error("session_corrupt:journal_engine");
       }
@@ -1486,6 +1547,12 @@ export class PlaySession {
       this.runtime.restore(snapshot);
       this.#journal.reset(snapshot);
     }
+    // 조립을 거쳐 로드된 본문(refs+bodies)만 '이미 영속됨' — 인라인(구형·백업)은 다음 save가 1회 기록한다.
+    this.#persistedEpochOffsets = new Set(
+      data.sealedEpochBodies && data.journal?.contract === "simbot-event-journal/0.2"
+        ? (data.journal.sealedEpochRefs ?? []).map((ref) => ref.offset)
+        : [],
+    );
     this.#turn = data.turn;
     this.#messages = data.messages.map((message) => ({
       ...message,
