@@ -15,7 +15,7 @@
   import { classifyWidgetValue, structuredEntries } from './widget-model.ts';
   import {declaredActionMode,yieldForActionPaint,type SimulationActionHandler} from './simulation-action';
 
-  let { runtime, version, assetRevision=0, session = null, portraitFor = () => null, assetFor = () => null, busy=false,onaction=null,onchange = () => {} }: { runtime: ProjectRuntime; version: number; assetRevision?:number; session?: PlaySession|null; portraitFor?: (npcId:string,emotion?:string,outfit?:number)=>string|null;assetFor?:(name:string)=>string|null;busy?:boolean;onaction?:SimulationActionHandler|null; onchange?:()=>void } = $props();
+  let { runtime, version, assetRevision=0, session = null, portraitFor = () => null, portraitThumbFor=portraitFor, assetFor = () => null, busy=false,onaction=null,onchange = () => {} }: { runtime: ProjectRuntime; version: number; assetRevision?:number; session?: PlaySession|null; portraitFor?: (npcId:string,emotion?:string,outfit?:number)=>string|null;portraitThumbFor?: (npcId:string,emotion?:string,outfit?:number)=>string|null;assetFor?:(name:string)=>string|null;busy?:boolean;onaction?:SimulationActionHandler|null; onchange?:()=>void } = $props();
   let active=$state(''),selection=$state<Record<string,unknown>>({}),lastLog=$state<unknown[]>([]),revision=$state(0),pending=$state(false);
   $effect(()=>{revision=version;});
   let project=$derived(runtime.project),context=$derived({state:runtime.state,schema:project.schema,content:project.content,selection,featureToggles:project.featureToggles});
@@ -45,7 +45,7 @@
           {:else if widget.widget==='inn-management'}
             <InnManagement {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
           {:else if widget.widget==='gfl-console'}
-            <GflConsole {runtime} {version} {assetRevision} {busy} {onaction} {portraitFor} {assetFor} onchange={()=>revision+=1}/>
+            <GflConsole {runtime} {version} {assetRevision} {busy} {onaction} portraitFor={portraitThumbFor} {assetFor} onchange={()=>revision+=1}/>
           {:else if widget.widget==='combat-console'}
             <CombatConsole {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
           {:else if widget.widget==='action-group'}

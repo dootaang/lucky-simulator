@@ -79,6 +79,8 @@ test('소녀전선 PNG를 넣으면 별도 컴파일 질문 없이 네이티브 
   await expect(reopened.getByRole('button',{name:'계약',exact:true}).first()).toBeVisible();
   await expect(reopened.locator('.hire-grid img')).toHaveCount(5);
   await expect(reopened.locator('.portrait-loading')).toHaveCount(0);
+  // 콘솔용 이미지는 원본 ZIP을 매번 다시 디코드하지 않고 192px WebP 영구 캐시에 남는다.
+  await expect.poll(()=>page.evaluate(async()=>{const db=await new Promise<IDBDatabase>((resolve,reject)=>{const request=indexedDB.open('lucky-simulator-card-blobs',3);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});try{const tx=db.transaction('asset-thumbnails','readonly'),count=await new Promise<number>((resolve,reject)=>{const request=tx.objectStore('asset-thumbnails').count();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});return count;}finally{db.close();}})).toBeGreaterThan(0);
   const firstOffers=await reopened.locator('.hire-grid article b').allTextContents();
   await reopened.getByRole('button',{name:'🎲 목록 다시 뽑기 · 오늘 1회'}).click();
   await expect(reopened.getByRole('button',{name:'🎲 목록 다시 뽑기 · 오늘 1회'})).toBeDisabled();
