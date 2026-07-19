@@ -617,10 +617,12 @@ describe("Girls Frontline native module", () => {
     const before = first.snapshot().rng;
     const started = first.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "annihil" }).log[0] as any;
     expect(started.stages).toHaveLength(10); // 4★ 기본 9 + 섬멸 1
-    expect(started.stages.at(-1)).toEqual({ type: "boss" });
+    expect(started.stages.at(-1)).toMatchObject({ type: "boss", situation: { id: expect.any(String), favored: expect.stringMatching(/focus|balanced|cover/) } });
     expect(started.stages.some((stage: any) => stage.type === "battle")).toBe(true);
+    expect(started.stages.filter((stage:any)=>stage.type==='battle'||stage.type==='boss').every((stage:any)=>stage.situation?.briefing&&stage.situation?.hint)).toBe(true);
     const expected = createRng(0); expected.restore(before);
     for (let index = 0; index < 10; index++) expected.int(1, 100);
+    for (const stage of started.stages) if(stage.type==='battle'||stage.type==='boss') expected.int(0,2);
     expect(first.snapshot().rng).toBe(expected.snapshot());
     const second = sortieGame({ stars: 4, boss: "Scarecrow", seed: 2026 });
     expect(second.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "annihil" }).log[0]).toMatchObject({ stages: started.stages });
@@ -629,6 +631,13 @@ describe("Girls Frontline native module", () => {
     expect(((recon.state.gfl as any).sortie.stages as any[])).toHaveLength(2);
     const invalid = sortieGame();
     expect(invalid.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1", missionType: "escort" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_mission_type_invalid" });
+  });
+  it("전술 교전은 미리 공개된 전황의 추천 전술에 실제 추가 보정을 준다",()=>{
+    const game=sortieGame({seed:44});
+    game.dispatch("gfl/sortie/start",{missionId:"alpha",echelonId:"e1",missionType:"sweep",engagementMode:"tactical"});
+    const sortie=(game.state.gfl as any).sortie,at=sortie.stages.findIndex((stage:any)=>stage.type==='battle'||stage.type==='boss');sortie.current=at;
+    const situation=sortie.stages[at].situation,log=game.dispatch("gfl/sortie/engage",{tactic:situation.favored}).log[0] as any;
+    expect(log).toMatchObject({situation:{id:situation.id,label:situation.label},situationApplied:true,tactic:situation.favored});
   });
   it('첫 보스 격파만 구속 영입으로 이어지고 원본 능력치·금지·중복·정원·MOD 규칙을 지킨다', () => {
     const game = sortieGame({ boss: 'Scarecrow', seed: 31 });
@@ -814,6 +823,11 @@ describe("Girls Frontline native module", () => {
     expect(game.select("gfl/status")).toMatchObject({ featuredDollId: "m4a1", settings: { relationDifficulty: "strict" } });
     for (let count = 0; count < 3; count++) { game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); completeOperation(game); const unit=(game.state.gfl as any).dolls.m4a1; unit.hp.cur=unit.hp.max; }
     expect(game.select("gfl/daily")).toMatchObject({ sortiesUsed: 3, sortiesRemaining: 0, sortieLimit: 3 }); expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_sortie_daily_limit" });
+  });
+  it("오늘의 임무 네 가지를 시드 RNG로 정하고 같은 시드는 같은 목록을 재현한다",()=>{
+    const plans=new Set<string>();
+    for(let seed=1;seed<=8;seed++){const first=runtime(structuredClone(schema),seed),second=runtime(structuredClone(schema),seed);first.dispatch("gfl/start",{mode:"commander"});second.dispatch("gfl/start",{mode:"commander"});const a=(first.select("gfl/daily")as any).tasks,b=(second.select("gfl/daily")as any).tasks;expect(a).toEqual(b);expect(a).toHaveLength(4);expect(a.at(-1)).toMatchObject({id:"end-day",label:"하루 마감"});plans.add(a.map((task:any)=>task.id).join(','));}
+    expect(plans.size).toBeGreaterThan(1);
   });
   it("관계 선택지를 티어·일일 사용량 기반으로 제시하고 잠금 사유를 밝힌다", () => {
     const source = structuredClone(schema) as any;
@@ -1361,7 +1375,8 @@ describe("Girls Frontline native module", () => {
 
   it("포로 심문은 성공 시 정찰, 실패 시 다음 교전 매복을 확정하고 포로를 소멸시킨다", () => {
     const play = (seed: number) => { const game = sortieGame({ enemyPower: 600, seed }); game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }); (game.state.gfl as any).prisoner = { active: true }; return { game, result: game.dispatch("gfl/sortie/interrogate").log[0] as any }; };
-    const success = play(1); expect(success.result.success).toBe(true); expect((success.game.state.gfl as any).sortie).toMatchObject({ intel: 2, scouted: true });
+    const successSeed = Array.from({ length: 100 }, (_, index) => index + 1).find((seed) => (play(seed).result as any).success === true)!;
+    const success = play(successSeed); expect(success.result.success).toBe(true); expect((success.game.state.gfl as any).sortie).toMatchObject({ intel: 2, scouted: true });
     const failureSeed = Array.from({ length: 100 }, (_, index) => index + 1).find((seed) => (play(seed).result as any).success === false)!;
     const failure = play(failureSeed); expect(failure.result).toMatchObject({ success: false, ambush: true }); expect((failure.game.state.gfl as any).prisoner).toBeNull();
   });

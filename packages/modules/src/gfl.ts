@@ -1,4 +1,4 @@
-import type { ModuleDefinition, RuntimeRecord } from "@simbot/kernel";
+import { deriveRng, type ModuleDefinition, type RuntimeRecord } from "@simbot/kernel";
 import {
   type Context,
   fail,
@@ -303,21 +303,30 @@ function dailyState(value: RuntimeRecord) {
   const gfl = state(value), today = day(value);
   let daily = record(gfl.daily);
   if (number(daily.day) !== today) {
-    daily = { day: today, sortiesUsed: 0, sortiesCompleted: 0, management: 0, relations: 0, endDay: 0, claimed: [] };
+    daily = { day: today, sortiesUsed: 0, sortiesCompleted: 0, management: 0, relations: 0, purchases: 0, manufactures: 0, refineries: 0, endDay: 0, claimed: [] };
     gfl.daily = daily;
     value.gfl = gfl;
   }
   return daily;
 }
+const DAILY_TASKS: Record<string,{label:string;counter:string;target:number}> = {
+  "management-2": { label: "시설·정비 등 기지 업무 2회", counter: "management", target: 2 },
+  purchase: { label: "상점에서 보급품 1회 구매", counter: "purchases", target: 1 },
+  manufacture: { label: "인형 또는 장비 제조 1회", counter: "manufactures", target: 1 },
+  refinery: { label: "기지 가공 라인 1회 가동", counter: "refineries", target: 1 },
+  "relation-1": { label: "인형과 교류 1회", counter: "relations", target: 1 },
+  "relation-2": { label: "인형과 교류 2회", counter: "relations", target: 2 },
+  "sortie-1": { label: "작전 1회 완료", counter: "sortiesCompleted", target: 1 },
+  "sortie-2": { label: "작전 2회 완료", counter: "sortiesCompleted", target: 2 },
+  "end-day": { label: "하루 마감", counter: "endDay", target: 1 },
+};
+function fallbackDailyPlan(today:number){const base=["management-2","purchase","manufacture","refinery"],social=["relation-1","relation-2"],sortie=["sortie-1","sortie-2"];return[base[today%base.length]!,social[today%social.length]!,sortie[(today+1)%sortie.length]!,"end-day"];}
+function rollDailyPlan(value:RuntimeRecord){const rng=deriveRng(value.seed,`gfl/daily:${day(value)}`),pick=(values:string[])=>values[rng.int(0,values.length-1)]!;return[pick(["management-2","purchase","manufacture","refinery"]),pick(["relation-1","relation-2"]),pick(["sortie-1","sortie-2"]),"end-day"];}
 function dailyTasks(daily: RuntimeRecord) {
-  return [
-    { id: "management", label: "기지 업무 2회", progress: Math.min(2, number(daily.management)), target: 2 },
-    { id: "relation", label: "인형과 교류 1회", progress: Math.min(1, number(daily.relations)), target: 1 },
-    { id: "sortie", label: "작전 1회 수행", progress: Math.min(1, number(daily.sortiesCompleted)), target: 1 },
-    { id: "end-day", label: "하루 마감", progress: Math.min(1, number(daily.endDay)), target: 1 },
-  ];
+  const ids=list<string>(daily.plan).length===4?list<string>(daily.plan):fallbackDailyPlan(number(daily.day,1));
+  return ids.map(id=>{const task=DAILY_TASKS[id]??DAILY_TASKS["management-2"]!;return{id,label:task.label,progress:Math.min(task.target,number(daily[task.counter])),target:task.target};});
 }
-function markDaily(c: Context, key: "management" | "relations" | "sortiesCompleted" | "endDay", amount = 1) {
+function markDaily(c: Context, key: "management" | "relations" | "sortiesCompleted" | "purchases" | "manufactures" | "refineries" | "endDay", amount = 1) {
   const daily = dailyState(c.state);
   daily[key] = number(daily[key]) + amount;
   const completed = dailyTasks(daily).filter(task => task.progress >= task.target).length,
@@ -731,6 +740,11 @@ type GflCombatant = RuntimeRecord & {
 };
 
 type OperationStageType = "battle" | "boss" | "recon" | "other" | "mystery";
+const TACTICAL_SITUATIONS = [
+  { id:"exposed-command", label:"적 지휘 개체 노출", briefing:"지휘 개체가 잠시 엄폐 밖으로 나왔다. 짧은 화력 집중으로 대열을 무너뜨릴 기회다.", favored:"focus", hint:"집중 사격: 명중 +2·화력 +10%", hit:2, damage:1.1, incoming:1 },
+  { id:"suppression-lane", label:"기관총 제압 사격", briefing:"적 제압 사격이 진입로를 훑고 있다. 엄폐를 이어 붙여 전진해야 피해를 줄일 수 있다.", favored:"cover", hint:"엄폐 전진: 받는 피해 추가 30% 감소", hit:0, damage:1, incoming:.7 },
+  { id:"shifting-front", label:"전선 급변", briefing:"적이 산개와 집결을 반복해 한쪽에 치우친 전술은 빈틈을 만든다.", favored:"balanced", hint:"균형 전술: 명중 +1·화력 +5%·받는 피해 10% 감소", hit:1, damage:1.05, incoming:.9 },
+] as const;
 const OPERATION_STAGE_WEIGHTS: Record<string, ReadonlyArray<readonly [OperationStageType, number]>> = {
   // 다단계 HP 소모전을 500시드로 검산해 원본 제안 45에서 허용 범위 하한인 25로 조정했다.
   sweep: [["battle", 25], ["recon", 20], ["other", 25], ["mystery", 30]],
@@ -767,6 +781,7 @@ function operationStages(c: Context, operation: RuntimeRecord, missionType: stri
   stages[count - 1] = { type: string(operation.boss).trim() ? "boss" : "battle" };
   if (!stages.slice(0, -1).some((value) => value.type === "battle"))
     stages[count - 2] = { type: "battle" };
+  for(const stage of stages)if(stage.type==="battle"||stage.type==="boss")stage.situation={...TACTICAL_SITUATIONS[c.rng.int(0,TACTICAL_SITUATIONS.length-1)]!};
   return stages;
 }
 function rollOperationLoot(c: Context) {
@@ -885,9 +900,10 @@ function resolveSortie(c: Context) {
     missionTotal = missionRoll + risk.modifier,
     condition = missionRoll === 20 || (missionRoll !== 1 && missionTotal >= 8) ? missionTotal >= 15 ? "favorable" : "steady" : missionTotal <= 2 ? "disastrous" : "unfavorable",
     conditionHit = condition === "favorable" ? 2 : condition === "unfavorable" ? -2 : condition === "disastrous" ? -4 : 0,
-    tacticHit = (tactic === "focus" ? 2 : tactic === "cover" ? -2 : 0) + (sortie.scouted ? 1 : 0) + number(sortie.nightHitModifier),
-    allyDamageFactor = tactic === "focus" ? 1.15 : tactic === "cover" ? .85 : 1,
-    incomingFactor = (tactic === "focus" ? 1.15 : tactic === "cover" ? .7 : 1) * (condition === "favorable" ? .85 : condition === "unfavorable" ? 1.15 : condition === "disastrous" ? 1.3 : 1) * (stages.length ? .8 : 1),
+    situation = record(currentStage.situation), situationApplied = string(situation.favored)===tactic,
+    tacticHit = (tactic === "focus" ? 2 : tactic === "cover" ? -2 : 0) + (sortie.scouted ? 1 : 0) + number(sortie.nightHitModifier) + (situationApplied?number(situation.hit):0),
+    allyDamageFactor = (tactic === "focus" ? 1.15 : tactic === "cover" ? .85 : 1) * (situationApplied?number(situation.damage,1):1),
+    incomingFactor = (tactic === "focus" ? 1.15 : tactic === "cover" ? .7 : 1) * (situationApplied?number(situation.incoming,1):1) * (condition === "favorable" ? .85 : condition === "unfavorable" ? 1.15 : condition === "disastrous" ? 1.3 : 1) * (stages.length ? .8 : 1),
     values = owned(c.state), missionFaction = factionSummary(operation),
     allies: GflCombatant[] = list<unknown>(entry.slots)
       .map((rawId, index) => ({ unit: record(values[string(rawId)]), row: gflFormationRow(index) }))
@@ -1140,6 +1156,8 @@ function resolveSortie(c: Context) {
     rewards: reward,
     rewardRate,
     tactic,
+    situation,
+    situationApplied,
     missionCheck: { roll: missionRoll, modifier: risk.modifier, commanderBonus: commanderBefore.checkBonus, total: missionTotal, condition, risk },
     commanderExp,
     ...(levelUp ? { levelUp } : {}),
@@ -1169,7 +1187,7 @@ function resolveSortie(c: Context) {
     sortie.ambush = false;
     sortie.command = Math.min(100, number(sortie.command) + 34);
     sortie.intervention = null;
-    sortie.lastStage = { index: currentStageIndex, stageType, guide: stageGuide(c.schema, stageType), outcome, loot };
+    sortie.lastStage = { index: currentStageIndex, stageType, guide: stageGuide(c.schema, stageType), situation, situationApplied, outcome, loot };
     next.sortie = sortie;
   }
   c.state.gfl = next;
@@ -1186,6 +1204,8 @@ function resolveSortie(c: Context) {
     rewards: reward,
     rewardRate,
     tactic,
+    situation,
+    situationApplied,
     missionCheck: { roll: missionRoll, modifier: risk.modifier, commanderBonus: commanderBefore.checkBonus, total: missionTotal, condition, risk },
     commanderExp,
     ...(levelUp ? { levelUp } : {}),
@@ -1240,6 +1260,7 @@ export function gflModule(): ModuleDefinition {
         gfl.mode = mode;
         gfl.commanderName = string(c.params.name || "지휘관");
         gfl.baseLocation = baseLocation(c.state);
+        const daily=dailyState(c.state);if(!list<string>(daily.plan).length)daily.plan=rollDailyPlan(c.state);
         c.state.gfl = gfl;
         // 지휘관 시작 자금은 원본 Lua가 시작 시점에 별도로 지급한다(defaultVariables의 A_gold와 다름 — 실측 10,000).
         const funds = number(config(c.schema).commanderFunds, 0);
@@ -1474,7 +1495,7 @@ export function gflModule(): ModuleDefinition {
     });
     gfl.refinery = jobs;
     c.state.gfl = gfl;
-    const dailyAwards = markDaily(c, "management");
+    const dailyAwards = [...markDaily(c, "management"),...markDaily(c, "refineries")];
     return ok(c, { job: jobs.at(-1), dailyAwards });
   }),
   "gfl/refinery/collect": scoped((c) => {
@@ -1635,7 +1656,7 @@ export function gflModule(): ModuleDefinition {
           gfl.hireOfferDay = null;
           gfl.hireRefreshDay = null;
           gfl.hiredDay = null;
-          gfl.daily = { day: tomorrow, sortiesUsed: 0, sortiesCompleted: 0, management: 0, relations: 0, endDay: 0, claimed: [] };
+          gfl.daily = { day: tomorrow, sortiesUsed: 0, sortiesCompleted: 0, management: 0, relations: 0, purchases: 0, manufactures: 0, refineries: 0, endDay: 0, claimed: [], plan: rollDailyPlan(c.state) };
         }
         c.state.clock = clock;
         c.state.gfl = gfl;
@@ -2026,7 +2047,7 @@ export function gflModule(): ModuleDefinition {
         });
         gfl.manufacturing = jobs;
         c.state.gfl = gfl;
-        const dailyAwards = markDaily(c, "management");
+        const dailyAwards = [...markDaily(c, "management"),...markDaily(c, "manufactures")];
         return ok(c, { job: jobs.at(-1), dailyAwards, poolFallback, pool: kind === "equipment" ? (heavy ? "heavy" : "equipment") : "doll" });
       }),
       "gfl/manufacture/tick": scoped((c) => {
@@ -2394,7 +2415,7 @@ export function gflModule(): ModuleDefinition {
         const inventory = record(c.state.items);
         inventory[id] = number(inventory[id]) + quantity;
         c.state.items = inventory;
-        const dailyAwards = markDaily(c, "management");
+        const dailyAwards = [...markDaily(c, "management"),...markDaily(c, "purchases")];
         return ok(c, { itemId: id, quantity, price, dailyAwards });
       }),
       "gfl/item/use": scoped((c) => {
