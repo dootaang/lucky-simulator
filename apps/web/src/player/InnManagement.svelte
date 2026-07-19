@@ -1,7 +1,7 @@
 <script lang="ts">
   import type {ProjectRuntime} from '@simbot/runtime';
   import Icon from '@simbot/ui/Icon.svelte';
-  import type {SimulationActionHandler,SimulationActionMode} from './simulation-action';
+  import {yieldForActionPaint,type SimulationActionHandler,type SimulationActionMode} from './simulation-action';
   let {runtime,version,busy=false,onaction=null,onchange}:{runtime:ProjectRuntime;version:number;busy?:boolean;onaction?:SimulationActionHandler|null;onchange:()=>void}=$props();
   let lastLog=$state<Record<string,unknown>[]>([]),quantities=$state<Record<string,number>>({}),saleQuantities=$state<Record<string,number>>({}),pending=$state(false);
   const rows=(value:unknown)=>Array.isArray(value)?value.filter(item=>item&&typeof item==='object') as Record<string,unknown>[]:[];
@@ -13,7 +13,7 @@
   let status=$derived.by(()=>{const failed=lastLog.find(row=>row.ok===false);if(failed)return reasonText(String(failed.reason??'unknown'));return lastLog.length?'처리가 완료되었습니다.':'';});
   const money=(value:unknown)=>`${Number(value??0).toLocaleString('ko-KR')}원`;
   function reasonText(reason:string){return({insufficient_gold:'골드가 부족합니다.',insufficient_stock:'재고가 부족합니다.',menu_locked:'주방 레벨이 부족해 잠긴 메뉴입니다.',menu_not_sellable:'판매할 수 없는 메뉴입니다.',menu_not_buyable:'구매할 수 없는 메뉴입니다.',unknown_gather_scale:'지원하지 않는 채집 규모입니다.',invalid_qty:'수량은 1~999 사이여야 합니다.',max_level:'이미 최대 레벨입니다.',no_upgrade_cost:'증축 비용 정보가 없습니다.',staff_full:'직원 숙소가 가득 찼습니다.',already_attempted_today:'오늘 이미 시도한 의뢰입니다.',earlier_wave_pending:'앞선 영업을 먼저 진행해야 합니다.',incident_pending:'진행 중인 사건을 먼저 해결해야 합니다.',no_room_available:'수용 가능한 빈 객실이 없습니다.',lodging_already_reviewed:'오늘 숙박 문의는 이미 확인했습니다.',mail_already_checked:'오늘 우편은 이미 확인했습니다.'} as Record<string,string>)[reason]??`처리하지 못했습니다: ${reason}`;}
-  async function run(id:string,params:Record<string,unknown>={},mode:SimulationActionMode='narrated',intent?:string,events?:Array<{id:string;params:Record<string,unknown>}>){if(pending||busy)return;pending=true;lastLog=[];try{lastLog=onaction?await onaction({id,params,mode,...(intent?{intent}:{}),...(events?{events}:{})}):mode==='scene'?[]:events?events.flatMap(event=>runtime.dispatch(event.id,event.params).log as Record<string,unknown>[]):runtime.dispatch(id,params).log as Record<string,unknown>[];onchange();}finally{pending=false;}}
+  async function run(id:string,params:Record<string,unknown>={},mode:SimulationActionMode='narrated',intent?:string,events?:Array<{id:string;params:Record<string,unknown>}>){if(pending||busy)return;pending=true;lastLog=[];try{await yieldForActionPaint();lastLog=onaction?await onaction({id,params,mode,...(intent?{intent}:{}),...(events?{events}:{})}):mode==='scene'?[]:events?events.flatMap(event=>runtime.dispatch(event.id,event.params).log as Record<string,unknown>[]):runtime.dispatch(id,params).log as Record<string,unknown>[];onchange();}finally{pending=false;}}
   function scene(intent:string){void run('',{},'scene',intent);}
   function purchase(){const items=resources.map(value=>({resource:value.id,qty:Math.trunc(quantities[String(value.id)]??0)})).filter(value=>value.qty>0);if(items.length)void run('purchase_batch',{items},'ledger');}
   function lodgingBatch(id:'lodging_accept'|'lodging_reject',requests:Record<string,unknown>[]){const events=requests.map(request=>({id,params:{requestId:request.id}}));if(events.length)void run(id,{},'narrated',undefined,events);}

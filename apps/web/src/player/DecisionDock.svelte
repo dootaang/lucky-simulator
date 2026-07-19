@@ -1,12 +1,14 @@
 <script lang="ts">
   import Icon from '@simbot/ui/Icon.svelte';
   import type { DecisionCardModel } from './decision-model';
-  import type { SimulationActionHandler } from './simulation-action';
+  import { yieldForActionPaint, type SimulationActionHandler } from './simulation-action';
   let { cards, busy, onaction }: { cards: DecisionCardModel[]; busy: boolean; onaction: SimulationActionHandler } = $props();
   // '나중에'는 세션 상태가 아니라 이 화면의 선택 — 새 결정(키가 다름)이 오면 자연히 다시 보인다.
   let dismissed = $state<Set<string>>(new Set());
+  let pending = $state('');
   let visible = $derived(cards.filter((card) => !dismissed.has(card.key)));
   function later(key: string) { dismissed = new Set([...dismissed, key]); }
+  async function choose(option:DecisionCardModel['options'][number]){if(busy||pending)return;pending=option.label;try{await yieldForActionPaint();await onaction({id:option.id,params:option.params,mode:option.mode,...(option.intent?{intent:option.intent}:{})});}finally{pending='';}}
 </script>
 
 <!-- 조종대: 엔진이 결정을 기다릴 때만 입력창 위에 나타난다. ★ 서명 = 엔진이 제시한 진짜 선택지(LLM 서사의 가짜 선택지와 구분). -->
@@ -16,7 +18,7 @@
       <article>
         <div class="head"><Icon name={card.icon} size={13}/><b>{card.title}</b>{#if card.more}<small>{card.more}</small>{/if}</div>
         {#if card.desc}<p>{card.desc}</p>{/if}
-        <div class="options">{#each card.options as option (option.label)}<button class={option.kind} disabled={busy} onclick={()=>void onaction({id:option.id,params:option.params,mode:option.mode,...(option.intent?{intent:option.intent}:{})})}>{option.label}</button>{/each}{#if card.dismissible}<button class="ghost" disabled={busy} onclick={()=>later(card.key)}>나중에</button>{/if}</div>
+        <div class="options">{#each card.options as option (option.label)}<button class={option.kind} class:acting={pending===option.label} aria-busy={pending===option.label} disabled={busy||Boolean(pending)} onclick={()=>void choose(option)}>{pending===option.label?'처리 중…':option.label}</button>{/each}{#if card.dismissible}<button class="ghost" disabled={busy||Boolean(pending)} onclick={()=>later(card.key)}>나중에</button>{/if}</div>
       </article>
     {/each}
   </div>
@@ -34,5 +36,6 @@
   button.primary{border-color:#5c4b2a;background:#2a2417;color:#ecd9ab}
   button:hover:not(:disabled){border-color:#d8b36a}
   button:disabled{opacity:.5;cursor:default}
+  button.acting{opacity:1;border-color:#d8b36a;box-shadow:0 0 0 2px #d8b36a33}
   @media(max-width:680px){.dock{padding:8px 10px 4px}}
 </style>

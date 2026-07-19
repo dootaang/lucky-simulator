@@ -1,6 +1,6 @@
 <script lang="ts">
   import type {ProjectRuntime} from '@simbot/runtime';
-  import type {SimulationActionHandler} from './simulation-action';
+  import {yieldForActionPaint,type SimulationActionHandler} from './simulation-action';
 
   type Pool={id:string;cur:number;max:number};
   type Enemy={id:string;name:string;rank:string|null;hp:{cur:number;max:number};dead:boolean;intent:'attack'|'heavy'|null};
@@ -22,7 +22,7 @@
     if(reason.startsWith('insufficient_'))return `${reason.slice('insufficient_'.length).toLocaleUpperCase()}가 부족합니다.`;
     return known[reason]??`처리하지 못했습니다: ${reason}`;
   }
-  async function run(id:string,params:Record<string,unknown>={},events?:Array<{id:string;params:Record<string,unknown>}>){if(pending||busy)return;pending=true;lastLog=[];try{if(onaction)lastLog=await onaction({id,params,mode:'narrated',...(events?{events}:{})});else{const queue=events??[{id,params}];lastLog=queue.flatMap(event=>runtime.dispatch(event.id,event.params).log as Record<string,unknown>[]);}onchange();}finally{pending=false;}}
+  async function run(id:string,params:Record<string,unknown>={},events?:Array<{id:string;params:Record<string,unknown>}>){if(pending||busy)return;pending=true;lastLog=[];try{await yieldForActionPaint();if(onaction)lastLog=await onaction({id,params,mode:'narrated',...(events?{events}:{})});else{const queue=events??[{id,params}];lastLog=queue.flatMap(event=>runtime.dispatch(event.id,event.params).log as Record<string,unknown>[]);}onchange();}finally{pending=false;}}
   const turn=(first:{id:string;params:Record<string,unknown>})=>run(first.id,first.params,[first,{id:'enemy_turn',params:{}}]);
   function endLabel(outcome:ConsoleModel['end']['outcome']){return outcome==='victory'?'전투 종료 (승리)':outcome==='fled'?'전투 종료 (도주)':outcome==='defeat'?'전투 종료 (패배)':'전투 종료';}
   function finish(){const gfl=(runtime.state.gfl&&typeof runtime.state.gfl==='object'?runtime.state.gfl:{})as Record<string,unknown>,sortie=(gfl.sortie&&typeof gfl.sortie==='object'?gfl.sortie:{})as Record<string,unknown>;return run(sortie.active?'gfl/sortie/finish':'end_encounter');}
