@@ -8,8 +8,8 @@ import { extractTextPanels } from "./text-panels.ts";
 import type { CompileResult } from "./index.ts";
 
 type Row = Record<string, unknown>;
-// 연애 리밸런스(승급 게이트·대화 수치 2배)로 관계 이벤트의 리플레이 결과가 달라진다 — 기존 회차는 봉인 후 이어 간다.
-export const GFL_TEMPLATE_VERSION = "1.7.0";
+// 군수 장시간 곡선과 출발 시 대성공 봉인으로 보상·RNG 결과가 달라진다 — 기존 회차는 봉인 후 이어 간다.
+export const GFL_TEMPLATE_VERSION = "1.8.0";
 const record = (value: unknown): Row =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Row)

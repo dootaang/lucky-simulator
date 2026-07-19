@@ -1390,13 +1390,14 @@ export function gflModule(): ModuleDefinition {
     if (activeSortie.active && activeSortie.echelonId === echelonId) return fail(c, "gfl_echelon_sortie_active", echelonId);
     if (echelonLogistics(c.state, echelonId)) return fail(c, "gfl_logistics_active", echelonId);
     if (members.every((id) => number(record(record(owned(c.state)[id]).hp).cur) <= 0)) return fail(c, "gfl_echelon_incapacitated");
-    const formationPower = effectivePower(c.state, entry), rewardRoll = c.rng.int(90, 110),
-      gold = Math.min(2000, Math.floor(formationPower * .03 * duration * rewardRoll / 100)),
-      res = Math.min(1200, Math.floor(formationPower * .03 * duration * .6 * rewardRoll / 100)),
+    const formationPower = effectivePower(c.state, entry), rewardRoll = c.rng.int(90, 110), bonusRoll=c.rng.int(1,20),durationMultiplier=duration===2?1:duration===4?1.15:1.35,
+      gold = Math.min(2000, Math.floor(formationPower * .03 * duration * durationMultiplier * rewardRoll / 100)),
+      res = Math.min(1200, Math.floor(formationPower * .03 * duration * .6 * durationMultiplier * rewardRoll / 100)),
+      bonusParts=bonusRoll>=15?1:0,bonusCores=bonusRoll===20?1:0,
       jobs = logistics(c.state), job = {
         id: `logistics:${number(record(c.state.clock).turn)}:${jobs.length}`,
-        echelonId, duration, remaining: duration, status: "active", rewardRoll,
-        reward: { gold, res }, power: formationPower,
+        echelonId, duration, remaining: duration, status: "active", rewardRoll,bonusRoll,durationMultiplier,
+        reward: { gold, res,parts:bonusParts,cores:bonusCores }, power: formationPower,
       };
     jobs.push(job); state(c.state).logistics = jobs;
     return ok(c, { job });
@@ -1406,9 +1407,9 @@ export function gflModule(): ModuleDefinition {
     if (!job || job.status !== "complete") return fail(c, "gfl_logistics_not_complete", c.params.jobId);
     const reward = record(job.reward), resources = record(c.state.resources);
     c.state.gold = number(c.state.gold) + number(reward.gold);
-    resources.res = number(resources.res) + number(reward.res); c.state.resources = resources;
+    resources.res = number(resources.res) + number(reward.res);resources.parts=number(resources.parts)+number(reward.parts);resources.cores=number(resources.cores)+number(reward.cores); c.state.resources = resources;
     state(c.state).logistics = jobs.filter((entry) => entry.id !== job.id);
-    return ok(c, { jobId: job.id, echelonId: job.echelonId, reward });
+    return ok(c, { jobId: job.id, echelonId: job.echelonId, reward,bonusRoll:job.bonusRoll,bonusParts:number(reward.parts),bonusCores:number(reward.cores) });
   }),
   "gfl/crew/assign": scoped((c) => {
     const facilityId = string(c.params.facilityId), dollId = string(c.params.dollId),

@@ -145,7 +145,7 @@ describe('전투·아이템 거부 사유', () => {
     expect(toFactLine({ ok: true, event: 'gfl/sortie/stage', stageType: 'recon' }, 0)).toMatchObject({ icon: '🔍', label: '정찰 완료', note: '다음 교전 명중 +1' });
     expect(toFactLine({ ok: true, event: 'gfl/sortie/stage', stageType: 'mystery', encounter: { name: 'Springfield' } }, 1).note).toContain('Springfield');
     expect(toFactLine({ ok: true, event: 'gfl/sortie/interrogate', success: false }, 2).note).toContain('매복');
-    expect(toFactLine({ ok: true, event: 'gfl/logistics/collect', reward: { gold: 321, res: 192 } }, 3).note).toBe('자금 +321 · 자원 +192');
+    expect(toFactLine({ ok: true, event: 'gfl/logistics/collect', reward: { gold: 321, res: 192 },bonusRoll:20,bonusParts:1,bonusCores:1 }, 3).note).toBe('자금 +321 · 자원 +192 · 대성공 d20 20 · 부품 +1 · 코어 +1');
     expect(toFactLine({ ok: true, event: 'gfl/market/buy', name: '옵티컬', price: 60, suspicion: 1 }, 4)).toMatchObject({ delta: '-60', note: '의심도 1' });
     const check = toFactLine({ ok: true, event: 'gfl/relation/check', name: 'M4A1', label: '차분히 대화한다', success: true, tier: 'critical_success', roll: 20, affinityDelta: 6, affinity: 6, tierChanged: { to: { label: '익숙해짐' } } }, 5);
     expect(check).toMatchObject({ icon: '❤️', delta: '+6', after: '호감 6' });

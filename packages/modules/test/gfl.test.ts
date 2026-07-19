@@ -996,20 +996,20 @@ describe("Girls Frontline native module", () => {
     expect(second.applied).toContainEqual({ moduleId: "genre.gfl", changed: false });
     expect((old.gfl as any).echelons[0].slots).toHaveLength(5);
   });
-  it("군수지원은 출발 때 RNG 1회로 보상을 봉인하고 완료 뒤 수동 수령한다", () => {
+  it("군수지원은 출발 때 보상과 대성공 RNG 2회를 봉인하고 완료 뒤 수동 수령한다", () => {
     const game = runtime(structuredClone(schema), 20260718); game.dispatch("gfl/start", { mode: "commander" });
     game.dispatch("gfl/doll/acquire", { dollId: "m4a1" }); game.dispatch("gfl/echelon/assign", { echelonId: "e1", slot: 0, dollId: "m4a1" });
     const before = game.snapshot().rng, started = game.dispatch("gfl/logistics/dispatch", { echelonId: "e1", duration: 2 }).log[0] as any,
-      expected = createRng(0); expected.restore(before); expected.int(90, 110);
-    expect(started).toMatchObject({ ok: true, job: { echelonId: "e1", duration: 2, remaining: 2, status: "active", reward: { gold: expect.any(Number), res: expect.any(Number) } } });
+      expected = createRng(0); expected.restore(before); expected.int(90, 110);expected.int(1,20);
+    expect(started).toMatchObject({ ok: true, job: { echelonId: "e1", duration: 2, remaining: 2, status: "active",durationMultiplier:1,bonusRoll:expect.any(Number), reward: { gold: expect.any(Number), res: expect.any(Number),parts:expect.any(Number),cores:expect.any(Number) } } });
     expect(game.snapshot().rng).toBe(expected.snapshot());
     expect(game.dispatch("gfl/sortie/start", { missionId: "alpha", echelonId: "e1" }).log[0]).toMatchObject({ ok: false, reason: "gfl_echelon_logistics_active" });
-    const reward = structuredClone(started.job.reward), funds = Number(game.state.gold), res = Number((game.state.resources as any).res);
+    const reward = structuredClone(started.job.reward), funds = Number(game.state.gold), res = Number((game.state.resources as any).res),parts=Number((game.state.resources as any).parts),cores=Number((game.state.resources as any).cores);
     game.dispatch("gfl/time/advance"); game.dispatch("gfl/time/advance");
     expect(game.select("gfl/logistics")).toEqual([expect.objectContaining({ status: "complete", remaining: 0, reward })]);
     expect(game.state.gold).toBe(funds); expect((game.state.resources as any).res).toBe(res);
-    expect(game.dispatch("gfl/logistics/collect", { jobId: started.job.id }).log[0]).toMatchObject({ ok: true, reward });
-    expect(game.state.gold).toBe(funds + reward.gold); expect((game.state.resources as any).res).toBe(res + reward.res);
+    const beforeCollect=game.snapshot().rng;expect(game.dispatch("gfl/logistics/collect", { jobId: started.job.id }).log[0]).toMatchObject({ ok: true, reward,bonusRoll:started.job.bonusRoll });
+    expect(game.snapshot().rng).toBe(beforeCollect);expect(game.state.gold).toBe(funds + reward.gold); expect((game.state.resources as any).res).toBe(res + reward.res);expect((game.state.resources as any).parts).toBe(parts+reward.parts);expect((game.state.resources as any).cores).toBe(cores+reward.cores);
     expect(game.select("gfl/logistics")).toEqual([]);
   });
   it("군수 거부 조건은 RNG를 쓰지 않고 2·4·6 외 시간은 받지 않는다", () => {
@@ -1019,6 +1019,11 @@ describe("Girls Frontline native module", () => {
     expect(game.snapshot().rng).toBe(before);
     expect(game.dispatch("gfl/logistics/dispatch", { echelonId: "e1", duration: 2 }).log[0]).toMatchObject({ ok: false, reason: "gfl_echelon_empty" });
     expect(game.snapshot().rng).toBe(before);
+  });
+  it("군수 시간 곡선과 대성공 14·15·19·20 경계를 고정한다",()=>{
+    const dispatch=(duration:number,seed:number)=>{const game=runtime(structuredClone(schema),seed);game.dispatch("gfl/start",{mode:"commander"});game.dispatch("gfl/doll/acquire",{dollId:"m4a1"});game.dispatch("gfl/echelon/assign",{echelonId:"e1",slot:0,dollId:"m4a1"});return(game.dispatch("gfl/logistics/dispatch",{echelonId:"e1",duration}).log[0]as any).job;};
+    expect([2,4,6].map(duration=>dispatch(duration,11).durationMultiplier)).toEqual([1,1.15,1.35]);
+    for(const boundary of[14,15,19,20]){let found:any=null;for(let seed=1;seed<5000&&!found;seed++){const job=dispatch(2,seed);if(job.bonusRoll===boundary)found=job;}expect(found?.reward).toMatchObject({parts:boundary>=15?1:0,cores:boundary===20?1:0});}
   });
   it("심야·새벽은 HG 조명과 동일한 위험 보정을 실제 전투에 쓰고 부품을 두 배 지급한다", () => {
     const game = sortieGame({ stars: 0 }); (game.state.clock as any).phase = "심야";
@@ -1061,9 +1066,9 @@ describe("Girls Frontline native module", () => {
     for (let day = 0; day < 30; day++) {
       const job = (game.dispatch("gfl/logistics/dispatch", { echelonId: "e1", duration: 6 }).log[0] as any).job;
       for (let phase = 0; phase < 6; phase++) game.dispatch("gfl/time/advance", { settlement: true });
-      logisticsIncome += Number(job.reward.gold) + Number(job.reward.res); game.dispatch("gfl/logistics/collect", { jobId: job.id });
+      logisticsIncome += Number(job.reward.gold) + Number(job.reward.res)+Number(job.reward.parts)*50+Number(job.reward.cores)*500; game.dispatch("gfl/logistics/collect", { jobId: job.id });
     }
-    const supplyIncome = 30 * 300, routineSortieIncome = 500 + 29 * Math.floor(500 * .35), totalIncome = logisticsIncome + supplyIncome + routineSortieIncome,
+    const supplyIncome = 30 * 300, routineSortieIncome = 500 + 89 * Math.floor(500 * .35), totalIncome = logisticsIncome + supplyIncome + routineSortieIncome,
       share = logisticsIncome / totalIncome;
     expect(share).toBeLessThanOrEqual(.4);
   });
