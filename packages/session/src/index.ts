@@ -299,6 +299,7 @@ const unsafeRuntimeKeys = new Set(["__proto__", "constructor", "prototype"]);
 function safeRuntimeKey(value: string) {
   return !!value && value.length <= 256 && !unsafeRuntimeKeys.has(value);
 }
+function presetToggleDefaults(preset:PromptPreset){const defaults:Record<string,string>={};for(const toggle of preset.toggles??[])if(toggle.type!=='decor'){const key=`toggle_${toggle.key}`;if(safeRuntimeKey(key))defaults[key]=toggle.type==='text'?'':'0';}return defaults;}
 function activeModules(project: ProjectRuntime["project"]) {
   const declared = object(project.content).activeModules;
   return [
@@ -483,7 +484,7 @@ export class PlaySession {
     this.#tagTranslator = options.tagTranslator;
     this.#speakerExtractor = options.speakerExtractor;
     this.#regexScripts = clone(options.regexScripts ?? []);
-    this.#cbsVariables = clone(options.defaultVariables ?? {});
+    this.#cbsVariables = {...presetToggleDefaults(this.#preset),...clone(options.defaultVariables ?? {})};
     this.setAssets(options.assets ?? []);
     const seed =
       parseInt(fnv1a(`${this.id}:${this.runtime.project.projectId}`), 16) >>> 0;
@@ -736,7 +737,10 @@ export class PlaySession {
   }
   setPreset(preset: PromptPreset) {
     this.#preset = clone(preset);
+    const patch=Object.entries(presetToggleDefaults(this.#preset)).filter(([key])=>!(key in this.#cbsVariables)).map(([key,value])=>({op:'set' as const,key,value}));
+    if(patch.length){const state=this.#cardRuntimeJournal.state,committed=this.#cardRuntimeJournal.append(`preset-toggle-defaults:${this.#cardRuntimeJournal.cursor+1}`,patch,state.randomState,state.logicalTimeMs);this.#cbsVariables=committed.variables;setActiveRenderContext(this.#regexScripts,this.#cbsVariables);this.#notify();}
   }
+  async setPresetToggle(key:string,value:string|number|boolean){const variable=`toggle_${key}`,normalized=typeof value==='boolean'?(value?'1':'0'):String(value);if(!safeRuntimeKey(variable))throw new Error('preset_toggle_key_invalid');if(this.#cbsVariables[variable]===normalized)return;const state=this.#cardRuntimeJournal.state,committed=this.#cardRuntimeJournal.append(`preset-toggle:${variable}:${this.#cardRuntimeJournal.cursor+1}`,[{op:'set',key:variable,value:normalized}],state.randomState,state.logicalTimeMs);this.#cbsVariables=committed.variables;setActiveRenderContext(this.#regexScripts,this.#cbsVariables);await this.save();this.#notify();}
   setRegexScripts(scripts: readonly RegexScript[]) {
     this.#regexScripts = clone([...scripts]);
     setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
@@ -1979,6 +1983,7 @@ export class PlaySession {
       lore: { entries: lore },
       chat,
       memory,
+      variables:this.#cbsVariables,
       engineContext: {
         facts: `다음 JSON은 엔진이 소유한 현재 사실이다. 서사로 수치를 바꾸지 말고 이벤트 결과만 따른다.\n${JSON.stringify(this.#engineStateForPrompt())}`,
         availableActions: `제작자가 LLM에 허용한 이벤트 ID: ${this.runtime.allowedModelEventIds().join(", ") || "(없음)"}. 이 목록 밖 이벤트를 제안하지 않는다. 결정 카드가 있는 경우 본문에 별도 번호 선택지를 만들지 않는다.\n${spriteCommandGuide(catalog.sprites)}`,
