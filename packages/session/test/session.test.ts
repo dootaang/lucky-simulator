@@ -83,6 +83,9 @@ describe('프록시 안전성 — UI가 감싼 객체가 세션을 죽이지 않
   it('프록시로 감싼 card 옵션으로 세션을 만들 수 있다',()=>{expect(structuredClone as unknown).toBeTruthy();expect(()=>new PlaySession({id:'p',runtime:runtime(),preset:wrap(preset),card:wrap({name:'Guide'}),provider:{async complete(){return{text:'ok'};}}})).not.toThrow();});
   it('프록시로 감싼 스냅샷을 복구할 수 있다',async()=>{const session=new PlaySession({id:'p2',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){return{text:'ok'};}}});await session.send('x');const snap=session.snapshot();const target=new PlaySession({id:'p2',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){return{text:'ok'};}}});expect(()=>target.restore(wrap(snap))).not.toThrow();expect(target.turn).toBe(1);expect(target.messages).toHaveLength(2);});
 });
+describe('엔진 행동 성능 계측',()=>{
+  it('장부 행동의 체크포인트·판정·기억·저장 단계를 실제 순서로 보고한다',async()=>{const phases:string[]=[],session=new PlaySession({id:'trace',runtime:runtime(),preset,card:{name:'Guide'},repository:createMemoryRepository<SessionSnapshot>(),provider:{async complete(){return{text:'unused'};}}});await session.runLedgerAction('progression/gain',{source:'train'},phase=>phases.push(phase));expect(phases).toEqual(['session-start','checkpoint-complete','engine-complete','memory-complete','receipt-complete','save-start','save-complete']);});
+});
 describe('서사 검증 관문 — 지어낸 숫자 탐지',()=>{
   it('엔진 근거에 없는 숫자를 말하면 issues에 잡히고, 서사 원문은 보존된다',async()=>{
     const session=new PlaySession({id:'nv',runtime:runtime(),preset,card:{name:'Guide'},provider:{async complete(){return{text:'금고에 250만 골드가 쌓였다.'};}}});

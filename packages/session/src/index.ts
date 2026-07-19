@@ -146,6 +146,20 @@ export interface ModelRequest {
 export interface ModelProvider {
   complete(request: ModelRequest): Promise<NarrativeResponse>;
 }
+export type SessionActionPhase =
+  | "session-start"
+  | "checkpoint-complete"
+  | "engine-complete"
+  | "memory-complete"
+  | "prompt-complete"
+  | "provider-complete"
+  | "receipt-complete"
+  | "save-start"
+  | "save-complete";
+export type SessionActionTrace = (phase: SessionActionPhase, at: number) => void;
+function traceAction(trace: SessionActionTrace | undefined, phase: SessionActionPhase) {
+  trace?.(phase, performance.now());
+}
 export interface SessionBindings {
   persona: Persona | null;
   preset: PromptPreset;
@@ -1098,25 +1112,32 @@ export class PlaySession {
       false,
     );
   }
-  async runLedgerAction(id: string, params: Record<string, unknown> = {}) {
+  async runLedgerAction(id: string, params: Record<string, unknown> = {}, trace?: SessionActionTrace) {
     if (this.#busy) throw new Error("session_busy");
     this.#busy = true;
     this.#notify();
+    traceAction(trace, "session-start");
     try {
       this.#pushCheckpoint();
+      traceAction(trace, "checkpoint-complete");
       const result = this.runtime.dispatch(id, params),
         logs = clone(result.log as Record<string, unknown>[]);
+      traceAction(trace, "engine-complete");
       this.#lastLogs = logs;
       this.#lastSpeakers = [];
       this.#narrativeIssues = [];
       this.#recordEngineFacts(id, logs, this.#journal.cursor);
       for (const log of logs)
         if (log.ok) this.#ledgerDeltas.push(`${id}: ${JSON.stringify(log)}`);
+      traceAction(trace, "memory-complete");
       this.#append("assistant", "장부에 반영되었습니다.", "ledger", {
         facts: logs,
       });
       this.#turn += 1;
+      traceAction(trace, "receipt-complete");
+      traceAction(trace, "save-start");
       await this.save();
+      traceAction(trace, "save-complete");
       return result;
     } finally {
       this.#busy = false;
@@ -1128,22 +1149,26 @@ export class PlaySession {
     params: Record<string, unknown> = {},
     flavorText = "",
     signal?: AbortSignal,
+    trace?: SessionActionTrace,
   ) {
-    return this.runManagementBatch([{ id, params }], flavorText, signal);
+    return this.runManagementBatch([{ id, params }], flavorText, signal, trace);
   }
   async runManagementBatch(
     events: Array<{ id: string; params?: Record<string, unknown> }>,
     flavorText = "",
     signal?: AbortSignal,
+    trace?: SessionActionTrace,
   ) {
     if (this.#busy) throw new Error("session_busy");
     if (!events.length) throw new Error("management_events_empty");
     this.#busy = true;
     this.#notify();
+    traceAction(trace, "session-start");
     const started = Date.now(),
       stateBefore = this.runtime.snapshot();
     try {
       this.#pushCheckpoint();
+      traceAction(trace, "checkpoint-complete");
       const intent = applyRegexScripts(
         flavorText,
         this.#regexScripts,
@@ -1165,6 +1190,8 @@ export class PlaySession {
           summary: JSON.stringify(rows),
         });
       }
+      traceAction(trace, "engine-complete");
+      traceAction(trace, "memory-complete");
       this.#lastLogs = clone(logs);
       const prompt = this.#managementPrompt(
           events.map((event) => event.id),
@@ -1172,6 +1199,7 @@ export class PlaySession {
           intent,
         ),
         chips: MessageChip[] = [];
+      traceAction(trace, "prompt-complete");
       let response: NarrativeResponse | undefined,
         text = "관리 결과가 반영되었습니다.",
         proposed: ProposedEvent[] = [];
@@ -1182,6 +1210,7 @@ export class PlaySession {
           purpose: "management",
           ...(signal ? { signal } : {}),
         });
+        traceAction(trace, "provider-complete");
         if (!response || typeof response.text !== "string")
           throw new Error("model_response_invalid");
         const translated = this.#tagTranslator?.(response.text),
@@ -1273,7 +1302,10 @@ export class PlaySession {
       this.#promptRuns = compactPromptRuns([...this.#promptRuns, run]);
       this.#ledgerDeltas = [];
       this.#turn += 1;
+      traceAction(trace, "receipt-complete");
+      traceAction(trace, "save-start");
       await this.save();
+      traceAction(trace, "save-complete");
       return { logs: this.lastLogs, response: { ...response, text }, prompt };
     } finally {
       this.#busy = false;
