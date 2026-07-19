@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {createAnthropicProvider,createGoogleProvider,createOpenAICompatibleProvider,createProvider,fetchModels,PlaySession} from '../src/index.ts';
+import {createAnthropicProvider,createGoogleProvider,createOpenAICompatibleProvider,createProvider,fetchModels,ollamaEndpoint,PlaySession} from '../src/index.ts';
 import {cardToRuntimeProject,translateYspTags,type PromptPreset} from '@simbot/risu';import {ProjectRuntime} from '@simbot/runtime';
 const prompt={messages:[{role:'system' as const,content:'규칙'},{role:'user' as const,content:'안녕'}],assistantPrefill:'',trace:[],warnings:[]};
 const preset:PromptPreset={contract:'prompt-preset/0.1',id:'t',name:'t',compatibilityMode:'simpack',version:1,raw:null,settings:{assistantPrefill:'',sendNames:false,sendChatAsSystem:false},blocks:[{id:'chat',type:'chat',name:'chat',enabled:true,rangeStart:-20,rangeEnd:'end',source:{source:'user',path:'test'}}]};
@@ -35,5 +35,36 @@ describe('Copilot 필수 에디터 헤더',()=>{
     expect(chat['Copilot-Integration-Id']).toBe('vscode-chat');
     expect(chat['X-Initiator']).toBe('user');
     expect(chat.url).toContain('api.individual.githubcopilot.com'); // 토큰 응답의 endpoints.api를 따른다
+  });
+});
+
+describe('Ollama 이식 — CPM 참조(코드 미복사)', () => {
+  it('기본은 로컬 OpenAI 호환 엔드포인트, Base URL을 주면 정규화해 쓴다', () => {
+    expect(ollamaEndpoint('')).toBe('http://localhost:11434/v1/chat/completions');
+    expect(ollamaEndpoint('http://192.168.0.5:11434')).toBe('http://192.168.0.5:11434/v1/chat/completions');
+    expect(ollamaEndpoint('https://ollama.com/')).toBe('https://ollama.com/v1/chat/completions');
+    expect(ollamaEndpoint('https://ollama.com/v1/chat/completions')).toBe('https://ollama.com/v1/chat/completions');
+  });
+  it('로컬 Ollama는 API 키 없이 프로바이더가 만들어진다(자리표시자 Bearer)', () => {
+    expect(() => createProvider({ provider: 'ollama', model: 'llama3.3', apiKey: '' })).not.toThrow();
+    expect(() => createProvider({ provider: 'openai', model: 'gpt-5.6', apiKey: '' })).toThrow('api_key_required');
+  });
+  it('모델 목록은 /v1/models 실패 시 네이티브 /api/tags로 폴백한다', async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url);
+      if (url.endsWith('/v1/models')) return new Response('nope', { status: 404 });
+      if (url.endsWith('/api/tags')) return new Response(JSON.stringify({ models: [{ name: 'llama3.3:70b' }, { name: 'qwen3:32b' }] }), { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+    const models = await fetchModels({ provider: 'ollama', model: '', apiKey: '' }, fetchImpl);
+    expect(models.map((m) => m.id)).toEqual(['llama3.3:70b', 'qwen3:32b']);
+    expect(calls.some((url) => url.endsWith('/api/tags'))).toBe(true);
+  });
+  it('둘 다 실패하면 정적 카탈로그로 폴백한다', async () => {
+    const fetchImpl = (async () => new Response('down', { status: 500 })) as typeof fetch;
+    const models = await fetchModels({ provider: 'ollama', model: '', apiKey: '' }, fetchImpl);
+    expect(models.length).toBeGreaterThan(0);
+    expect(models[0]!.id).toBe('llama3.3');
   });
 });
