@@ -45,7 +45,7 @@
           {:else if widget.widget==='inn-management'}
             <InnManagement {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
           {:else if widget.widget==='gfl-console'}
-            <GflConsole {runtime} {version} {assetRevision} {busy} {onaction} portraitFor={portraitThumbFor} {assetFor} onchange={()=>revision+=1}/>
+            <GflConsole {runtime} {version} {assetRevision} {busy} {onaction} portraitFor={portraitThumbFor} originalPortraitFor={portraitFor} {assetFor} onchange={()=>revision+=1}/>
           {:else if widget.widget==='combat-console'}
             <CombatConsole {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/>
           {:else if widget.widget==='action-group'}
