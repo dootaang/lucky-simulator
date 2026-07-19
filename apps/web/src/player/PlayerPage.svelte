@@ -228,7 +228,9 @@
   // 위쪽을 기준으로 둔다 — 정중앙 기준이면 확대할수록 머리가 잘린다.
   const THUMBNAIL_ZOOM=1.25,THUMBNAIL_FOCUS_Y=.3;
   async function makeCardThumbnail(parsed:ParsedCard){const pictures=parsed.assets.filter(asset=>asset.bytes&&asset.mime.startsWith('image/')),asset=pictures.find(value=>value.type==='icon'&&normalize(value.name)==='main')??pictures.find(value=>value.type==='icon')??null;if(!asset?.bytes)return'';const url=URL.createObjectURL(new Blob([Uint8Array.from(asset.bytes)],{type:asset.mime}));try{const image=new Image();image.src=url;await image.decode();const size=128,canvas=document.createElement('canvas');canvas.width=canvas.height=size;const context=canvas.getContext('2d');if(!context)return'';const scale=Math.max(size/image.naturalWidth,size/image.naturalHeight)*THUMBNAIL_ZOOM,width=image.naturalWidth*scale,height=image.naturalHeight*scale;context.drawImage(image,(size-width)/2,(size-height)*THUMBNAIL_FOCUS_Y,width,height);return canvas.toDataURL('image/webp',.82);}catch{return'';}finally{URL.revokeObjectURL(url);}}
-  function normalize(v:string){return v.normalize('NFKC').toLowerCase().replace(/[\s./\\]+/g,'-');}
+  // 컴파일러의 id() 규칙과 반드시 동일해야 한다 — 규칙이 갈리면 밑줄 이름 인형(AS_Val 등)의
+  // 엔진 id(as-val)와 에셋 키(as_val)가 어긋나 초상화 조회가 통째로 빈다.
+  function normalize(v:string){return v.normalize('NFKC').toLowerCase().replace(/[^a-z0-9가-힣]+/g,'-').replace(/^-|-$/g,'');}
   function demo(){return new ProjectRuntime({projectId:'demo',schema:{initialState:{day:1}},screens:[{id:'play',title:'플레이',layout:'stage-chat-sidebar',regions:{main:[{widget:'chat'}]}}],navigation:[{id:'play',screenId:'play',label:'플레이'}],content:{},featureToggles:{},moduleIds:[]});}
 </script>
 <svelte:window onresize={()=>{compact=innerWidth<1000;if(!compact)sideOpen=false;}}/><input class="hidden" bind:this={fileInput} type="file" accept=".simpack,.charx,.png,.json" multiple onchange={load}/><input class="hidden" bind:this={moduleInput} type="file" accept=".charx,.zip" multiple onchange={loadAssetModule}/>
