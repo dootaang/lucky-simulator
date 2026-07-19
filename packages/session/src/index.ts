@@ -148,6 +148,9 @@ export interface ModelProvider {
 }
 export type SessionActionPhase =
   | "session-start"
+  | "background-save-wait-start"
+  | "background-save-wait-complete"
+  | "base-persist-complete"
   | "checkpoint-complete"
   | "engine-complete"
   | "memory-complete"
@@ -156,6 +159,7 @@ export type SessionActionPhase =
   | "receipt-complete"
   | "action-durable"
   | "save-start"
+  | "wal-build-complete"
   | "save-complete";
 export type SessionActionTrace = (phase: SessionActionPhase, at: number) => void;
 function traceAction(trace: SessionActionTrace | undefined, phase: SessionActionPhase) {
@@ -1193,8 +1197,11 @@ export class PlaySession {
     this.#notify();
     traceAction(trace, "session-start");
     try {
+      traceAction(trace, "background-save-wait-start");
       await this.#flushBackgroundSave();
+      traceAction(trace, "background-save-wait-complete");
       await this.#ensurePersistedBase();
+      traceAction(trace, "base-persist-complete");
       const eventOffset = this.#journal.rawEvents.length;
       this.#pushCheckpoint();
       traceAction(trace, "checkpoint-complete");
@@ -1214,7 +1221,7 @@ export class PlaySession {
       this.#turn += 1;
       traceAction(trace, "receipt-complete");
       traceAction(trace, "save-start");
-      const durable = await this.#persistActionReceipt("ledger", eventOffset, logs, this.#turn);
+      const durable = await this.#persistActionReceipt("ledger", eventOffset, logs, this.#turn, trace);
       traceAction(trace, "save-complete");
       if (durable) traceAction(trace, "action-durable");
       if (durable && returnAfterReceipt) this.#queueBackgroundSave();
@@ -1248,8 +1255,11 @@ export class PlaySession {
     const started = Date.now(),
       stateBefore = this.runtime.snapshot();
     try {
+      traceAction(trace, "background-save-wait-start");
       await this.#flushBackgroundSave();
+      traceAction(trace, "background-save-wait-complete");
       await this.#ensurePersistedBase();
+      traceAction(trace, "base-persist-complete");
       const eventOffset = this.#journal.rawEvents.length;
       this.#pushCheckpoint();
       traceAction(trace, "checkpoint-complete");
@@ -1277,7 +1287,7 @@ export class PlaySession {
       traceAction(trace, "engine-complete");
       traceAction(trace, "memory-complete");
       this.#lastLogs = clone(logs);
-      const durable = await this.#persistActionReceipt("narrated", eventOffset, logs, this.#turn + 1);
+      const durable = await this.#persistActionReceipt("narrated", eventOffset, logs, this.#turn + 1, trace);
       if (durable) {
         traceAction(trace, "action-durable");
         this.#notify();
@@ -1721,7 +1731,7 @@ export class PlaySession {
   async #ensurePersistedBase() {
     if (this.#repository && !this.#persistedIntegrity) await this.#saveNow();
   }
-  async #persistActionReceipt(mode: ActionWalReceipt["mode"], eventOffset: number, logs: Record<string, unknown>[], turnAfter: number) {
+  async #persistActionReceipt(mode: ActionWalReceipt["mode"], eventOffset: number, logs: Record<string, unknown>[], turnAfter: number, trace?: SessionActionTrace) {
     if (!this.#repository || !this.#persistedIntegrity) return false;
     const head = this.#journal.head(), action: ActionWalEntry = {
       mode,
@@ -1745,6 +1755,7 @@ export class PlaySession {
       actions,
     };
     const receipt: ActionWalReceipt = { ...unsigned, hash: actionWalHash(unsigned) };
+    traceAction(trace, "wal-build-complete");
     await this.#repository.put({
       id: PlaySession.actionWalRecordId(this.id),
       schemaHash: this.runtime.project.projectId,
