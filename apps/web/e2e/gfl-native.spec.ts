@@ -3,8 +3,9 @@ import{strToU8,zipSync}from'fflate';
 import{joinBytes,makePngChunk,PNG_SIGNATURE}from'@simbot/card';
 import{createSimPack,packSimPack}from'@simbot/simpack';
 
-const classes=Array.from({length:20},(_,index)=>`["${index===0?'M4A1':`D${index+1}`}"]="${index===0?'AR':'SMG'}"`).join(',');
-const grades=Array.from({length:20},(_,index)=>`["${index===0?'M4A1':`D${index+1}`}"]=${index===0?5:3}`).join(',');
+const dollCount=120;
+const classes=Array.from({length:dollCount},(_,index)=>`["${index===0?'M4A1':`D${index+1}`}"]="${index===0?'AR':'SMG'}"`).join(',');
+const grades=Array.from({length:dollCount},(_,index)=>`["${index===0?'M4A1':`D${index+1}`}"]=${index===0?5:3}`).join(',');
 const lua=`local DOLL_CLASS={${classes}}
 local DOLL_GRADE={${grades}}
 local ITEM_DATA={["전투식량"]={price=50,type="use",desc="전투 중 체력을 회복",effect={hp=100},drop=100}}
@@ -26,7 +27,7 @@ ${'-- certified runtime\n'.repeat(700)}`;
 const card={spec:'chara_card_v3',spec_version:'3.0',data:{name:'소녀전선:잔불',description:'전술인형과 제대를 운영하는 대형 시뮬레이션',first_mes:'그리폰 기지에 접속했다.',mes_example:'',personality:'',scenario:'',creator_notes:'',system_prompt:'',post_history_instructions:'',alternate_greetings:[],tags:['소녀전선'],creator:'test',character_version:'1',extensions:{risuai:{defaultVariables:'A_day=1\nA_gold=5000\nA_res=3000\nScarecrowa=["300","200","100","-4","90"]\nGebbennua=["400","300","150","0","97"]',triggerscript:[{effect:[{type:'triggerlua',code:lua}]}]}},group_only_greetings:[],character_book:{entries:[]},assets:[{name:'전투식량',type:'image',ext:'png',uri:'embedded:0'}]}};
 const png=joinBytes(PNG_SIGNATURE,makePngChunk('tEXt',strToU8(`chara-ext-asset_:0\0${Buffer.from('item-image').toString('base64')}`)),makePngChunk('tEXt',strToU8(`ccv3\0${Buffer.from(JSON.stringify(card)).toString('base64')}`)),makePngChunk('IEND',new Uint8Array()));
 const pixel=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'));
-const dollIds=Array.from({length:20},(_,index)=>index===0?'M4A1':`D${index+1}`);
+const dollIds=Array.from({length:dollCount},(_,index)=>index===0?'M4A1':`D${index+1}`);
 const assetModule=zipSync(Object.fromEntries([...dollIds.map(id=>[`assets/${id}_normal.png`,pixel]),['assets/FAMAS_normal.png',pixel],['assets/FAMAS_smile.png',pixel]]));
 
 const romanceSchema:any={initialState:{day:1,gold:10000,resources:{res:3000,parts:20,cores:9},items:{},player:{level:1,exp:0,pools:{hp:{cur:1000,max:1000},mp:{cur:1000,max:1000}}},clock:{day:1,hour:8,turn:0,phase:'오전'},location:'base-command',gfl:{started:true,mode:'commander',baseLocation:'base-command',dolls:{m4a1:{id:'m4a1',name:'M4A1',class:'AR',grade:5,hp:{cur:400,max:1000},mp:{cur:1000,max:1000},baseMaxHp:1000,basePower:1000,power:1000,mood:90,affinity:80,mod:0,status:'대기',equipment:[],records:{kills:0,crits:0,guarded:0},hiredDay:1,secretHobby:'모형 수집'}},echelons:[{id:'e1',name:'제1제대',slots:['m4a1',null,null,null,null,null],fairyId:null}],facilities:{base1:1,base2:1,base3:1,base4:1,base5:1},manufacturing:[],repairs:[],logistics:[],completedMissions:[],sortie:null,settings:{relationDifficulty:'standard',jealousy:'mild'},daily:{day:1,sortiesUsed:0,sortiesCompleted:0,management:0,relations:0,endDay:0,claimed:[]},promises:[],promiseRequest:{dollId:'m4a1',name:'M4A1',type:'repair',deadline:null,requestedDay:1,triggered:false},promiseReceipts:[],anniversaries:[],outingDays:{},lastInteractions:{}}},resources:[{id:'res',basePrice:1},{id:'parts',basePrice:1},{id:'cores',basePrice:1}],locations:[{id:'base-command',name:'지휘관실'},{id:'base-hall',name:'복도'},{id:'base-maintenance',name:'정비실'},{id:'base-outside',name:'기지 외부'}],gfl:{dolls:[{id:'m4a1',name:'M4A1',class:'AR',grade:5,maxHp:1000,maxMp:1000,power:1000,mood:90}],items:[],equipment:[],fairies:[],missions:[{id:'alpha',name:'ALPHA',theater:'front',stars:0,power:100,enemy:'철혈',rewards:{gold:100},enemies:[{id:'target',name:'표적',power:10,hp:10}]}],facilities:[],hire:{capacity:[4,8,12,16,20]},relation:{names:['적대','경계','불편','첫 만남','익숙해짐','호감을 가짐','신뢰','소중히 여김','사랑','서약','???'],thresholds:[-150,-80,-20,0,20,50,80,120,150,400,400],descriptions:[]}}};
@@ -334,9 +335,10 @@ test('저격 고용에서 이름을 검색해 지정 계약한다',async({page})
   await expect(console.getByRole('region',{name:'전술인형 선택기'})).toHaveCount(0);
   await console.getByText(/저격 고용 · 원하는 인형/).click();
   const picker=console.getByRole('region',{name:'전술인형 선택기'});
-  await expect.poll(()=>picker.locator('.results article').count()).toBeGreaterThan(1);
-  const before=await picker.locator('.results article').count();
+  await expect(picker.getByLabel(`인형 ${dollCount}명 가상 목록`)).toBeVisible();
+  const before=await picker.locator('.virtual-row article').count();
   expect(before).toBeGreaterThan(1);
+  expect(before).toBeLessThan(dollCount);
   await picker.getByLabel('인형 이름 검색').fill('M4A1');
   await expect(picker.locator('.results article')).toHaveCount(1);
   await expect(picker).toContainText('M4A1');
