@@ -18,6 +18,7 @@ import {
   type MemoryEvidenceEvent,
   type NarrativeIssue,
 } from "@simbot/memory";
+import { ingestHiddenMemoryPacket, withMemoryCaptureContract } from "./memory-contract.ts";
 import type { SessionRepository } from "@simbot/persistence";
 import {
   activateLore,
@@ -1297,23 +1298,23 @@ export class PlaySession {
         // 영수증 확정 뒤 브라우저가 엔진 결과를 먼저 그릴 수 있게 한 태스크 양보한다.
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
-      const prompt = this.#managementPrompt(
+      const prompt = withMemoryCaptureContract(this.#managementPrompt(
           events.map((event) => event.id),
           logs,
           intent,
-        ),
+        ), "prose"),
         chips: MessageChip[] = [];
       traceAction(trace, "prompt-complete");
       let response: NarrativeResponse | undefined,
         text = "관리 결과가 반영되었습니다.",
         proposed: ProposedEvent[] = [];
       try {
-        response = await this.#provider.complete({
+        response = ingestHiddenMemoryPacket(await this.#provider.complete({
           prompt,
           format: "prose",
           purpose: "management",
           ...(signal ? { signal } : {}),
-        });
+        }));
         traceAction(trace, "provider-complete");
         if (!response || typeof response.text !== "string")
           throw new Error("model_response_invalid");
@@ -1442,12 +1443,13 @@ export class PlaySession {
       // 다음 턴 체크포인트에 정상인 양 굳는다(감사 #2). 응답 도착 이후의 실패는 여기 대상이 아니다.
       // 카드 태그 번역기가 있는 리스 카드는 산문을 보존하고, SimPack만 구조화 JSON 계약을 사용한다.
       try {
-        prompt = await this.#compile(text, !appendUser, signal);
-        response = await this.#provider.complete({
+        const responseFormat = this.#tagTranslator ? "prose" : "json";
+        prompt = withMemoryCaptureContract(await this.#compile(text, !appendUser, signal), responseFormat);
+        response = ingestHiddenMemoryPacket(await this.#provider.complete({
           prompt,
-          format: this.#tagTranslator ? "prose" : "json",
+          format: responseFormat,
           ...(signal ? { signal } : {}),
-        });
+        }));
         if (!response || typeof response.text !== "string")
           throw new Error("model_response_invalid");
       } catch (error) {
@@ -2552,3 +2554,4 @@ export class PlaySession {
 export * from "./chat-store.ts";
 export * from "./providers/index.ts";
 export * from "./sprite-catalog.ts";
+export * from "./memory-contract.ts";
