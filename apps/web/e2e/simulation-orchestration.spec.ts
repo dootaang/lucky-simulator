@@ -28,7 +28,7 @@ async function openCard(page: Page, mobile: boolean) {
 }
 
 for (const item of [{ name: '데스크톱', viewport: { width: 1280, height: 800 }, mobile: false }, { name: '모바일', viewport: { width: 390, height: 844 }, mobile: true }]) test(`${item.name} 현장 행동은 (창 유지 끔 설정에서) 패널을 닫고 채팅 대기와 최신 응답으로 복귀한다`, async ({ page }) => {
-  await page.setViewportSize(item.viewport); await seed(page); await openCard(page, item.mobile);
+  await page.setViewportSize(item.viewport); await page.addInitScript(()=>localStorage.setItem('simbot.sim.pinned','0')); await seed(page); await openCard(page, item.mobile);
   await page.getByRole('dialog', { name: '시뮬레이션' }).getByRole('button', { name: '점심 영업' }).click();
   await expect(page.getByRole('dialog', { name: '시뮬레이션' })).toBeHidden();
   const typing = page.getByRole('article', { name: '응답 작성 중' }); await expect(typing).toBeVisible(); await expect(typing).not.toContainText('응답을 만들고 있습니다');
@@ -40,16 +40,18 @@ for (const item of [{ name: '데스크톱', viewport: { width: 1280, height: 800
 });
 
 test('완전 시뮬 카드는 계기판을 표시하고 별도 관리 진입 버튼으로 시뮬레이션을 연다', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 }); await seed(page); if (await page.getByTitle('오케스트레이션 카드').count()) await page.getByTitle('오케스트레이션 카드').click();
+  await page.setViewportSize({ width: 1280, height: 800 }); await page.addInitScript(()=>localStorage.setItem('simbot.sim.pinned','0')); await seed(page); if (await page.getByTitle('오케스트레이션 카드').count()) await page.getByTitle('오케스트레이션 카드').click();
   const hud = page.getByRole('status', { name: '엔진 계기판' }); await expect(hud).toBeVisible(); await expect(hud).toContainText('일차'); await expect(hud).toContainText('골드'); await expect(hud.getByRole('button', { name: '관리 화면 열기' })).toHaveCount(0);
   await page.getByRole('button', { name: '시뮬레이션 열기' }).click(); await expect(page.getByRole('dialog', { name: '시뮬레이션' })).toBeVisible();
 });
 
-test('핀을 켜면 시뮬레이션이 우측 칼럼이 되어 현장 행동 뒤에도 채팅과 나란히 남는다', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 }); await seed(page); if (await page.getByTitle('오케스트레이션 카드').count()) await page.getByTitle('오케스트레이션 카드').click(); await page.getByRole('button', { name: '시뮬레이션 열기' }).click(); await page.getByRole('button', { name: '시뮬레이션 우측 고정' }).click();
-  const column = page.getByRole('complementary', { name: '시뮬레이션' }); await expect(page.getByRole('dialog', { name: '시뮬레이션' })).toHaveCount(0); await expect(column).toBeVisible(); await expect(page.getByRole('textbox', { name: '메시지를 입력하세요' })).toBeVisible(); await column.getByRole('button', { name: '점심 영업' }).click(); await expect(page.getByText('점심 영업이 활기차게 이어졌다.')).toBeVisible(); await expect(column).toBeVisible(); await expect(await page.evaluate(() => localStorage.getItem('simbot.sim.pinned'))).toBe('1');
+test('넓은 화면(≥1200px)은 자동 핀 — 시뮬레이션이 우측 칼럼으로 열리고 해제하면 오버레이로 돌아간다', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 }); await seed(page); if (await page.getByTitle('오케스트레이션 카드').count()) await page.getByTitle('오케스트레이션 카드').click(); await page.getByRole('button', { name: '시뮬레이션 열기' }).click();
+  // 저장된 선호가 없으면 1280px에서 핀이 기본값 — 클릭 없이 곧장 칼럼이어야 한다.
+  const column = page.getByRole('complementary', { name: '시뮬레이션' }); await expect(page.getByRole('dialog', { name: '시뮬레이션' })).toHaveCount(0); await expect(column).toBeVisible(); await expect(page.getByRole('textbox', { name: '메시지를 입력하세요' })).toBeVisible(); await column.getByRole('button', { name: '점심 영업' }).click(); await expect(page.getByText('점심 영업이 활기차게 이어졌다.')).toBeVisible(); await expect(column).toBeVisible();
+  await page.getByRole('button', { name: '시뮬레이션 고정 해제' }).click(); await expect(page.getByRole('dialog', { name: '시뮬레이션' })).toBeVisible(); await expect(await page.evaluate(() => localStorage.getItem('simbot.sim.pinned'))).toBe('0');
 });
 
 test('대기 중 영업이 채팅 안 결정 카드로 뜨고 처리하면 다음 결정으로 넘어간다', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 }); await seed(page); if (await page.getByTitle('오케스트레이션 카드').count()) await page.getByTitle('오케스트레이션 카드').click(); const dock = page.getByRole('region', { name: '엔진 결정 카드' }); await expect(dock).toContainText('점심 영업 대기'); await dock.getByRole('button', { name: '영업 시작' }).click(); await expect(page.getByText('점심 영업이 활기차게 이어졌다.')).toBeVisible(); await expect(dock).toContainText('저녁 영업 대기'); await dock.getByRole('button', { name: '건너뛰기' }).click(); await expect(dock).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 800 }); await page.addInitScript(()=>localStorage.setItem('simbot.sim.pinned','0')); await seed(page); if (await page.getByTitle('오케스트레이션 카드').count()) await page.getByTitle('오케스트레이션 카드').click(); const dock = page.getByRole('region', { name: '엔진 결정 카드' }); await expect(dock).toContainText('점심 영업 대기'); await dock.getByRole('button', { name: '영업 시작' }).click(); await expect(page.getByText('점심 영업이 활기차게 이어졌다.')).toBeVisible(); await expect(dock).toContainText('저녁 영업 대기'); await dock.getByRole('button', { name: '건너뛰기' }).click(); await expect(dock).toHaveCount(0);
 });

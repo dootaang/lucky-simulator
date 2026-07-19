@@ -24,6 +24,8 @@
   let screen=$derived(screens.find((item)=>item.id===(active||navigation[0]?.screenId))??screens[0]);
   let combatConsole=$derived.by(()=>{revision;try{const value=runtime.select('combat/console');return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;}catch{return null;}});
   let hasSide=$derived(!!screen&&Object.entries((screen.regions??{}) as Record<string,Record<string,unknown>[]>).some(([region,widgets])=>['hud','side','actions'].includes(region)&&widgets.some(widget=>evaluateCondition(widget.visibleWhen,context))));
+  // 자체 헤더를 가진 풀블리드 위젯 단독 화면이면 화면 제목(h1)을 접는다 — 3중 액자의 가운데 겹 제거.
+  let chromeless=$derived.by(()=>{if(!screen)return false;const widgets=Object.values((screen.regions??{}) as Record<string,Record<string,unknown>[]>).flat();return widgets.length===1&&String(widgets[0]?.widget)==='gfl-console';});
   function source(widget:Record<string,unknown>){revision;const value=widget.source;if(typeof value==='string'&&value.startsWith('engine:')){try{return runtime.select(value.slice(7));}catch{return null;}}if(typeof value==='string'&&value.startsWith('state.'))return value.split('.').slice(1).reduce<unknown>((current,key)=>current&&typeof current==='object'&&key!=='__proto__'&&key!=='constructor'&&key!=='prototype'&&Object.prototype.hasOwnProperty.call(current,key)?(current as Record<string,unknown>)[key]:undefined,runtime.state);return value;}
   async function act(action:Record<string,unknown>){if(pending||busy)return;const event=(action.event??action)as Record<string,unknown>,id=String(event.id??'');if(!id)return;const params=resolveValue(event.params??{},context)as Record<string,unknown>;pending=true;try{await yieldForActionPaint();if(onaction)lastLog=await onaction({id,params,mode:declaredActionMode(action)});else lastLog=runtime.dispatch(id,params).log;revision+=1;onchange();}finally{pending=false;}}
   function asList(value:unknown):Record<string,unknown>[]{if(Array.isArray(value))return value as Record<string,unknown>[];if(value&&typeof value==='object')return Object.entries(value).map(([id,item])=>item&&typeof item==='object'?{id,...item as Record<string,unknown>}:{id,value:item});return[];}
@@ -34,7 +36,7 @@
 <div class="renderer">
 {#if navigation.length>1}<nav class="screen-nav" aria-label="프로젝트 화면">{#each navigation as item}<Button variant={(active||navigation[0]?.screenId)===item.screenId?'primary':'ghost'} onclick={()=>active=String(item.screenId)}>{String(item.label??item.id)}</Button>{/each}</nav>{/if}
 {#if screen}
-  <section class={`screen layout-${String(screen.layout??'dashboard')}`} class:single-column={!hasSide}><h1>{String(screen.title??screen.id)}</h1>
+  <section class={`screen layout-${String(screen.layout??'dashboard')}`} class:single-column={!hasSide}>{#if !chromeless}<h1>{String(screen.title??screen.id)}</h1>{/if}
     {#if combatConsole?.present}<div class="combat-interrupt"><CombatConsole {runtime} {version} {busy} {onaction} onchange={()=>revision+=1}/></div>{/if}
     {#each Object.entries((screen.regions??{}) as Record<string,Record<string,unknown>[]>) as [region,widgets]}<div class={`region region-${region}`}>
       {#each widgets as widget}{#if evaluateCondition(widget.visibleWhen,context)}

@@ -23,7 +23,7 @@ async function seed(page:Page){
 async function send(page:Page,text:string){await page.getByRole('textbox',{name:'메시지를 입력하세요'}).fill(text);await page.getByRole('button',{name:'보내기',exact:true}).click();}
 
 test('상태 체인은 채팅에서 제거되고 위젯·영수증에 반영되며 다음 응답으로 갱신된다',async({page})=>{
-  await page.setViewportSize({width:1280,height:800});await seed(page);await send(page,'첫 관측');
+  await page.setViewportSize({ width: 1280, height: 800 }); await page.addInitScript(()=>localStorage.setItem('simbot.sim.pinned','0')); await seed(page);await send(page,'첫 관측');
   const first=page.getByRole('article').filter({hasText:'관측 완료.'}).last();await expect(first).toBeVisible();await expect(first).not.toContainText('이름: 리안 |');await expect(first).toContainText('panel_sync');
   await page.getByRole('button',{name:'시뮬레이션 열기'}).click();let dialog=page.getByRole('dialog',{name:'시뮬레이션'});await expect(dialog).toContainText('리안');await expect(dialog).toContainText('경계');await expect(dialog).toContainText('외곽 항로 정상');
   await dialog.getByRole('button',{name:'닫기'}).click();await send(page,'교대');

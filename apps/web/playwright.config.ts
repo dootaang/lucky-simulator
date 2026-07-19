@@ -9,7 +9,9 @@ export default defineConfig({
   // 모든 파일이 같은 Vite 개발 서버와 OPFS/IndexedDB 초기화 경로를 공유한다. 파일 병렬 실행은
   // 제품 동시성 검증이 아니라 저장소 생성 경쟁을 만들어 단독 통과 시나리오를 간헐적으로 깨뜨렸다.
   testDir:'./e2e',timeout:60_000,fullyParallel:false,workers:1,
-  use:{baseURL,trace:'retain-on-failure'},
+  // 1100px: 데스크탑 판정(≥1000)은 유지하되 자동 핀 문턱(≥1200) 아래 — 오버레이 전제 테스트 보존.
+  // 자동 핀 자체는 simulation-orchestration의 1280px 전용 테스트가 검증한다.
+  use:{baseURL,trace:'retain-on-failure',viewport:{width:1100,height:720}},
   webServer:{command:`pnpm exec vite --host 127.0.0.1 --port ${port} --strictPort`,url:baseURL,reuseExistingServer:process.env.SIMBOT_E2E_REUSE==='1',timeout:120_000},
   projects:[{name:'chromium',use:{browserName:'chromium'}}]
 });
