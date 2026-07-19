@@ -601,6 +601,21 @@ function effectiveRelation(schema: RuntimeRecord, unit: RuntimeRecord) {
     index = Math.min(confirmed, value.index);
   return { ...tierByIndex(schema, index), valueIndex: value.index, pending: value.index > index };
 }
+function relationAttitude(schema: RuntimeRecord, unit: RuntimeRecord) {
+  const tier = effectiveRelation(schema, unit), offset = tier.index - neutralTierIndex(schema);
+  const guidance = offset <= -3
+    ? "노골적으로 적대하고 지휘관을 믿지 않는다. 필요한 말만 날카롭게 한다."
+    : offset === -2 ? "강하게 경계하며 속내를 감춘다. 명령에도 의심과 거리를 드러낸다."
+    : offset === -1 ? "불편함과 조심스러움을 보인다. 친밀한 말이나 행동을 먼저 하지 않는다."
+    : offset === 0 ? "업무상 예의는 지키되 아직 사적인 친밀감은 없다."
+    : offset === 1 ? "익숙한 동료처럼 조금 편해졌지만 선을 넘지는 않는다."
+    : offset === 2 ? "분명한 호의를 보이고 사적인 관심을 자연스럽게 드러낸다."
+    : offset === 3 ? "지휘관을 신뢰하며 걱정과 속내를 솔직히 나눈다."
+    : offset === 4 ? "지휘관을 소중히 여기고 먼저 배려하거나 곁을 지키려 한다."
+    : offset === 5 ? "사랑을 숨기지 않되 기존 성격에 맞는 방식으로 표현한다."
+    : "서약한 반려로서 깊은 애정과 헌신을 보이되 기존 성격은 유지한다.";
+  return { tier: tier.label, offset, guidance };
+}
 // 확정 승급 한 단계 — 대화 성공은 신뢰(중립+3)까지, 세션·외출은 사랑(중립+5)까지, 반지 의식은 서약(+6)까지.
 function confirmTierStep(schema: RuntimeRecord, unit: RuntimeRecord, maxOffset: number) {
   const effective = effectiveRelation(schema, unit);
@@ -2609,7 +2624,7 @@ export function gflModule(): ModuleDefinition {
           promises: list<RuntimeRecord>(gfl.promises),
           promiseReceipts: list<RuntimeRecord>(gfl.promiseReceipts),
           anniversaries: list<RuntimeRecord>(gfl.anniversaries),
-          settings: { relationDifficulty: relationDifficulty(value).id, gossip: string(record(gfl.settings).gossip || "mild"), jealousy: string(record(gfl.settings).jealousy || "mild"), stageNarration: string(record(gfl.settings).stageNarration || "auto") },
+          settings: { relationDifficulty: relationDifficulty(value).id, gossip: string(record(gfl.settings).gossip || "mild"), jealousy: string(record(gfl.settings).jealousy || "mild"), stageNarration: string(record(gfl.settings).stageNarration || "silent") },
           commander: commanderStatus(value),
           dissatisfaction: { value: dissatisfaction(value), ...dissTier(value) },
           market: gfl.market ?? null,
@@ -2886,6 +2901,7 @@ export function gflModule(): ModuleDefinition {
         mood: unit.mood,
         affinity: unit.affinity,
         relation: effectiveRelation(schema, unit).label,
+        attitude: relationAttitude(schema, unit).guidance,
         status: unit.status,
           };
         }), ace = Object.values(owned(value)).map(record).sort((a, b) => number(record(b.records).kills) - number(record(a.records).kills))[0],
@@ -2925,6 +2941,7 @@ export function gflModule(): ModuleDefinition {
             dialogue: {
               with: name,
               relation: tier.label,
+              attitude: relationAttitude(schema, unit).guidance,
               ...(tier.description ? { relationNote: tier.description } : {}),
               ...(unit.preferenceKnown === true ? { preference: preferenceOf(unit) } : {}),
               ...(unit.hobbyKnown === true ? { secretHobby: unit.secretHobby } : {}),
@@ -2932,7 +2949,7 @@ export function gflModule(): ModuleDefinition {
               ...(unit.trauma ? { trauma: unit.trauma, traumaProgress: number(unit.traumaProgress) } : {}),
               promises: list<RuntimeRecord>(gfl.promises).filter((entry) => entry.dollId === unit.id),
               intrusion: dialogue.intruder ?? null,
-              rule: `시간이 멈춘 1:1 대화 장면이다. ${name}와의 대화에만 집중하고, 다른 인형의 등장·작전 진행·시간 경과·수치 변화를 서술하지 않는다. 보너스는 대화를 마무리할 때 엔진이 확정한다.`,
+              rule: `시간이 멈춘 1:1 대화 장면이다. ${name}와의 대화에만 집중하고, 위 attitude를 대사·말투·거리감에 분명히 반영하되 원래 성격을 바꾸지 않는다. 다른 인형의 등장·작전 진행·시간 경과·수치 변화를 서술하지 않는다. 보너스는 대화를 마무리할 때 엔진이 확정한다.`,
             },
           };
         })(),
@@ -2942,7 +2959,7 @@ export function gflModule(): ModuleDefinition {
             .map((facilityId) => ({ facilityId, workers: crewWorkers(value, facilityId).map((id) => string(record(owned(value)[id]).name)) }))
             .filter((entry) => entry.workers.length),
         },
-        rule: "위치·시간·자원·관계·전투 결과는 엔진 확정값이다. [[aff=...]]·[[mood=...]]·[[diss=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
+        rule: "위치·시간·자원·관계·전투 결과는 엔진 확정값이다. 각 인형의 attitude를 대사·행동·거리감에 반영하되 원래 성격을 덮어쓰지 않는다. [[aff=...]]·[[mood=...]]·[[diss=...]] 같은 AI 제안 태그로 바꾸지 말고, 판정 로그의 실제 증감만 서술한다.",
       };
     },
     { seal: gflSealMigration },

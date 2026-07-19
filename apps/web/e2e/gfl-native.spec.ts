@@ -437,7 +437,7 @@ test('채팅 결정 카드에서 게이지·오토런을 직접 다룬다',async
   await console.getByRole('button',{name:'제대',exact:true}).click();
   await console.locator('.roster button').first().click();
   await console.getByRole('button',{name:'작전',exact:true}).click();
-  await console.getByRole('button',{name:'엔진 전용 · LLM 0회',exact:true}).click();
+  await expect(console.getByRole('button',{name:'엔진 전용 · LLM 0회(기본)',exact:true})).toHaveClass(/active/);
   const chatMessagesBefore=await page.locator('.message').count();
   const modelMessagesBefore=await page.locator('.message .meta .model').count();
   await console.getByRole('button',{name:/레드·오렌지 작전구역/}).click();

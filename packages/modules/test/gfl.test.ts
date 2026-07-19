@@ -172,6 +172,9 @@ function runtime(source: any = schema, seed: unknown = 7) {
     select(id: string) {
       return registry.select(id, source, state);
     },
+    facts() {
+      return registry.promptFacts(source, state);
+    },
     snapshot() {
       return { state: structuredClone(state), rng: rng.snapshot() };
     },
@@ -1130,11 +1133,28 @@ describe("Girls Frontline native module", () => {
     expect(bossStop).not.toBeNull();
     const settings = runtime();
     settings.dispatch("gfl/start", { mode: "commander" });
+    expect((settings.select("gfl/status") as any).settings.stageNarration).toBe("silent");
     expect(settings.dispatch("gfl/settings/update", { stageNarration: "nope" }).log[0]).toMatchObject({ ok: false, reason: "gfl_stage_narration_invalid" });
     expect(settings.dispatch("gfl/settings/update", { stageNarration: "each" }).log[0]).toMatchObject({ ok: true });
     expect((settings.select("gfl/status") as any).settings.stageNarration).toBe("each");
     expect(settings.dispatch("gfl/settings/update", { stageNarration: "silent" }).log[0]).toMatchObject({ ok: true });
     expect((settings.select("gfl/status") as any).settings.stageNarration).toBe("silent");
+  });
+  it("호감도 티어를 LLM이 따라야 할 구체적인 태도로 전달한다", () => {
+    const source: any = structuredClone(schema);
+    source.gfl.relation = {
+      names: ["적대", "경계", "불편", "첫 만남", "익숙해짐", "호감을 가짐", "신뢰", "소중히 여김", "사랑", "서약"],
+      thresholds: [-150, -80, -20, 0, 20, 50, 80, 120, 150, 400], descriptions: [],
+    };
+    const game = runtime(source, 17);
+    game.dispatch("gfl/start", { mode: "commander" });
+    game.dispatch("gfl/doll/acquire", { dollId: "m4a1" });
+    const unit = (game.state.gfl as any).dolls.m4a1;
+    unit.affinity = 150; unit.confirmedTier = 8;
+    const facts = (game.facts() as any)["genre.gfl"];
+    expect(facts.dolls[0]).toMatchObject({ relation: "사랑" });
+    expect(facts.dolls[0].attitude).toContain("사랑을 숨기지 않되 기존 성격");
+    expect(facts.rule).toContain("attitude를 대사·행동·거리감에 반영");
   });
   it("근무 배치가 적성 효과·훈련 보너스·기분 소모·수면 절반을 만든다", () => {
     const source: any = structuredClone(schema);
