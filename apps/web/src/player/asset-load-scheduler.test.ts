@@ -1,0 +1,6 @@
+import{describe,expect,it}from'vitest';
+import{AssetLoadScheduler}from'./asset-load-scheduler';
+describe('AssetLoadScheduler',()=>{
+  it('동시 실행을 제한하고 FIFO 순서를 지킨다',async()=>{const scheduler=new AssetLoadScheduler(2),started:number[]=[],release:Array<()=>void>=[];const jobs=Array.from({length:4},(_,index)=>scheduler.schedule(async()=>{started.push(index);await new Promise<void>(resolve=>release[index]=resolve);return index;}));await Promise.resolve();expect(started).toEqual([0,1]);expect(scheduler.stats()).toMatchObject({active:2,queued:2,peak:2});release[0]?.();await new Promise(resolve=>setTimeout(resolve,0));expect(started).toEqual([0,1,2]);release[1]?.();await new Promise(resolve=>setTimeout(resolve,0));expect(started).toEqual([0,1,2,3]);release[2]?.();release[3]?.();await expect(Promise.all(jobs)).resolves.toEqual([0,1,2,3]);expect(scheduler.stats()).toMatchObject({active:0,queued:0,peak:2,completed:4,failed:0});});
+  it('실패한 작업도 슬롯을 반환한다',async()=>{const scheduler=new AssetLoadScheduler(1),first=scheduler.schedule(async()=>{throw new Error('broken');}),second=scheduler.schedule(async()=>42);await expect(first).rejects.toThrow('broken');await expect(second).resolves.toBe(42);expect(scheduler.stats()).toMatchObject({active:0,failed:1,completed:1});});
+});
