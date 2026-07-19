@@ -274,6 +274,18 @@ test('연속 엔진 클릭은 채팅에서 접힌 영수증 묶음이 되고 펼
   await expect(receipts).toHaveCount(collapsed+2); // 이전 2건이 펼쳐진다
 });
 
+test('퀵 칩의 하루 마감은 저녁 전에 눌리지 않는다 — 엔진 거부 조합 UI 차단',async({page})=>{
+  const simulation=await importGfl(page),console=simulation.getByLabel('소녀전선 지휘 콘솔');
+  await console.getByRole('button',{name:'지휘관으로 시작'}).click();
+  await simulation.getByRole('button',{name:'닫기'}).click(); await expect(simulation).toBeHidden();
+  const chips=page.locator('.quick-chips');
+  await expect(chips.getByRole('button',{name:'다음 시간대'})).toBeEnabled(); // 오전
+  await expect(chips.getByRole('button',{name:'하루 마감'})).toBeDisabled();
+  await chips.getByRole('button',{name:'다음 시간대'}).click(); // 오후
+  await chips.getByRole('button',{name:'다음 시간대'}).click(); // 저녁
+  await expect(chips.getByRole('button',{name:'하루 마감'})).toBeEnabled();
+});
+
 test('하루 리듬 바·관계 게이지·퀵 칩이 게임 감각을 시각화한다',async({page})=>{
   await page.setViewportSize({width:1280,height:800}); // 자동 핀 — 채팅과 콘솔 나란히
   await page.goto('/'); await expect(page.getByRole('button',{name:/카드 가져오기/}).first()).toBeVisible({timeout:15_000});
