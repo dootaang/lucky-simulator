@@ -21,3 +21,13 @@ describe('장기 회차 엔진 사실 정리',()=>{
     expect(checkpoint[0]?.status).toBe('approved');
   });
 });
+
+describe('인물별 기억 공개 범위',()=>{
+  it('명시된 인물만 비밀을 보고 공통 시점과 다른 인물에게는 숨긴다',()=>{
+    const ledger=new MemoryLedger();
+    ledger.add(memoryRecord({id:'secret',text:'실비아는 지하 금고 암호를 안다',turn:1,status:'approved',kind:'secret',evidence:[{kind:'message',id:'m1'}],knowledge:{privacy:'secret',holderEntityIds:['silvia'],visibleToEntityIds:['silvia']}}));
+    expect(ledger.retrieve('지하 금고 암호',2,{}).abstained).toBe(true);
+    expect(ledger.retrieve('지하 금고 암호',2,{entityIds:['other']}).abstained).toBe(true);
+    expect(ledger.retrieve('지하 금고 암호',2,{entityIds:['silvia']}).records[0]?.id).toBe('secret');
+  });
+});

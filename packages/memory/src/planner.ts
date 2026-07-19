@@ -3,6 +3,10 @@ import{decideAbstention,type AbstentionConfig}from'./abstention.ts';
 import type{EmbeddingProvider}from'./semantic.ts';
 import type{MemoryLedger,Retrieval,Viewer}from'./index.ts';
 export interface GroundedMemoryOptions{atTurn:number;viewer?:Viewer;sceneId?:string;queryMode?:'auto'|'current'|'past';budgetTokens?:number;perKindQuota?:number;limit?:number;abstention?:AbstentionConfig;provider?:EmbeddingProvider|undefined;signal?:AbortSignal|undefined}
+export interface MemoryPerspective{id:string;label:string}
+export interface PerspectiveMemorySection{id:'common'|string;label:string;records:MemoryRecord[]}
+export interface PerspectiveMemoryTrace{query:string;perspectives:MemoryPerspective[];included:Array<{id:string;sectionId:string;kind:string;evidence:string[]}>;excluded:{approval:number;visibilityOrTime:number;scene:number;relevanceOrBudget:number};abstained:boolean;reason?:string}
+export interface PerspectiveMemoryPlan{sections:PerspectiveMemorySection[];records:MemoryRecord[];abstained:boolean;reason?:string;trace:PerspectiveMemoryTrace}
 const pastPattern=/과거|예전|전에|지난|기억|history|before|previous/i;
 export async function planGroundedMemory(ledger:MemoryLedger,query:string,options:GroundedMemoryOptions):Promise<Retrieval>{
   const includePast=options.queryMode==='past'||options.queryMode!=='current'&&pastPattern.test(query),viewer=options.viewer??{},eligible=ledger.eligible(options.atTurn,viewer,includePast).filter((record)=>!options.sceneId||!record.sceneId||record.sceneId===options.sceneId||includePast),lexical=ledger.score(query,options.atTurn,viewer,includePast),lexicalById=new Map(lexical.map((entry)=>[entry.record.id,entry.evidenceScore])),semanticById=new Map<string,number>();
@@ -12,5 +16,20 @@ export async function planGroundedMemory(ledger:MemoryLedger,query:string,option
   const records:MemoryRecord[]=[],kinds=new Map<string,number>();let tokens=0;
   for(const{record}of ranked){const kind=record.kind??'summary',cost=Math.max(1,Math.ceil(record.text.length/4));if((kinds.get(kind)??0)>=(options.perKindQuota??Number.POSITIVE_INFINITY)||tokens+cost>(options.budgetTokens??1000))continue;records.push(record);kinds.set(kind,(kinds.get(kind)??0)+1);tokens+=cost;if(records.length>=(options.limit??8))break;}
   return records.length?{records,abstained:false}:{records:[],abstained:true,reason:'insufficient_grounding'};
+}
+export async function planPerspectiveMemory(ledger:MemoryLedger,query:string,options:GroundedMemoryOptions,perspectives:readonly MemoryPerspective[]=[]):Promise<PerspectiveMemoryPlan>{
+  const limit=options.limit??8,common=await planGroundedMemory(ledger,query,{...options,limit}),selected=new Set(common.records.map((record)=>record.id)),sections:PerspectiveMemorySection[]=[];
+  if(common.records.length)sections.push({id:'common',label:'공통 기억',records:common.records});
+  for(const perspective of perspectives.slice(0,4)){
+    if(selected.size>=limit)break;
+    const result=await planGroundedMemory(ledger,query,{...options,viewer:{...options.viewer,entityIds:[perspective.id]},limit:Math.min(3,limit-selected.size)}),records=result.records.filter((record)=>!selected.has(record.id)).slice(0,limit-selected.size);
+    if(!records.length)continue;
+    records.forEach((record)=>selected.add(record.id));
+    sections.push({id:perspective.id,label:`${perspective.label}의 개인 기억`,records});
+  }
+  const includePast=options.queryMode==='past'||options.queryMode!=='current'&&pastPattern.test(query),all=ledger.all(),approved=all.filter((record)=>record.status==='approved'||record.status==='superseded'&&includePast),viewers=[options.viewer??{},...perspectives.slice(0,4).map((perspective)=>({...options.viewer,entityIds:[perspective.id]}))],accessible=new Set<string>();
+  for(const viewer of viewers)for(const record of ledger.eligible(options.atTurn,viewer,includePast))accessible.add(record.id);
+  const inScene=new Set(approved.filter((record)=>accessible.has(record.id)&&(!options.sceneId||!record.sceneId||record.sceneId===options.sceneId||includePast)).map((record)=>record.id)),records=sections.flatMap((section)=>section.records),excluded={approval:all.length-approved.length,visibilityOrTime:approved.filter((record)=>!accessible.has(record.id)).length,scene:approved.filter((record)=>accessible.has(record.id)&&!inScene.has(record.id)).length,relevanceOrBudget:[...inScene].filter((id)=>!selected.has(id)).length},abstained=records.length===0,reason=records.length?'':common.reason??'insufficient_grounding';
+  return{sections,records,abstained,...(reason?{reason}:{}),trace:{query,perspectives:[...perspectives.slice(0,4)],included:sections.flatMap((section)=>section.records.map((record)=>({id:record.id,sectionId:section.id,kind:record.kind??'summary',evidence:record.evidence.map((item)=>`${item.kind}:${item.id}`)}))),excluded,abstained,...(reason?{reason}:{})}};
 }
 function cosine(a:number[],b:number[]){let dot=0,aa=0,bb=0;for(let i=0;i<Math.min(a.length,b.length);i++){dot+=(a[i]??0)*(b[i]??0);aa+=(a[i]??0)**2;bb+=(b[i]??0)**2;}return aa&&bb?dot/Math.sqrt(aa*bb):0;}

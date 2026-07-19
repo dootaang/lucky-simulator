@@ -4,7 +4,7 @@ import {
   ingestMemoryTurn,
   memoryRecord,
   MemoryLedger,
-  planGroundedMemory,
+  planPerspectiveMemory,
   reconcileMemorySources,
   validateFactReferences,
   verifyNarrative,
@@ -17,6 +17,7 @@ import {
   type MemoryDecision,
   type MemoryEvidenceEvent,
   type NarrativeIssue,
+  type PerspectiveMemoryTrace,
 } from "@simbot/memory";
 import { ingestHiddenMemoryPacket, withMemoryCaptureContract } from "./memory-contract.ts";
 import type { SessionRepository } from "@simbot/persistence";
@@ -124,6 +125,7 @@ export interface PromptRun {
   memoryDecisions?: MemoryDecision[];
   factReferenceVerdicts?: FactReferenceVerdict[];
   continuityPatchId?: string;
+  memoryTrace?: PerspectiveMemoryTrace;
   stateBefore?: { state: Record<string, unknown>; rng: number };
   stateAfter?: { state: Record<string, unknown>; rng: number };
   stateBeforeHash?: string;
@@ -605,6 +607,7 @@ export class PlaySession {
   #alternates: AlternateState[] = [];
   #responseBranches: ResponseBranchSet[] = [];
   #promptRuns: PromptRun[] = [];
+  #lastMemoryTrace: PerspectiveMemoryTrace | undefined;
   #narrativeIssues: NarrativeIssue[] = [];
   // 다음 서사 장면에 아직 전달하지 않은 엔진 사실만 둔다. 원본은 저널에 있으므로 같은 사건은
   // 식별 앵커별로 접고 최근 표본만 보존한다 — silent 장기 플레이가 이 배열을 무한히 키우지 않는다.
@@ -706,6 +709,23 @@ export class PlaySession {
       this.runtime.state,
       items,
     );
+  }
+  #memoryPerspectives(query: string) {
+    const found = new Map<string, string>();
+    for (const speaker of this.resolveSpeakers(this.#lastSpeakers))
+      found.set(speaker.npcId, speaker.name ?? speaker.npcId);
+    const schema = this.runtime.project.schema,
+      block = (Array.isArray(schema.entities) ? schema.entities : []).map(object).find((value) => value.type === "npc"),
+      npcs = (Array.isArray(block?.instances) ? block.instances : []).map(object),
+      normalized = query.normalize("NFKC").toLocaleLowerCase();
+    for (const npc of npcs) {
+      const id = String(npc.id ?? "");
+      if (!id || found.has(id)) continue;
+      const aliases = [npc.nameKo, npc.name, npc.nameEn, ...(Array.isArray(npc.aliases) ? npc.aliases : [])].map(String).filter((value) => value.length >= 2);
+      if (aliases.some((alias) => normalized.includes(alias.normalize("NFKC").toLocaleLowerCase())))
+        found.set(id, aliases[0] ?? id);
+    }
+    return [...found].slice(0, 4).map(([id, label]) => ({ id, label }));
   }
   #snapshotSpeakers(
     items: readonly SpeakerReference[] = [],
@@ -1576,6 +1596,7 @@ export class PlaySession {
           proposedEvents: clone(response.events ?? []),
           logs: this.lastLogs,
           ...continuity,
+          ...(this.#lastMemoryTrace ? { memoryTrace: clone(this.#lastMemoryTrace) } : {}),
           stateBefore: clone(stateBefore),
           stateAfter,
           stateBeforeHash: stableHash(stateBefore),
@@ -2486,7 +2507,7 @@ export class PlaySession {
     return message;
   }
   async #compile(query: string, continuation = false, signal?: AbortSignal) {
-    const retrieval = await planGroundedMemory(this.memory, query, {
+    const retrieval = await planPerspectiveMemory(this.memory, query, {
         atTurn: this.#turn,
         provider: this.#embeddingProvider,
         viewer: { userId: this.#persona?.id ?? "user" },
@@ -2495,13 +2516,12 @@ export class PlaySession {
         budgetTokens: 1000,
         perKindQuota: 3,
         signal,
-      }),
-      memory = retrieval.records
-        .map(
-          (value) =>
-            `- ${value.text} [${value.evidence.map((item) => `${item.kind}:${item.id}`).join(", ")}]`,
-        )
-        .join("\n");
+      }, this.#memoryPerspectives(query)),
+      memory = retrieval.sections.map((section) => {
+        const caution = section.id === "common" ? "" : " — 이 인물만 아는 사실이며 다른 인물의 말이나 생각에 누설하지 않는다";
+        return `[${section.label}${caution}]\n${section.records.map((value) => `- ${value.text} [${value.evidence.map((item) => `${item.kind}:${item.id}`).join(", ")}]`).join("\n")}`;
+      }).join("\n\n");
+    this.#lastMemoryTrace = clone(retrieval.trace);
     let chat = this.#messages
       .slice(-this.#historyWindow)
       .map(({ role, content, origin }) => ({
