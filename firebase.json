@@ -1,7 +1,7 @@
 {
   "functions": {
     "source": "apps/functions",
-    "predeploy": "pnpm --filter @simbot/functions build"
+    "predeploy": "pnpm build"
   },
   "hosting": [
     {
