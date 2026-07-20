@@ -58,10 +58,10 @@ describe('Ollama 이식 — CPM 참조(코드 미복사)', () => {
   });
   it('Ollama Cloud는 공식 /api/chat 계약과 native 응답 형식을 사용한다', async () => {
     let called = '', sent: Record<string, unknown> = {}, headers: HeadersInit | undefined;
-    const provider = createProvider({ provider: 'ollama', model: 'qwen3', apiKey: 'cloud-key', endpoint: 'https://ollama.com' }, (async (input, init) => {
+    const provider = createProvider({ provider: 'ollama', model: 'qwen3', apiKey: 'cloud-key', endpoint: 'https://ollama.com' }, (async (input:RequestInfo|URL, init?:RequestInit) => {
       called = String(input); sent = JSON.parse(String(init?.body)); headers = init?.headers;
       return new Response(JSON.stringify({ message: { role: 'assistant', content: '{"text":"cloud ok","events":[]}' }, done: true }), { status: 200 });
-    }) as typeof fetch);
+    }) as unknown as typeof fetch);
     await expect(provider.complete({ prompt: { messages: [{ role: 'user', content: 'hi' }], assistantPrefill: '', trace: [], warnings: [] } })).resolves.toMatchObject({ text: 'cloud ok' });
     expect(called).toBe('https://ollama.com/api/chat');
     expect(sent).toMatchObject({ model: 'qwen3', stream: false });
@@ -74,13 +74,13 @@ describe('Ollama 이식 — CPM 참조(코드 미복사)', () => {
       if (url.endsWith('/v1/models')) return new Response('nope', { status: 404 });
       if (url.endsWith('/api/tags')) return new Response(JSON.stringify({ models: [{ name: 'llama3.3:70b' }, { name: 'qwen3:32b' }] }), { status: 200 });
       return new Response('{}', { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     const models = await fetchModels({ provider: 'ollama', model: '', apiKey: '' }, fetchImpl);
     expect(models.map((m) => m.id)).toEqual(['llama3.3:70b', 'qwen3:32b']);
     expect(calls.some((url) => url.endsWith('/api/tags'))).toBe(true);
   });
   it('둘 다 실패하면 정적 카탈로그로 폴백한다', async () => {
-    const fetchImpl = (async () => new Response('down', { status: 500 })) as typeof fetch;
+    const fetchImpl = (async () => new Response('down', { status: 500 })) as unknown as typeof fetch;
     const models = await fetchModels({ provider: 'ollama', model: '', apiKey: '' }, fetchImpl);
     expect(models.length).toBeGreaterThan(0);
     expect(models[0]!.id).toBe('llama3.3');
