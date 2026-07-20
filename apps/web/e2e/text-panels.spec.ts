@@ -10,7 +10,7 @@ async function seed(page:Page){
   await page.addInitScript(()=>localStorage.setItem('simbot.llm',JSON.stringify({provider:'custom',endpoint:'http://127.0.0.1:4173/test-llm',model:'test',apiKey:'key'})));
   await page.route('http://127.0.0.1:4173/test-llm',async route=>{response+=1;const content=response===1?'관측 완료.\n이름: 리안 | 상태: 경계 |\n| 뉴스: 외곽 항로 정상 |':'교대 완료.\n이름: 리안 | 상태: 휴식 |\n| 뉴스: 귀환 절차 시작 |';await route.fulfill({contentType:'application/json',body:JSON.stringify({choices:[{message:{content}}]})});});
   await page.goto('/');
-  await expect(page.getByRole('button',{name:'카드 가져오기 (.charx · .png)'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'봇카드 가져오기'})).toBeVisible();
   await page.locator('input[accept=".simpack,.charx,.png,.json"]').setInputFiles({name:'synthetic-text-panels.json',mimeType:'application/json',buffer:card});
   await expect(page.getByText('관측 임무를 시작한다.')).toBeVisible();
   let projectId='';

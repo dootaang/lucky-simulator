@@ -28,6 +28,15 @@ jobs:
       - name: Tests
         run: pnpm -r --if-present test
 
+      - name: UI design guard
+        run: pnpm check:ui
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @simbot/web exec playwright install --with-deps chromium
+
+      - name: Browser regression tests
+        run: pnpm test:e2e
+
       - name: Build web app
         run: pnpm --filter @simbot/web build
 
