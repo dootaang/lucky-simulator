@@ -25,7 +25,7 @@
 {#if pinned}
   <aside class="panel pinned" aria-label="럭키 시뮬레이션">{@render body()}</aside>
 {:else}
-  <OverlayGuard label="럭키 시뮬레이션" {onclose} dock>
+  <OverlayGuard label="럭키 시뮬레이션" {onclose} modal={pinnable} dock>
     <div class="panel">{@render body()}</div>
   </OverlayGuard>
 {/if}

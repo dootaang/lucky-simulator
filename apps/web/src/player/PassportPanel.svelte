@@ -9,8 +9,8 @@
   ]);
 </script>
 
-<section class="passport" aria-label="카드 호환성 여권">
-  <header><div><span class="eyebrow">호환성 여권</span><strong>{passport.cardName}</strong></div><span class:full={passport.mode==='full-sim'} class="mode">{passport.mode==='full-sim'?'완전 시뮬':'일반 채팅'}</span></header>
+<section class="passport" aria-label="카드 가져오기 진단">
+  <header><div><span class="eyebrow">가져오기 진단</span><strong>{passport.cardName}</strong></div><span class:full={passport.mode==='full-sim'} class="mode">{passport.mode==='full-sim'?'완전 시뮬':'일반 채팅'}</span></header>
   {#if passport.runtime}
     <div class="runtime">
       <div><strong>카드 내부 프로그램 발견</strong><span class="blocked">직접 실행 차단 · Lucky 변환 필요</span></div>

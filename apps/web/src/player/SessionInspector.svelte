@@ -28,8 +28,8 @@
 </script>
 
 <div class="backdrop" role="presentation" onclick={(event)=>{if(event.target===event.currentTarget)onclose();}}>
-  <div class="inspector" role="dialog" aria-modal="true" aria-label={tab==='memory'?'기억 수첩':'세션 검사기'}>
-    <header><h2><Icon name={tab==='memory'?'receipt':'badge'}/> {tab==='memory'?'기억 수첩':'세션 검사기'}</h2><button aria-label="닫기" onclick={onclose}>×</button></header>
+  <div class="inspector" role="dialog" aria-modal="true" aria-label={tab==='memory'?'기억 수첩':'진행 기록'}>
+    <header><h2><Icon name={tab==='memory'?'receipt':'badge'}/> {tab==='memory'?'기억 수첩':'진행 기록'}</h2><button aria-label="닫기" onclick={onclose}>×</button></header>
     <nav><button class:active={tab==='health'} onclick={()=>tab='health'}>상태</button><button class:active={tab==='prompt'} onclick={()=>tab='prompt'}>프롬프트 기록</button><button class:active={tab==='memory'} onclick={()=>tab='memory'}>기억 수첩 {#if candidates.length+pendingPatches.length}<b>{candidates.length+pendingPatches.length}</b>{/if}</button><button class:active={tab==='state'} onclick={()=>tab='state'}>엔진 증거</button></nav>
     <main>
       {#if tab==='health'}
