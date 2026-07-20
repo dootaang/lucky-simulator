@@ -1,9 +1,23 @@
 {
+  "functions": {
+    "source": "apps/functions",
+    "predeploy": "pnpm --filter @simbot/functions build"
+  },
   "hosting": [
     {
       "site": "lucky-sim",
       "public": "apps/web/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [
+        {
+          "source": "/api/ollama/**",
+          "function": {
+            "functionId": "ollamaProxy",
+            "region": "asia-northeast3",
+            "pinTag": true
+          }
+        }
+      ],
       "headers": [
         {
           "source": "/",
@@ -37,6 +51,16 @@
       "site": "simbot-simulator",
       "public": "apps/web/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [
+        {
+          "source": "/api/ollama/**",
+          "function": {
+            "functionId": "ollamaProxy",
+            "region": "asia-northeast3",
+            "pinTag": true
+          }
+        }
+      ],
       "headers": [
         {
           "source": "/",

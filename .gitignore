@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 /apps/web/dist/
+/apps/functions/lib/
 /apps/web/test-results/
 /apps/web/playwright-report/
 .firebase/

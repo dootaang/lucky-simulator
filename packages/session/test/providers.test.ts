@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {createAnthropicProvider,createGoogleProvider,createOpenAICompatibleProvider,createProvider,fetchModels,ollamaEndpoint,PlaySession} from '../src/index.ts';
+import {createAnthropicProvider,createGoogleProvider,createOpenAICompatibleProvider,createProvider,fetchModels,ollamaCloudProxyPath,ollamaEndpoint,PlaySession} from '../src/index.ts';
 import {cardToRuntimeProject,translateYspTags,type PromptPreset} from '@simbot/risu';import {ProjectRuntime} from '@simbot/runtime';
 const prompt={messages:[{role:'system' as const,content:'규칙'},{role:'user' as const,content:'안녕'}],assistantPrefill:'',trace:[],warnings:[]};
 const preset:PromptPreset={contract:'prompt-preset/0.1',id:'t',name:'t',compatibilityMode:'simpack',version:1,raw:null,settings:{assistantPrefill:'',sendNames:false,sendChatAsSystem:false},blocks:[{id:'chat',type:'chat',name:'chat',enabled:true,rangeStart:-20,rangeEnd:'end',source:{source:'user',path:'test'}}]};
@@ -44,6 +44,8 @@ describe('Ollama 이식 — CPM 참조(코드 미복사)', () => {
     expect(ollamaEndpoint('http://192.168.0.5:11434')).toBe('http://192.168.0.5:11434/v1/chat/completions');
     expect(ollamaEndpoint('https://ollama.com/')).toBe('https://ollama.com/api/chat');
     expect(ollamaEndpoint('https://ollama.com/v1/chat/completions')).toBe('https://ollama.com/api/chat');
+    expect(ollamaCloudProxyPath('chat','lucky-sim.web.app')).toBe('/api/ollama/chat');
+    expect(ollamaCloudProxyPath('chat','localhost')).toBe('');
   });
   it('로컬 Ollama는 API 키 없이 프로바이더가 만들어진다(자리표시자 Bearer)', () => {
     expect(() => createProvider({ provider: 'ollama', model: 'llama3.3', apiKey: '' })).not.toThrow();
