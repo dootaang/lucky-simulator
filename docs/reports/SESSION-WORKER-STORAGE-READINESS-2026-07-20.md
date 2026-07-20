@@ -57,7 +57,8 @@
 
 - `@simbot/session`에 세션 ID·단조 행동 순번·부모/결과 revision을 가진 공용 행동 봉투와 직렬 큐를 추가했다.
 - 채팅을 바꾸면 아직 시작하지 않은 옛 명령은 실행하지 않고, 이미 실행 중이던 늦은 결과도 새 화면에 적용하지 않는다.
-- GFL·여관·헌터·선언형 화면이 사용하던 `SimulationActionHandler`는 이 공용 큐의 얇은 UI 어댑터가 됐다.
+- GFL·여관·헌터·선언형 화면이 사용하던 `SimulationActionHandler`와 일반 채팅 전송·계속 생성·undo/redo가
+  같은 공용 큐를 사용한다. 화면별 코드는 이 큐의 얇은 UI 어댑터만 맡는다.
 - `ProjectRuntime.selectBundle()`을 추가해 장르별 셀렉터 결과를 작은 화면 묶음으로 읽고, 없는 셀렉터는 다른
   장르 화면을 깨뜨리지 않고 오류 표에 격리한다. 결정 카드와 GFL 시간 표시는 이 묶음을 실제 사용한다.
 - Firebase 전송과 무관한 `session-sync-action/0.1` 계약을 추가했다. 현재 revision이 수신 행동의 부모와 같을

@@ -1,4 +1,4 @@
-export type SessionActionMode = "narrated" | "ledger" | "scene";
+export type SessionActionMode = "narrated" | "ledger" | "scene" | "chat" | "control";
 
 export type SessionActionPhase =
   | "session-start"
