@@ -42,12 +42,23 @@ describe('Ollama 이식 — CPM 참조(코드 미복사)', () => {
   it('기본은 로컬 OpenAI 호환 엔드포인트, Base URL을 주면 정규화해 쓴다', () => {
     expect(ollamaEndpoint('')).toBe('http://localhost:11434/v1/chat/completions');
     expect(ollamaEndpoint('http://192.168.0.5:11434')).toBe('http://192.168.0.5:11434/v1/chat/completions');
-    expect(ollamaEndpoint('https://ollama.com/')).toBe('https://ollama.com/v1/chat/completions');
-    expect(ollamaEndpoint('https://ollama.com/v1/chat/completions')).toBe('https://ollama.com/v1/chat/completions');
+    expect(ollamaEndpoint('https://ollama.com/')).toBe('https://ollama.com/api/chat');
+    expect(ollamaEndpoint('https://ollama.com/v1/chat/completions')).toBe('https://ollama.com/api/chat');
   });
   it('로컬 Ollama는 API 키 없이 프로바이더가 만들어진다(자리표시자 Bearer)', () => {
     expect(() => createProvider({ provider: 'ollama', model: 'llama3.3', apiKey: '' })).not.toThrow();
     expect(() => createProvider({ provider: 'openai', model: 'gpt-5.6', apiKey: '' })).toThrow('api_key_required');
+  });
+  it('Ollama Cloud는 공식 /api/chat 계약과 native 응답 형식을 사용한다', async () => {
+    let called = '', sent: Record<string, unknown> = {}, headers: HeadersInit | undefined;
+    const provider = createProvider({ provider: 'ollama', model: 'qwen3', apiKey: 'cloud-key', endpoint: 'https://ollama.com' }, (async (input, init) => {
+      called = String(input); sent = JSON.parse(String(init?.body)); headers = init?.headers;
+      return new Response(JSON.stringify({ message: { role: 'assistant', content: '{"text":"cloud ok","events":[]}' }, done: true }), { status: 200 });
+    }) as typeof fetch);
+    await expect(provider.complete({ prompt: { messages: [{ role: 'user', content: 'hi' }], assistantPrefill: '', trace: [], warnings: [] } })).resolves.toMatchObject({ text: 'cloud ok' });
+    expect(called).toBe('https://ollama.com/api/chat');
+    expect(sent).toMatchObject({ model: 'qwen3', stream: false });
+    expect(headers).toMatchObject({ authorization: 'Bearer cloud-key' });
   });
   it('모델 목록은 /v1/models 실패 시 네이티브 /api/tags로 폴백한다', async () => {
     const calls: string[] = [];
