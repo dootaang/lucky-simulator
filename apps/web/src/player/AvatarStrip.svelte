@@ -2,11 +2,11 @@
   import type { CardLibraryMeta } from './card-library';
   import Icon from '@simbot/ui/Icon.svelte';
   import AdaptiveNav,{type NavDestination} from '@simbot/ui/AdaptiveNav.svelte';
-  // UX-RENEWAL-MASTER §4.2: 데스크톱은 같은 4목적지를 왼쪽 세로 레일로 배치한다. 톱니 진입로는 레일의 '설정'으로 통일.
-  let {cards,activeId,avatarFor:_,navActive='chat',chatEnabled=true,manageEnabled=true,onnavigate=()=>{},onadd,onselect,onremove}:{cards:Array<CardLibraryMeta&{ephemeral?:boolean}>;activeId:string|null;avatarFor?:(id:string)=>string|null;navActive?:NavDestination;chatEnabled?:boolean;manageEnabled?:boolean;onnavigate?:(dest:NavDestination)=>void;onadd:()=>void;onselect:(id:string)=>void;onremove:(id:string)=>void}=$props();
+  // 데스크톱도 모바일 목록 화면과 같은 봇·대화·설정 순서를 쓴다.
+  let {cards,activeId,avatarFor:_,navActive='chats',chatEnabled=true,onnavigate=()=>{},onadd,onselect,onremove}:{cards:Array<CardLibraryMeta&{ephemeral?:boolean}>;activeId:string|null;avatarFor?:(id:string)=>string|null;navActive?:NavDestination;chatEnabled?:boolean;onnavigate?:(dest:NavDestination)=>void;onadd:()=>void;onselect:(id:string)=>void;onremove:(id:string)=>void}=$props();
 </script>
 <aside class="strip" aria-label="카드 라이브러리">
-  <AdaptiveNav active={navActive} {chatEnabled} {manageEnabled} {onnavigate}/>
+  <AdaptiveNav active={navActive} {chatEnabled} {onnavigate}/>
   <div class="cards">{#each cards as card (card.projectId)}<button class:active={card.projectId===activeId} class="avatar" title={`${card.name}${card.ephemeral?' · 이번 세션만':''}`} onclick={()=>onselect(card.projectId)} oncontextmenu={(e)=>{e.preventDefault();onremove(card.projectId);}}>{#if card.thumbnail}<img src={card.thumbnail} alt=""/>{:else}<span>{card.name.slice(0,1)}</span>{/if}{#if card.ephemeral}<i>!</i>{/if}</button>{/each}<button class="add" onclick={onadd} aria-label="카드 가져오기"><Icon name="plus"/></button></div>
 </aside>
 <style>

@@ -1,22 +1,21 @@
 <script lang="ts" module>
-  export type NavDestination='bots'|'chat'|'manage'|'settings';
+  export type NavDestination='bots'|'chats'|'settings';
 </script>
 <script lang="ts">
   import Icon from './icons/Icon.svelte';
-  // UX-RENEWAL-MASTER §4: 최상위 목적지 4개는 화면 크기와 무관하게 같은 이름·순서를 유지한다.
+  // 목록 화면의 최상위 목적지는 봇·대화·설정 세 개다. 실제 채팅 안에서는 이 막대를 숨긴다.
   // 1000px 미만에서는 하단 탭바, 이상에서는 왼쪽 세로 레일로 배치만 바뀐다.
-  let{active,chatEnabled=true,manageEnabled=true,onnavigate}:{active:NavDestination;chatEnabled?:boolean;manageEnabled?:boolean;onnavigate:(dest:NavDestination)=>void}=$props();
+  let{active,chatEnabled=true,onnavigate}:{active:NavDestination;chatEnabled?:boolean;onnavigate:(dest:NavDestination)=>void}=$props();
   const items:Array<{id:NavDestination;label:string;icon:string;aria?:string}>=[
     {id:'bots',label:'봇',icon:'bot',aria:'봇 목록'},
-    {id:'chat',label:'대화',icon:'message'},
-    {id:'manage',label:'관리',icon:'shield',aria:'관리 화면'},
+    {id:'chats',label:'대화',icon:'message',aria:'대화 목록'},
     {id:'settings',label:'설정',icon:'settings',aria:'전체 설정'}
   ];
 </script>
 
 <nav class="adaptive-nav" aria-label="주요 메뉴">
   {#each items as item(item.id)}
-    <button class:active={active===item.id} aria-label={item.aria??item.label} aria-current={active===item.id?'page':undefined} disabled={item.id==='chat'&&!chatEnabled||item.id==='manage'&&!manageEnabled} onclick={()=>onnavigate(item.id)}>
+    <button class:active={active===item.id} aria-label={item.aria??item.label} aria-current={active===item.id?'page':undefined} disabled={item.id==='chats'&&!chatEnabled} onclick={()=>onnavigate(item.id)}>
       <Icon name={item.icon} size={22}/><span>{item.label}</span>
     </button>
   {/each}
@@ -30,7 +29,7 @@
   .adaptive-nav button:disabled{opacity:.4;cursor:default}
   .adaptive-nav button:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}
   @media(max-width:999px){
-    /* 오버레이(z=90)보다 위 — 관리·설정이 열려 있어도 최상위 목적지는 한 번의 탭으로 이동한다. */
+    /* 설정 오버레이(z=80)보다 위 — 설정에서도 목록 목적지로 한 번에 돌아간다. */
     .adaptive-nav{position:fixed;inset:auto 0 0;z-index:95;justify-content:space-around;border-top:1px solid var(--color-line);padding-bottom:env(safe-area-inset-bottom)}
     .adaptive-nav button{flex:1;height:var(--nav-size)}
   }
