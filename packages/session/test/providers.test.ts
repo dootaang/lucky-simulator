@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {createAnthropicProvider,createGoogleProvider,createOpenAICompatibleProvider,createProvider,fetchModels,ollamaCloudProxyPath,ollamaEndpoint,PlaySession} from '../src/index.ts';
+import {catalogFor,createAnthropicProvider,createGoogleProvider,createOpenAICompatibleProvider,createProvider,fetchModels,ollamaCloudProxyPath,ollamaEndpoint,PlaySession} from '../src/index.ts';
 import {cardToRuntimeProject,translateYspTags,type PromptPreset} from '@simbot/risu';import {ProjectRuntime} from '@simbot/runtime';
 const prompt={messages:[{role:'system' as const,content:'규칙'},{role:'user' as const,content:'안녕'}],assistantPrefill:'',trace:[],warnings:[]};
 const preset:PromptPreset={contract:'prompt-preset/0.1',id:'t',name:'t',compatibilityMode:'simpack',version:1,raw:null,settings:{assistantPrefill:'',sendNames:false,sendChatAsSystem:false},blocks:[{id:'chat',type:'chat',name:'chat',enabled:true,rangeStart:-20,rangeEnd:'end',source:{source:'user',path:'test'}}]};
@@ -49,7 +49,12 @@ describe('Ollama 이식 — CPM 참조(코드 미복사)', () => {
   });
   it('로컬 Ollama는 API 키 없이 프로바이더가 만들어진다(자리표시자 Bearer)', () => {
     expect(() => createProvider({ provider: 'ollama', model: 'llama3.3', apiKey: '' })).not.toThrow();
+    expect(() => createProvider({ provider: 'ollama-cloud', model: 'glm-5.2', apiKey: '' })).toThrow('api_key_required');
     expect(() => createProvider({ provider: 'openai', model: 'gpt-5.6', apiKey: '' })).toThrow('api_key_required');
+  });
+  it('Ollama Cloud는 주소 입력 없이 최신 Cloud 모델을 바로 선택할 수 있다', () => {
+    expect(catalogFor('ollama-cloud').map(item=>item.id)).toEqual(expect.arrayContaining(['glm-5.2','deepseek-v4-pro','deepseek-v4-flash']));
+    expect(()=>createProvider({provider:'ollama-cloud',model:'glm-5.2',apiKey:'cloud-key'})).not.toThrow();
   });
   it('Ollama Cloud는 공식 /api/chat 계약과 native 응답 형식을 사용한다', async () => {
     let called = '', sent: Record<string, unknown> = {}, headers: HeadersInit | undefined;
