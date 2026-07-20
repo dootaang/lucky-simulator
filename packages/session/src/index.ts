@@ -517,6 +517,12 @@ function compactPromptRuns(runs: PromptRun[]) {
     return summary;
   });
 }
+function compactStoredMemory<T extends { memory: MemoryRecord[] }>(value: T): T {
+  const ledger = new MemoryLedger();
+  ledger.reset(value.memory);
+  ledger.compactEngineFacts();
+  return { ...value, memory: ledger.checkpoint() };
+}
 export interface PlaySessionOptions {
   id: string;
   runtime: ProjectRuntime;
@@ -1858,7 +1864,7 @@ export class PlaySession {
       this.#backgroundSave = queued;
     }, 750);
   }
-  #captureSaveBatch():SessionSaveBatch{const messages=this.messages,events=[...clone(this.#journal.rawEvents)],shell=clone(this.#journal.toPersistedShell()),core=this.#snapshotWith(shell,[]),epochs:Array<{offset:number;epoch:SealedEngineJournalEpoch}>=[];for(let offset=0;offset<this.#journal.sealedEpochCount;offset+=1){const epoch=this.#journal.sealedEpochAt(offset);if(epoch)epochs.push({offset,epoch:clone(epoch)});}return{messages,events,shell,core,epochs,messageHashes:this.#messageShardHashes?[...this.#messageShardHashes]:null,journalHashes:this.#journalShardHashes?[...this.#journalShardHashes]:null,walCutoff:this.#pendingWalActions.length};}
+  #captureSaveBatch():SessionSaveBatch{const messages:ChatMessage[]=this.#messages.map(value=>value.origin?value:{...value,origin:value.role==="assistant"?"model" as const:"user" as const}),events=[...this.#journal.rawEvents],shell=this.#journal.toPersistedShell(),core=this.#snapshotWith(shell,[]),epochs:Array<{offset:number;epoch:SealedEngineJournalEpoch}>=[];for(let offset=0;offset<this.#journal.sealedEpochCount;offset+=1){const epoch=this.#journal.sealedEpochAt(offset);if(epoch)epochs.push({offset,epoch});}return{messages,events,shell,core,epochs,messageHashes:this.#messageShardHashes?[...this.#messageShardHashes]:null,journalHashes:this.#journalShardHashes?[...this.#journalShardHashes]:null,walCutoff:this.#pendingWalActions.length};}
   async #saveNow() {
     if (!this.#repository) return;
     // 비동기 디스크 작업 전에 한 시점의 불변 묶음을 만든다. 이후 엔진 행동은 이 묶음을 바꾸지 않는다.
@@ -1890,7 +1896,7 @@ export class PlaySession {
     return this.#messagesChain.hash;
   }
   #snapshotWith(journal: EngineJournalData, messages: ChatMessage[] = this.messages): SessionSnapshot {
-    const patches = this.continuityPatches,
+    const patches = this.continuityPatches,memorySnapshot=this.memory.persistenceSnapshot(),
       base = {
         contract: "simbot-play-session/0.1" as const,
         id: this.id,
@@ -1899,8 +1905,8 @@ export class PlaySession {
         turn: this.#turn,
         messages,
         engine: this.runtime.snapshot(),
-        memory: this.memory.all(),
-        ...(this.memory.archivePages().length ? { memoryArchivePages: this.memory.archivePages() } : {}),
+        memory: memorySnapshot.records,
+        ...(memorySnapshot.archivePages.length ? { memoryArchivePages: memorySnapshot.archivePages } : {}),
         ...(patches.length ? { continuityPatches: patches } : {}),
         lastLogs: this.lastLogs,
         cbsVariables: clone(this.#cbsVariables),
@@ -2012,8 +2018,11 @@ export class PlaySession {
     // 메시지를 실제로 잘라내거나 분기를 바꾸는 경로는 각자 이 캐시를 명시적으로 폐기한다.
     this.#lastLogs = data.lastLogs;
     this.#lastSpeakers = clone(data.lastSpeakers ?? []);
-    this.#alternates = clone(data.alternates ?? []);
-    this.#responseBranches = clone(data.responseBranches ?? []);
+    this.#alternates = clone(data.alternates ?? []).map(compactStoredMemory);
+    this.#responseBranches = clone(data.responseBranches ?? []).map((branch) => ({
+      ...branch,
+      variants: branch.variants.map(compactStoredMemory),
+    }));
     this.#promptRuns = compactPromptRuns(clone(data.promptRuns ?? []));
     this.#cbsVariables = clone(data.cbsVariables ?? {});
     if (data.cardRuntimeJournal) {
@@ -2037,8 +2046,8 @@ export class PlaySession {
     this.#ledgerNarrativeQueue = data.ledgerNarrativeQueue
       ? clone(data.ledgerNarrativeQueue)
       : legacyLedgerQueue(data.ledgerDeltas ?? []);
-    this.#checkpoints = clone(data.history?.undo ?? []).slice(-30);
-    this.#redoStack = clone(data.history?.redo ?? []).slice(-30);
+    this.#checkpoints = clone(data.history?.undo ?? []).slice(-30).map(compactStoredMemory);
+    this.#redoStack = clone(data.history?.redo ?? []).slice(-30).map(compactStoredMemory);
     if (epochResult) {
       const boundary = epochResult.baseIndex;
       this.#checkpoints = this.#checkpoints.filter((entry) => entry.journalCursor >= boundary);

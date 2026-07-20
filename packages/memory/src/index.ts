@@ -17,6 +17,7 @@ export class MemoryLedger {
   all(){return[...this.#records.values()].map((value)=>structuredClone(value));}
   allStored(){return[...this.all(),...this.#archivePages.flatMap((page)=>page.records).map((record)=>structuredClone(record))];}
   archivePages(){return structuredClone(this.#archivePages);}
+  persistenceSnapshot(){return structuredClone({records:[...this.#records.values()],archivePages:this.#archivePages});}
   // 체크포인트는 외부에 노출되지 않는 불변 레코드 참조를 공유한다. 원장의 모든 변경 메서드는
   // 기존 객체를 수정하지 않고 Map의 값을 교체하므로, 과거 체크포인트는 이후 행동에도 변하지 않는다.
   checkpoint(){return[...this.#records.values()];}

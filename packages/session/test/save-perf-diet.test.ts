@@ -1,4 +1,4 @@
-import{describe,expect,it}from'vitest';import{createMemoryRepository}from'@simbot/persistence';import{type PromptPreset}from'@simbot/risu';import{ProjectRuntime}from'@simbot/runtime';import{PlaySession,type SessionSnapshot}from'../src/index.ts';
+import{describe,expect,it}from'vitest';import{memoryRecord}from'@simbot/memory';import{createMemoryRepository}from'@simbot/persistence';import{type PromptPreset}from'@simbot/risu';import{ProjectRuntime}from'@simbot/runtime';import{PlaySession,sessionIntegrity,type SessionSnapshot}from'../src/index.ts';
 
 const source={source:'user' as const,path:'perf-diet'};
 function preset(id:string,version=1):PromptPreset{return{contract:'prompt-preset/0.1',id,name:id,compatibilityMode:'risu',version,raw:{bulk:'x'.repeat(20_000)},settings:{assistantPrefill:'',sendNames:false,sendChatAsSystem:false},blocks:[{id:'chat',type:'chat',name:'chat',enabled:true,rangeStart:-1000,rangeEnd:'end',source}]};}
@@ -40,5 +40,23 @@ describe('성능 수술 파동 1 — 다이어트 후에도 규율은 그대로�
     expect(restored.checkpointDepth).toBe(5);
     await restored.undoTurn();
     expect(restored.turn).toBe(11); // 재로드 후에도 5단 undo는 살아 있다
+  });
+  it('구형 장기 회차를 열 때 현재 기억과 저장된 undo의 반복 엔진 사실을 함께 정리한다',async()=>{
+    const sourceSession=new PlaySession({id:'legacy-memory',runtime:runtime(),preset:preset('a'),card:{name:'G'},provider});
+    await sourceSession.runLedgerAction('progression/gain',{source:'train'});
+    const snapshot=sourceSession.snapshot(),records=[
+      ...Array.from({length:40},(_,index)=>({...memoryRecord({id:`past-${index}`,text:`과거 값 ${index}`,turn:index,evidence:[{kind:'event',id:String(index)}],status:'superseded',kind:'engine-fact',canonicalAnchors:['state:player:exp']}),validToTurn:index,lifecycle:{state:'superseded' as const,timeScope:'past' as const}})),
+      memoryRecord({id:'current',text:'현재 값',turn:41,evidence:[{kind:'event',id:'41'}],status:'approved',kind:'engine-fact',canonicalAnchors:['state:player:exp']}),
+    ];
+    snapshot.memory=structuredClone(records);
+    snapshot.history!.undo[0]!.memory=structuredClone(records);
+    const unsigned={...snapshot} as SessionSnapshot;delete unsigned.integrity;delete unsigned.integrityVersion;unsigned.integrity=sessionIntegrity(unsigned);
+    const restored=new PlaySession({id:'legacy-memory',runtime:runtime(),preset:preset('a'),card:{name:'G'},provider});
+    restored.restore(unsigned);
+    const migrated=restored.snapshot();
+    expect(migrated.memory.filter(record=>record.canonicalAnchors?.includes('state:player:exp'))).toHaveLength(2);
+    expect(migrated.history?.undo[0]?.memory.filter(record=>record.canonicalAnchors?.includes('state:player:exp'))).toHaveLength(2);
+    await restored.undoTurn();
+    expect(restored.memory.all()).toHaveLength(2);
   });
 });
