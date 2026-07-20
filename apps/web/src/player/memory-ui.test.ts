@@ -27,6 +27,8 @@ describe('memory presentation',()=>{
     expect(source('./SidePanel.svelte')).toContain('장기기억');
     expect(source('./SettingsPanel.svelte')).toContain('키가 없어도 장기기억의 저장·회상·검토는 작동합니다.');
     expect(source('./SessionInspector.svelte')).toContain('기억 수첩');
+    expect(source('./SessionInspector.svelte')).toContain('session.correctMemory');
+    expect(source('./SessionInspector.svelte')).toContain('session.forgetMemory');
     expect(source('./MessageList.svelte')).toContain('이번 답변에서 회상');
   });
 });

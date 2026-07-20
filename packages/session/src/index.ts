@@ -882,22 +882,47 @@ export class PlaySession {
     return this.runLedgerAction(id, params);
   }
   async approveMemory(id: string) {
+    this.#pushCheckpoint();
     this.memory.approve(id);
     await this.save();
     this.#notify();
   }
   async rejectMemory(id: string) {
+    this.#pushCheckpoint();
     this.memory.reject(id);
     await this.save();
     this.#notify();
   }
   async applyContinuityPatch(id: string) {
+    this.#pushCheckpoint();
     this.#continuityPatches.apply(id, this.memory, this.#turn);
     await this.save();
     this.#notify();
   }
   async rejectContinuityPatch(id: string) {
+    this.#pushCheckpoint();
     this.#continuityPatches.reject(id);
+    await this.save();
+    this.#notify();
+  }
+  async correctMemory(id:string,text:string){
+    const current=this.memory.get(id),nextText=text.normalize('NFKC').replace(/\s+/g,' ').trim().slice(0,2000);
+    if(!current)throw new Error(`memory_not_found:${id}`);
+    if(current.kind==='engine-fact')throw new Error('engine_memory_correction_forbidden');
+    if(!nextText)throw new Error('memory_correction_empty');
+    if(nextText===current.text)return;
+    this.#pushCheckpoint();
+    this.memory.supersede(id,Math.max(this.#turn,current.validFromTurn));
+    this.memory.add(memoryRecord({id:`user-correction:${this.#turn}:${stableHash({id,text:nextText}).slice(0,12)}`,text:nextText,turn:this.#turn,scope:current.scope,evidence:[...current.evidence],status:'approved',...(current.kind?{kind:current.kind}:{}),...(current.sourceMessageIds?{sourceMessageIds:current.sourceMessageIds}:{}),...(current.sourceEventIndexes?{sourceEventIndexes:current.sourceEventIndexes}:{}),...(current.entities?{entities:current.entities}:{}),supersedes:[id],...(current.importance!=null?{importance:current.importance}:{}),canonicalAnchors:current.canonicalAnchors?.length?current.canonicalAnchors:[`user-memory:${id}`],...(current.sceneId?{sceneId:current.sceneId}:{}),...(current.sourceLocator?{sourceLocator:current.sourceLocator}:{}),...(current.knowledge?{knowledge:current.knowledge}:{}),lifecycle:{state:'active',timeScope:'current'}}));
+    await this.save();
+    this.#notify();
+  }
+  async forgetMemory(id:string){
+    const current=this.memory.get(id);
+    if(!current)throw new Error(`memory_not_found:${id}`);
+    if(current.kind==='engine-fact')throw new Error('engine_memory_forget_forbidden');
+    this.#pushCheckpoint();
+    this.memory.forget(id,Math.max(this.#turn,current.validFromTurn));
     await this.save();
     this.#notify();
   }
