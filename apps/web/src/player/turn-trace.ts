@@ -28,7 +28,7 @@ export function traceRun(run:Run,card:string,chat:string,message:number|null){
 
   // ② 모델 응답 — 느린지, 잘렸는지("length"면 답이 중간에 끊긴 것이다), 토큰이 얼마나 들었는지.
   if(diagnostics.enabled('info'))diagnostics.record({...where,level:'info',kind:'provider',code:'model_response',key:`${key}:model`,summary:`모델 응답 · ${run.model??'(모델 미상)'} · ${ms(run.durationMs)}`,
-    detail:{'AI 서비스':run.provider??'(모름)','모델':run.model??'(모름)','소요':ms(run.durationMs),'토큰':`입력 ${run.inputTokens??'?'} · 출력 ${run.outputTokens??'?'}${run.tokensEstimated?' (추정)':''}`,'종료 사유':run.finishReason??'(없음)','응답 길이':`${run.responseText.length}자`}});
+    detail:{'프로바이더':run.provider??'(모름)','모델':run.model??'(모름)','소요':ms(run.durationMs),'토큰':`입력 ${run.inputTokens??'?'} · 출력 ${run.outputTokens??'?'}${run.tokensEstimated?' (추정)':''}`,'종료 사유':run.finishReason??'(없음)','응답 길이':`${run.responseText.length}자`}});
   if(diagnostics.enabled('warn')&&run.finishReason==='length')diagnostics.record({...where,level:'warn',kind:'provider',code:'response_truncated',key:`${key}:truncated`,summary:'응답이 토큰 상한에서 잘렸다',detail:{'종료 사유':'length','조치':'설정에서 최대 토큰을 올리거나 프롬프트를 줄인다'}});
 
   // ③ 엔진 사실 — 모델이 제안한 이벤트 중 무엇이 적용되고 무엇이 차단됐는가. 차단은 조용히 넘어가지 않는다.

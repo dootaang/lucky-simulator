@@ -3,7 +3,7 @@
   interface InputDraftRestore { text: string; sequence: number }
   let { busy = false, draft = { text: '', sequence: 0 }, onsend, onstop }: { busy?: boolean; draft?: InputDraftRestore; onsend: (text: string) => Promise<void>; onstop: () => void } = $props();
   let text = $state('');
-  // UX-RENEWAL §6.2: AI 연결 시트가 떴다 닫혀도 사용자가 쓴 문장은 사라지지 않는다.
+  // UX-RENEWAL §6.2: 프로바이더 설정이 떴다 닫혀도 사용자가 쓴 문장은 사라지지 않는다.
   // sequence가 복원 사건을 구분한다. 같은 문장을 두 번 취소해도 두 번째 복원을 놓치지 않는다.
   $effect(()=>{void draft.sequence;text=draft.text;});
   async function submit(){const value=text.trim();if(!value||busy)return;text='';await onsend(value);}

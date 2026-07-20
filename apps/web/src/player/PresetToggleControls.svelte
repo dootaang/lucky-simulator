@@ -1,6 +1,6 @@
 <script lang="ts">
  import type{PresetToggle}from'@simbot/risu';
- let{toggles,values,onchange,title='대화 분위기·기능'}:{toggles:PresetToggle[];values:Record<string,string>;onchange:(key:string,value:string)=>void;title?:string}=$props();
+ let{toggles,values,onchange,title='프롬프트 토글'}:{toggles:PresetToggle[];values:Record<string,string>;onchange:(key:string,value:string)=>void;title?:string}=$props();
  const value=(key:string)=>values[`toggle_${key}`]??'0';
 </script>
 {#if toggles.some(toggle=>toggle.type!=='decor')}

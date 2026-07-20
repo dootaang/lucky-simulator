@@ -1015,7 +1015,12 @@ export class PlaySession {
     const patch=Object.entries(presetToggleDefaults(this.#preset)).filter(([key])=>!(key in this.#cbsVariables)).map(([key,value])=>({op:'set' as const,key,value}));
     if(patch.length){const state=this.#cardRuntimeJournal.state,committed=this.#cardRuntimeJournal.append(`preset-toggle-defaults:${this.#cardRuntimeJournal.cursor+1}`,patch,state.randomState,state.logicalTimeMs);this.#cbsVariables=committed.variables;setActiveRenderContext(this.#regexScripts,this.#cbsVariables);this.#notify();}
   }
-  async setPresetToggle(key:string,value:string|number|boolean){const variable=`toggle_${key}`,normalized=typeof value==='boolean'?(value?'1':'0'):String(value);if(!safeRuntimeKey(variable))throw new Error('preset_toggle_key_invalid');if(this.#cbsVariables[variable]===normalized)return;const state=this.#cardRuntimeJournal.state,committed=this.#cardRuntimeJournal.append(`preset-toggle:${variable}:${this.#cardRuntimeJournal.cursor+1}`,[{op:'set',key:variable,value:normalized}],state.randomState,state.logicalTimeMs);this.#cbsVariables=committed.variables;setActiveRenderContext(this.#regexScripts,this.#cbsVariables);await this.save();this.#notify();}
+  async setPresetToggles(values:Record<string,string|number|boolean>){
+    const patch=Object.entries(values).map(([key,value])=>{const variable=`toggle_${key}`,normalized=typeof value==='boolean'?(value?'1':'0'):String(value);if(!safeRuntimeKey(variable))throw new Error('preset_toggle_key_invalid');return{op:'set' as const,key:variable,value:normalized};}).filter(entry=>this.#cbsVariables[entry.key]!==entry.value);
+    if(!patch.length)return;
+    const state=this.#cardRuntimeJournal.state,committed=this.#cardRuntimeJournal.append(`preset-toggles:${this.#cardRuntimeJournal.cursor+1}`,patch,state.randomState,state.logicalTimeMs);this.#cbsVariables=committed.variables;setActiveRenderContext(this.#regexScripts,this.#cbsVariables);await this.save();this.#notify();
+  }
+  async setPresetToggle(key:string,value:string|number|boolean){await this.setPresetToggles({[key]:value});}
   setRegexScripts(scripts: readonly RegexScript[]) {
     this.#regexScripts = clone([...scripts]);
     setActiveRenderContext(this.#regexScripts, this.#cbsVariables);
