@@ -101,9 +101,13 @@ test('소녀전선 PNG를 넣으면 별도 컴파일 질문 없이 네이티브 
   await expect(reopened).toContainText('ALPHA');
   await simulation.getByRole('button',{name:'닫기'}).click();
   await page.getByRole('button',{name:'메뉴 닫기'}).click();
-  await page.getByRole('button',{name:'Aa 보기 설정'}).click();
-  await page.getByRole('button',{name:'작게',exact:true}).click();
-  await expect(page.getByLabel('본문 이미지 최대 너비')).toHaveValue('16');
+  await page.getByRole('button',{name:'현재 봇 메뉴'}).click();
+  await page.getByRole('button',{name:'전체 설정'}).click();
+  const settings=page.getByRole('dialog',{name:'전체 설정'});
+  await settings.getByLabel('설정 메뉴').selectOption('chat');
+  await settings.getByRole('button',{name:'작게',exact:true}).click();
+  await expect(settings.getByLabel('본문 이미지 최대 너비')).toHaveValue('16');
+  await settings.getByRole('button',{name:'저장'}).click();
   await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('simbot.llm')??'{}').assetWidth)).toBe(16);
 });
 

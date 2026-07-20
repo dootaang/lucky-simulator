@@ -10,9 +10,8 @@
   import {buildNpcClusters,extractAssetSpeakers,type NpcCluster} from './npc-gallery';
   import {isNativeGflPresentation,renderGflNarrative} from './gfl-presentation';
   import {tick} from 'svelte';
-  import ChatDisplayControls from './ChatDisplayControls.svelte';
 
-  let {session,version,assetRevision=0,scrollRequest=0,greetings=[],cardName,userName='나',userPortrait=null,botPortrait=null,model,waiting=false,assets=[],npcGroups=[],assetWidth=32,onassetwidthchange=()=>{},portraitFor,assetUrlFor=null,onassetneeded=()=>{},onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;assetRevision?:number;scrollRequest?:number;greetings?:string[];cardName:string;userName?:string;userPortrait?:string|null;botPortrait?:string|null;model:string;waiting?:boolean;assets?:CardAsset[];npcGroups?:NpcCluster[];assetWidth?:number;onassetwidthchange?:(value:number)=>void;portraitFor:(id:string,emotion?:string,outfit?:number)=>string|null;assetUrlFor?:((asset:CardAsset)=>string|null)|null;onassetneeded?:(name:string)=>void;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
+  let {session,version,assetRevision=0,scrollRequest=0,greetings=[],cardName,userName='나',userPortrait=null,botPortrait=null,model,waiting=false,assets=[],npcGroups=[],assetWidth=32,portraitFor,assetUrlFor=null,onassetneeded=()=>{},onchange,oncontinue,onerror=()=>{}}:{session:PlaySession;version:number;assetRevision?:number;scrollRequest?:number;greetings?:string[];cardName:string;userName?:string;userPortrait?:string|null;botPortrait?:string|null;model:string;waiting?:boolean;assets?:CardAsset[];npcGroups?:NpcCluster[];assetWidth?:number;portraitFor:(id:string,emotion?:string,outfit?:number)=>string|null;assetUrlFor?:((asset:CardAsset)=>string|null)|null;onassetneeded?:(name:string)=>void;onchange:()=>void;oncontinue?:()=>Promise<void>;onerror?:(message:string)=>void}=$props();
   let editing=$state<string|null>(null),draft=$state(''),rerolling=$state(false),translating=$state<string|null>(null),translationShown=$state<Record<string,boolean>>({}),detailsFor=$state<string|null>(null),greetingIndex=$state(0),lastSessionId=$state(''),live=$state(0),menuFor=$state<string|null>(null),issuesOpen=$state(false),expandedImage=$state(''),bottom=$state<HTMLElement>(),pinned=true,openingLatest=false,openingTimer=0,scrollFrame=0,previousCount=0,previousWaiting=false,previousRequest=0;
   const messageNodes=new Map<string,HTMLElement>();
   $effect(()=>{void version;if(lastSessionId!==session.id){lastSessionId=session.id;greetingIndex=Math.max(0,greetings.indexOf(session.messages[0]?.content??''));issuesOpen=false;cancel();openAtLatest();}});
@@ -113,7 +112,6 @@
 <svelte:window onpointerdown={closeMessageMenu} onkeydown={closeMessageMenuWithKeyboard}/>
 
 <div class="list" use:followLatest>
-  <ChatDisplayControls {assetWidth} onchange={onassetwidthchange}/>
   {#each messages as message,index(message.id)}
     {@const run=ledgerRuns[index]}
     {#if run&&run.size>1&&index===run.end}
