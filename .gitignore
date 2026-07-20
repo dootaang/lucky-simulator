@@ -20,3 +20,10 @@ PENTA-REVIEW.md
 
 # Claude/Codex 자동 교대 감독기의 로컬 우편함·실행 로그
 /.ai-coordination/
+
+# 내부 작업 문서 — 공개 리포에서 제외 (로컬 파일은 유지)
+/REPORT-*.md
+/PROPOSAL-*.md
+/AGENTS.md
+/SCHEMA-v0.md
+docs/HANDOFF-*.md
