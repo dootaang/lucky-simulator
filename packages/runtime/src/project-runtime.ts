@@ -120,6 +120,7 @@ export class ProjectRuntime {
   readonly unknownModuleIds: string[];
   #state: RuntimeRecord;
   #rng;
+  #viewRevision = 0;
   #listeners = new Set<() => void>();
   constructor(
     project: RuntimeProject,
@@ -143,7 +144,10 @@ export class ProjectRuntime {
       { id, params },
       this.#rng,
     );
-    if (result.log.some((entry) => entry.ok)) this.#state = result.state;
+    if (result.log.some((entry) => entry.ok)) {
+      this.#state = result.state;
+      this.#viewRevision += 1;
+    }
     this.#notify();
     return result;
   }
@@ -159,6 +163,19 @@ export class ProjectRuntime {
   }
   select(id: string): unknown {
     return this.registry.select(id, this.project.schema, this.#state);
+  }
+  // Worker 이전 뒤에도 화면은 같은 작은 묶음만 받는다. 미등록 셀렉터 하나가
+  // 다른 장르의 화면까지 깨뜨리지 않도록 오류를 값과 분리해 돌려준다.
+  selectBundle(ids: readonly string[]) {
+    const values: Record<string, unknown> = {}, errors: Record<string, string> = {};
+    for (const id of new Set(ids)) {
+      try {
+        values[id] = this.select(id);
+      } catch (error) {
+        errors[id] = error instanceof Error ? error.message : String(error);
+      }
+    }
+    return { projectId: this.project.projectId, revision: this.#viewRevision, values, errors } as const;
   }
   promptFacts(): RuntimeRecord {
     return this.registry.promptFacts(this.project.schema, this.#state);
@@ -187,6 +204,7 @@ export class ProjectRuntime {
       throw new Error("runtime_snapshot_invalid");
     this.#state = structuredClone(snapshot.state);
     this.#rng.restore(snapshot.rng);
+    this.#viewRevision += 1;
     this.#notify();
   }
   subscribe(listener: () => void) {

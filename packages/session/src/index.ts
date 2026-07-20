@@ -58,9 +58,12 @@ import {
   type CardRuntimeJournalData,
 } from "./card-runtime-journal.ts";
 import { auxProviderFor, type AuxConfig } from "./providers/auxiliary.ts";
+import type { SessionActionPhase, SessionActionTrace } from "./session-action.ts";
 export * from "./openai-compatible.ts";
 export * from "./journal.ts";
 export * from "./card-runtime-journal.ts";
+export * from "./session-action.ts";
+export * from "./session-sync.ts";
 export { maskSecrets } from "./providers/openai.ts"; // 진단 복사본에 키가 새지 않게 — 마스킹 로직은 하나만 존재해야 한다
 
 export { createVoyageProvider } from "@simbot/memory";
@@ -155,22 +158,6 @@ export interface ModelRequest {
 export interface ModelProvider {
   complete(request: ModelRequest): Promise<NarrativeResponse>;
 }
-export type SessionActionPhase =
-  | "session-start"
-  | "background-save-wait-start"
-  | "background-save-wait-complete"
-  | "base-persist-complete"
-  | "checkpoint-complete"
-  | "engine-complete"
-  | "memory-complete"
-  | "prompt-complete"
-  | "provider-complete"
-  | "receipt-complete"
-  | "action-durable"
-  | "save-start"
-  | "wal-build-complete"
-  | "save-complete";
-export type SessionActionTrace = (phase: SessionActionPhase, at: number) => void;
 function traceAction(trace: SessionActionTrace | undefined, phase: SessionActionPhase) {
   trace?.(phase, performance.now());
 }

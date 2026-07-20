@@ -1,7 +1,8 @@
-export type SimulationActionMode='narrated'|'ledger'|'scene';
-export type SimulationActionPhase='session-start'|'background-save-wait-start'|'background-save-wait-complete'|'base-persist-complete'|'checkpoint-complete'|'engine-complete'|'memory-complete'|'prompt-complete'|'provider-complete'|'receipt-complete'|'action-durable'|'save-start'|'wal-build-complete'|'save-complete';
-export type SimulationActionTrace=(phase:SimulationActionPhase,at:number)=>void;
-export interface SimulationActionRequest{id:string;params:Record<string,unknown>;mode:SimulationActionMode;intent?:string;events?:Array<{id:string;params:Record<string,unknown>}>;trace?:SimulationActionTrace;}
+import type {SessionActionMode,SessionActionPhase,SessionActionRequest,SessionActionTrace} from '@simbot/session';
+export type SimulationActionMode=SessionActionMode;
+export type SimulationActionPhase=SessionActionPhase;
+export type SimulationActionTrace=SessionActionTrace;
+export type SimulationActionRequest=SessionActionRequest;
 export type SimulationActionHandler=(request:SimulationActionRequest)=>Promise<Record<string,unknown>[]>;
 export function declaredActionMode(action:Record<string,unknown>):SimulationActionMode{return action.narrate===false||action.mode==='ledger'?'ledger':'narrated';}
 // Svelte의 상태 변경을 브라우저가 실제로 한 프레임 그린 뒤 엔진 작업을 시작한다.
