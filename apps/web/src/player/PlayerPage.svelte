@@ -25,9 +25,9 @@
   import { CardLibrary,THUMBNAIL_VERSION,type AssetModuleMeta,type CardLibraryMeta } from './card-library';
   import HudStrip from './HudStrip.svelte';
   import GflSceneBackground from './GflSceneBackground.svelte';
-  import {latestGflBackgroundCue} from './gfl-presentation';
+  import {latestGflBackgroundCueFrom} from './gfl-presentation';
   import { buildHudModel } from './hud-model';
-  import { buildRosterModel, collectMetIds } from './roster-model';
+  import { buildRosterModel } from './roster-model';
   import DecisionDock from './DecisionDock.svelte';
   import { buildDecisionCards } from './decision-model';
   import {createBrowserAssetModuleStore,createBrowserAssetThumbnailStore,createBrowserCardBinaryStore,needsLargeCardWarning} from './card-binary-store';
@@ -64,7 +64,7 @@
   let thumbnailPruneTimer:number|null=null;
   let predictedHire:{revision:string;ids:string[]}|null=null,predictedHireTimer:number|null=null;
   let assetRevisionFrame:number|null=null;
-  function invalidateLoadedAssets(){if(assetRevisionFrame!==null)return;assetRevisionFrame=requestAnimationFrame(()=>{assetRevisionFrame=null;assetRevision+=1;version+=1;});}
+  function invalidateLoadedAssets(){if(assetRevisionFrame!==null)return;assetRevisionFrame=requestAnimationFrame(()=>{assetRevisionFrame=null;assetRevision+=1;});}
   let cardSwitching=false,pendingCardId:string|null=null;
   let currentParsed=$state.raw<ParsedCard|null>(null),galleryAssets=$state.raw<CardAsset[]>([]),compileReview=$state.raw<CompileResult|null>(null),compiling=$state(false);
   // 핀 = 시뮬레이션을 오버레이 대신 셸의 우측 칼럼으로. 취향이 갈려 localStorage에 기억한다(조종석 ③).
@@ -112,7 +112,7 @@
   // 로스터: 만난 NPC(화자 이력)만 공개하되, 사용자가 '전부 공개'를 켤 수 있다(SPEC-COCKPIT-DESIGN).
   let rosterReveal=$state(typeof localStorage!=='undefined'&&localStorage.getItem('simbot.roster.revealAll')==='1');
   function setRosterReveal(value:boolean){rosterReveal=value;try{localStorage.setItem('simbot.roster.revealAll',value?'1':'0');}catch{/* 저장 불가 무시 */}}
-  let rosterUi=$derived.by(()=>{void version;const rows=session?buildRosterModel(runtime.project.schema as Record<string,unknown>,runtime.state as Record<string,unknown>,collectMetIds(session.messages),rosterReveal):[];return{rows,portraitFor,revealAll:rosterReveal,onreveal:setRosterReveal};});
+  let rosterUi=$derived.by(()=>{void version;const rows=session?buildRosterModel(runtime.project.schema as Record<string,unknown>,runtime.state as Record<string,unknown>,new Set(session.encounteredNpcIds),rosterReveal):[];return{rows,portraitFor,revealAll:rosterReveal,onreveal:setRosterReveal};});
   // 조종대: 엔진이 결정을 기다리는 것만 캡슐로. full-sim에서만 계산한다.
   let decisionCards=$derived.by(()=>{void version;return passport?.mode==='full-sim'&&session?buildDecisionCards((id)=>runtime.select(id),{logs:session.lastLogs,turn:session.turn,nameFor:(id)=>String(session?.resolveSpeakers([{npcId:id}])[0]?.name??id)}):[];});
   // 계기판은 엔진 상태의 파생 뷰다 — version이 오를 때만 다시 계산(SidePanel stateRows와 동일 패턴).
@@ -121,7 +121,7 @@
   // 퀵 칩 시간 게이트 — 콘솔의 canAdvance/canEndDay와 동일 규칙(엔진이 거부하는 조합은 눌리지도 않게).
   let gflPhase=$derived.by(()=>{void version;if(!nativeGfl)return '';try{return String((runtime.select('gfl/status') as Record<string,unknown>)?.phase??'오전');}catch{return '오전';}});
   let chipCanEndDay=$derived(['저녁','밤','심야','새벽'].includes(gflPhase)),chipCanAdvance=$derived(gflPhase!==''&&gflPhase!=='새벽');
-  let gflBackgroundCue=$derived.by(()=>{void version;return session?latestGflBackgroundCue(session.messages):null;});
+  let gflBackgroundCue=$derived.by(()=>{void version;return session?latestGflBackgroundCueFrom(session.messageCount,index=>session?.messageAt(index)??null):null;});
   let promptUi=$derived.by(()=>{version;return{presets,active:activePreset,toggleValues:session?.cbsVariables??{},ontoggle:(key:string,value:string)=>void session?.setPresetToggle(key,value),onselect:(id:string)=>void selectPreset(id),onchange:(p:PromptPreset)=>void changePreset(p),onnew:()=>void newPreset(),onclone:()=>void clonePreset(),onrename:()=>void renamePreset(),onremove:()=>void removePreset(),onimport:(f:File)=>void importPresetFile(f),onexport:exportPreset};});
   let personaUi=$derived({personas,active:activePersona,bound:personaBound,onselect:(id:string)=>void selectPersona(id),onsave:(p:Persona)=>void savePersona(p),onnew:()=>void savePersona(emptyPersona()),onclone:()=>void savePersona({...activePersona,id:`persona-${crypto.randomUUID()}`,name:`${activePersona.name} 복사본`}),onremove:()=>void removePersona(),onbind:(v:boolean)=>void bindPersona(v),onimport:(file:File)=>void importPersonaFile(file),onexport:()=>void exportPersonaFile()});
   let bindingUi=$derived({personas,boundId:boundPersonaId,onchange:(id:string|null)=>void bindPersonaId(id)});

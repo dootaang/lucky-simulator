@@ -17,7 +17,7 @@ function makeSession() {
     }),
     preset: defaultCardPreset(),
     card: { name: "Window" },
-    provider: { async complete() { return { text: "answer" }; } },
+    provider: { async complete() { return { text: "answer", speakers: [{ npcId: "npc-window" }] }; } },
   });
 }
 
@@ -61,5 +61,21 @@ describe("bounded message access", () => {
     expect(session.messageOutline).toEqual([
       { id: "m2", index: 0, role: "assistant", origin: "model" },
     ]);
+  });
+
+  it("caches encountered NPC ids without cloning the full chat", async () => {
+    const session = makeSession();
+    const empty = session.encounteredNpcIds;
+    expect(session.encounteredNpcIds).toBe(empty);
+    expect(Object.isFrozen(empty)).toBe(true);
+
+    await session.send("meet");
+    const met = session.encounteredNpcIds;
+    expect(met).toEqual(["npc-window"]);
+    expect(session.encounteredNpcIds).toBe(met);
+
+    await session.editMessage("m2", "same speaker, edited prose");
+    expect(session.encounteredNpcIds).toEqual(["npc-window"]);
+    expect(session.encounteredNpcIds).not.toBe(met);
   });
 });

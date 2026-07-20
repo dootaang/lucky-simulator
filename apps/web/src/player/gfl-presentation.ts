@@ -110,3 +110,14 @@ export function latestGflBackgroundCue(messages:readonly{role?:string;content?:s
   }
   return null;
 }
+
+/** Finds the latest cue without materialising a long chat into a second array. */
+export function latestGflBackgroundCueFrom(count:number,messageAt:(index:number)=>{role?:string;content?:string}|null):string|null{
+  for(let index=count-1;index>=0;index-=1){
+    const message=messageAt(index);
+    if(message?.role!=='assistant')continue;
+    const cue=extractGflBackgroundCue(message.content??'');
+    if(cue)return cue;
+  }
+  return null;
+}

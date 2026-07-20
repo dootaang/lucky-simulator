@@ -628,6 +628,8 @@ export class PlaySession {
   #messageRevision = 0;
   #messageOutlineRevision = -1;
   #messageOutline: readonly MessageOutlineEntry[] = [];
+  #encounteredNpcIdsRevision = -1;
+  #encounteredNpcIds: readonly string[] = [];
   #regexScripts: RegexScript[];
   #cbsVariables: Record<string, string>;
   #assets: Array<Pick<AssetMacroAsset,"name"|"type"|"mime"|"moduleNamespace">> = [];
@@ -648,6 +650,7 @@ export class PlaySession {
   #messagesChanged() {
     this.#messageRevision += 1;
     this.#messageOutlineRevision = -1;
+    this.#encounteredNpcIdsRevision = -1;
   }
   constructor(options: PlaySessionOptions) {
     this.id = options.id;
@@ -709,6 +712,17 @@ export class PlaySession {
       this.#messageOutlineRevision = this.#messageRevision;
     }
     return this.#messageOutline;
+  }
+  get encounteredNpcIds(): readonly string[] {
+    if (this.#encounteredNpcIdsRevision !== this.#messageRevision) {
+      const ids = new Set<string>();
+      for (const message of this.#messages)
+        for (const speaker of message.speakers ?? [])
+          if (typeof speaker.npcId === "string" && speaker.npcId) ids.add(speaker.npcId);
+      this.#encounteredNpcIds = Object.freeze([...ids]);
+      this.#encounteredNpcIdsRevision = this.#messageRevision;
+    }
+    return this.#encounteredNpcIds;
   }
   messageAt(index: number): ChatMessage | null {
     const value = this.#messages[index];
