@@ -9,6 +9,10 @@ firebase-debug.log
 *.charx
 *.risum
 
+# Local Markdown is private by default. Files already tracked by Git remain tracked;
+# add a new Markdown file explicitly with `git add -f` only when publication is intended.
+*.md
+
 # 내부 작업 문서 (공개 안 함) — docs/의 제품 문서는 공개 대상이므로 루트만 제외
 /BACKLOG.md
 SPEC-*.md
