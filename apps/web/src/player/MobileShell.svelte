@@ -2,7 +2,7 @@
   import type{ChatIndex}from'@simbot/session';
   import type{CardLibraryMeta}from'./card-library';
   import Icon from'@simbot/ui/Icon.svelte';
-  type ShellPage='chat'|'library'|'chats';
+  type ShellPage='chat'|'library'|'chats'|'management';
   let{cardName='봇을 선택하세요',cards,index,activeId,hasCard=false,sideOpen=false,page='chat',playLabel='플레이',playEnabled=false,onadd,oncard,onremove,onchat=()=>{},onnewchat=()=>{},onrenamechat=()=>{},onremovechat=()=>{},onplay=()=>{},onsideopen=()=>{},onsideclose=()=>{},onpage=()=>{}}:{cardName?:string;cards:CardLibraryMeta[];index:ChatIndex;activeId:string|null;hasCard?:boolean;sideOpen?:boolean;page?:ShellPage;playLabel?:string;playEnabled?:boolean;onadd:()=>void;oncard:(id:string)=>void;onremove:(id:string)=>void;onchat?:(id:string)=>void;onnewchat?:()=>void;onrenamechat?:(id:string)=>void;onremovechat?:(id:string)=>void;onplay?:()=>void;onsideopen?:()=>void;onsideclose?:()=>void;onpage?:(page:ShellPage)=>void}=$props();
   let query=$state('');
   let filtered=$derived(cards.filter(card=>card.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
@@ -14,6 +14,7 @@
 <header class="appbar">
   {#if sideOpen}<button aria-label="메뉴 닫기" onclick={onsideclose}><Icon name="left"/></button><strong>메뉴</strong><span class="slot"></span>
   {:else if page==='chat'&&hasCard}<button aria-label="대화 목록" onclick={()=>onpage('chats')}><Icon name="left"/></button><strong>{cardName}</strong>{#if playEnabled}<button class="play" aria-label={`${playLabel} 열기`} onclick={onplay}>{playLabel}</button>{:else}<button aria-label="현재 봇 메뉴" onclick={onsideopen}><Icon name="ellipsis"/></button>{/if}
+  {:else if page==='management'&&hasCard}<span class="brand">★</span><strong>관리</strong><button class="play" aria-label={`${playLabel} 전체 관리 열기`} onclick={onplay}>전체</button>
   {:else if page==='chats'&&hasCard}<span class="brand">★</span><strong>대화</strong><button aria-label="현재 봇 메뉴" onclick={onsideopen}><Icon name="ellipsis"/></button>
   {:else}<span class="brand">★</span><strong>봇 목록</strong><span class="slot"></span>{/if}
 </header>

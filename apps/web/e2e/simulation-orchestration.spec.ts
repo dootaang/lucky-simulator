@@ -46,6 +46,14 @@ test('완전 시뮬 카드는 계기판을 표시하고 별도 관리 진입 버
   await page.getByRole('button', { name: / 열기$/ }).click(); await expect(page.getByRole('dialog', { name: '시뮬레이션' })).toBeVisible();
 });
 
+test('모바일 빠른 관리와 관리 탭은 같은 상태·할 일·최근 결과 요약을 보여준다', async ({ page }) => {
+  await page.setViewportSize({ width:390, height:844 }); await page.addInitScript(()=>localStorage.setItem('simbot.sim.pinned','0')); await seed(page);
+  await page.getByRole('button',{name:'빠른 관리'}).click();
+  const sheet=page.getByRole('dialog',{name:'빠른 관리'}); await expect(sheet).toBeVisible(); await expect(sheet.getByText('지금 상태')).toBeVisible(); await expect(sheet.getByText('지금 할 일')).toBeVisible(); await expect(sheet.getByText('최근 결과')).toBeVisible(); await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'대화 목록'}).click(); await page.getByRole('button',{name:'관리 요약'}).click();
+  const summary=page.getByRole('region',{name:'관리 요약'}); await expect(summary).toBeVisible(); await expect(summary.getByText('1일차')).toBeVisible(); await summary.getByRole('button',{name:'전체 관리 기능 보기'}).click(); await expect(page.getByRole('dialog',{name:'시뮬레이션'})).toBeVisible();
+});
+
 test('넓은 화면에서 관리를 열면 기본 고정 칼럼(2열)이고 해제하면 오버레이로 돌아간다', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 }); await seed(page); if (await page.getByTitle('오케스트레이션 카드').count()) await page.getByTitle('오케스트레이션 카드').click(); await page.getByRole('button', { name: / 열기$/ }).click();
   // UX-RENEWAL §4.2: 자동 열림은 폐기됐다. 대신 저장된 선호가 없으면 "열었을 때" 고정 칼럼이 기본값이다.

@@ -1,21 +1,22 @@
 <script lang="ts" module>
-  export type NavDestination='bots'|'chats'|'settings';
+  export type NavDestination='bots'|'chats'|'management'|'settings';
 </script>
 <script lang="ts">
   import Icon from './icons/Icon.svelte';
-  // 목록 화면의 최상위 목적지는 봇·대화·설정 세 개다. 실제 채팅 안에서는 이 막대를 숨긴다.
+  // 최상위 목적지는 봇·대화·관리·설정 네 개다. 실제 채팅 안에서는 이 막대를 숨긴다.
   // 1000px 미만에서는 하단 탭바, 이상에서는 왼쪽 세로 레일로 배치만 바뀐다.
-  let{active,chatEnabled=true,onnavigate}:{active:NavDestination;chatEnabled?:boolean;onnavigate:(dest:NavDestination)=>void}=$props();
+  let{active,chatEnabled=true,managementEnabled=chatEnabled,onnavigate}:{active:NavDestination;chatEnabled?:boolean;managementEnabled?:boolean;onnavigate:(dest:NavDestination)=>void}=$props();
   const items:Array<{id:NavDestination;label:string;icon:string;aria?:string}>=[
     {id:'bots',label:'봇',icon:'bot',aria:'봇 목록'},
     {id:'chats',label:'대화',icon:'message',aria:'대화 목록'},
+    {id:'management',label:'관리',icon:'star',aria:'관리 요약'},
     {id:'settings',label:'설정',icon:'settings',aria:'전체 설정'}
   ];
 </script>
 
 <nav class="adaptive-nav" aria-label="주요 메뉴">
   {#each items as item(item.id)}
-    <button class:active={active===item.id} aria-label={item.aria??item.label} aria-current={active===item.id?'page':undefined} disabled={item.id==='chats'&&!chatEnabled} onclick={()=>onnavigate(item.id)}>
+    <button class:active={active===item.id} aria-label={item.aria??item.label} aria-current={active===item.id?'page':undefined} disabled={(item.id==='chats'&&!chatEnabled)||(item.id==='management'&&!managementEnabled)} onclick={()=>onnavigate(item.id)}>
       <Icon name={item.icon} size={22}/><span>{item.label}</span>
     </button>
   {/each}
